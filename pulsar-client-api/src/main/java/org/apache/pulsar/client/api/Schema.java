@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -46,7 +46,7 @@ import org.apache.pulsar.common.schema.SchemaType;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public interface Schema<T> extends Cloneable {
+public interface Schema<T> extends Cloneable{
 
     /**
      * Check if the message is a valid object for this schema.
@@ -118,20 +118,6 @@ public interface Schema<T> extends Cloneable {
     default T decode(byte[] bytes, byte[] schemaVersion) {
         // ignore version by default (most of the primitive schema implementations ignore schema version)
         return decode(bytes);
-    }
-
-    /**
-     * Decode a ByteBuffer into an object using a given version. <br/>
-     *
-     * @param data
-     *            the ByteBuffer to decode
-     * @return the deserialized object
-     */
-    default T decode(ByteBuffer data) {
-        if (data == null) {
-            return null;
-        }
-        return decode(getBytes(data));
     }
 
     /**

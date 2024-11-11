@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -28,10 +28,6 @@ import io.kubernetes.client.openapi.models.V1ResourceRequirements;
 import io.kubernetes.client.openapi.models.V1Service;
 import io.kubernetes.client.openapi.models.V1StatefulSet;
 import io.kubernetes.client.openapi.models.V1Toleration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -41,6 +37,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.functions.proto.Function;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * An implementation of the {@link KubernetesManifestCustomizer} that allows
@@ -94,8 +95,7 @@ public class BasicKubernetesManifestCustomizer implements KubernetesManifestCust
     @Override
     public void initialize(Map<String, Object> config) {
         if (config != null) {
-            RuntimeOpts opts =
-                    ObjectMapperFactory.getMapper().getObjectMapper().convertValue(config, RuntimeOpts.class);
+            RuntimeOpts opts = ObjectMapperFactory.getThreadLocal().convertValue(config, RuntimeOpts.class);
             if (opts != null) {
                 runtimeOpts = opts;
             }
@@ -114,7 +114,7 @@ public class BasicKubernetesManifestCustomizer implements KubernetesManifestCust
             return currentNamespace;
         }
     }
-
+    
     @Override
     public String customizeName(Function.FunctionDetails funcDetails, String currentName) {
         RuntimeOpts opts = getOptsFromDetails(funcDetails);
@@ -125,7 +125,7 @@ public class BasicKubernetesManifestCustomizer implements KubernetesManifestCust
             return currentName;
         }
     }
-
+    
     @Override
     public V1Service customizeService(Function.FunctionDetails funcDetails, V1Service service) {
         RuntimeOpts opts = getOptsFromDetails(funcDetails);

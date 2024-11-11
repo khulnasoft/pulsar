@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,12 +18,12 @@
  */
 package org.apache.pulsar.broker.stats;
 
+import com.google.common.collect.Lists;
 import io.netty.buffer.PoolArenaMetric;
 import io.netty.buffer.PoolChunkListMetric;
 import io.netty.buffer.PoolChunkMetric;
 import io.netty.buffer.PoolSubpageMetric;
 import io.netty.buffer.PooledByteBufAllocator;
-import java.util.ArrayList;
 import java.util.stream.Collectors;
 import org.apache.bookkeeper.mledger.impl.cache.RangeEntryCacheImpl;
 import org.apache.pulsar.common.stats.AllocatorStats;
@@ -54,8 +54,6 @@ public class AllocatorStatsGenerator {
         stats.numDirectArenas = allocator.metric().numDirectArenas();
         stats.numHeapArenas = allocator.metric().numHeapArenas();
         stats.numThreadLocalCaches = allocator.metric().numThreadLocalCaches();
-        stats.usedHeapMemory = allocator.metric().usedHeapMemory();
-        stats.usedDirectMemory = allocator.metric().usedDirectMemory();
         stats.normalCacheSize = allocator.metric().normalCacheSize();
         stats.smallCacheSize = allocator.metric().smallCacheSize();
         return stats;
@@ -101,7 +99,7 @@ public class AllocatorStatsGenerator {
         PoolChunkListStats stats = new PoolChunkListStats();
         stats.minUsage = m.minUsage();
         stats.maxUsage = m.maxUsage();
-        stats.chunks = new ArrayList<>();
+        stats.chunks = Lists.newArrayList();
         m.forEach(chunk -> stats.chunks.add(newPoolChunkStats(chunk)));
         return stats;
     }

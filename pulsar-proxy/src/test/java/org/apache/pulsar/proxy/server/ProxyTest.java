@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,11 +23,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static org.mockito.Mockito.doReturn;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -37,13 +34,11 @@ import lombok.Cleanup;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+
 import org.apache.avro.reflect.Nullable;
 import org.apache.pulsar.PulsarVersion;
-import org.apache.pulsar.broker.BrokerTestUtil;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageRoutingMode;
@@ -56,16 +51,11 @@ import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.ConnectionPool;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
-import org.apache.pulsar.client.impl.metrics.InstrumentProvider;
 import org.apache.pulsar.common.api.proto.CommandActiveConsumerChange;
 import org.apache.pulsar.common.api.proto.ProtocolVersion;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.policies.data.TopicType;
 import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
@@ -75,16 +65,14 @@ import org.slf4j.LoggerFactory;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 public class ProxyTest extends MockedPulsarServiceBaseTest {
 
     private static final Logger log = LoggerFactory.getLogger(ProxyTest.class);
 
-    protected ProxyService proxyService;
-    protected ProxyConfiguration proxyConfig = new ProxyConfiguration();
-    protected Authentication proxyClientAuthentication;
+    private ProxyService proxyService;
+    private ProxyConfiguration proxyConfig = new ProxyConfiguration();
 
     @Data
     @ToString
@@ -102,34 +90,17 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
     protected void setup() throws Exception {
         internalSetup();
 
-        initializeProxyConfig();
-
-        proxyService = Mockito.spy(new ProxyService(proxyConfig, new AuthenticationService(
-                PulsarConfigurationLoader.convertFrom(proxyConfig)), proxyClientAuthentication));
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeper))).when(proxyService).createLocalMetadataStore();
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal))).when(proxyService)
-                .createConfigurationMetadataStore();
-
-        proxyService.start();
-
-        // create default resources.
-        admin.clusters().createCluster(conf.getClusterName(),
-                ClusterData.builder().serviceUrl(pulsar.getWebServiceAddress()).build());
-        TenantInfo tenantInfo = new TenantInfoImpl(Collections.emptySet(), Collections.singleton(conf.getClusterName()));
-        admin.tenants().createTenant("public", tenantInfo);
-        admin.namespaces().createNamespace("public/default");
-    }
-
-    protected void initializeProxyConfig() throws Exception {
         proxyConfig.setServicePort(Optional.ofNullable(0));
         proxyConfig.setBrokerProxyAllowedTargetPorts("*");
         proxyConfig.setMetadataStoreUrl(DUMMY_VALUE);
         proxyConfig.setConfigurationMetadataStoreUrl(GLOBAL_DUMMY_VALUE);
-        proxyConfig.setClusterName(configClusterName);
 
-        proxyClientAuthentication = AuthenticationFactory.create(proxyConfig.getBrokerClientAuthenticationPlugin(),
-                proxyConfig.getBrokerClientAuthenticationParameters());
-        proxyClientAuthentication.start();
+        proxyService = Mockito.spy(new ProxyService(proxyConfig, new AuthenticationService(
+                                                            PulsarConfigurationLoader.convertFrom(proxyConfig))));
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(proxyService).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeperGlobal)).when(proxyService).createConfigurationMetadataStore();
+
+        proxyService.start();
     }
 
     @Override
@@ -138,9 +109,6 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
         internalCleanup();
 
         proxyService.close();
-        if (proxyClientAuthentication != null) {
-            proxyClientAuthentication.close();
-        }
     }
 
     @Test
@@ -228,7 +196,7 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
     public void testAutoCreateTopic() throws Exception{
         int defaultPartition = 2;
         int defaultNumPartitions = pulsar.getConfiguration().getDefaultNumPartitions();
-        pulsar.getConfiguration().setAllowAutoTopicCreationType(TopicType.PARTITIONED);
+        pulsar.getConfiguration().setAllowAutoTopicCreationType("partitioned");
         pulsar.getConfiguration().setDefaultNumPartitions(defaultPartition);
         try {
             @Cleanup
@@ -239,7 +207,7 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
             List<String> partitionNames = partitionNamesFuture.get(30000, TimeUnit.MILLISECONDS);
             Assert.assertEquals(partitionNames.size(), defaultPartition);
         } finally {
-            pulsar.getConfiguration().setAllowAutoTopicCreationType(TopicType.NON_PARTITIONED);
+            pulsar.getConfiguration().setAllowAutoTopicCreationType("non-partitioned");
             pulsar.getConfiguration().setDefaultNumPartitions(defaultNumPartitions);
         }
     }
@@ -287,69 +255,6 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
             for (int i = 0; i < numMessages; i++) {
                 Message<byte[]> msg = consumer.receive();
                 assertEquals("message-" + i, new String(msg.getValue(), UTF_8));
-            }
-        }
-    }
-
-    @DataProvider(name = "topicTypes")
-    public Object[][] topicTypes() {
-        return new Object[][]{
-                {TopicType.PARTITIONED},
-                {TopicType.NON_PARTITIONED}
-        };
-    }
-
-    @Test(timeOut = 60_000, dataProvider = "topicTypes", invocationCount = 100)
-    public void testRegexSubscriptionWithTopicDiscovery(TopicType topicType) throws Exception {
-        final PulsarClient client = PulsarClient.builder().serviceUrl(proxyService.getServiceUrl()).build();
-        final int topics = 10;
-        final String subName = "s1";
-        final String namespace = "public/default";
-        final String topicPrefix = BrokerTestUtil.newUniqueName("persistent://" + namespace + "/tp");
-        final String regexSubscriptionPattern = topicPrefix + ".*";
-        // Set retention policy to avoid flaky.
-        RetentionPolicies retentionPolicies = new RetentionPolicies(3600, 1024);
-        admin.namespaces().setRetention(namespace, retentionPolicies);
-        final List<String> topicList = new ArrayList<>();
-        // create topics
-        for (int i = 0; i < topics; i++) {
-            String topic = topicPrefix + i;
-            topicList.add(topic);
-            if (TopicType.PARTITIONED.equals(topicType)) {
-                admin.topics().createPartitionedTopic(topic, 2);
-            } else {
-                admin.topics().createNonPartitionedTopic(topic);
-            }
-        }
-        // Create consumer.
-        Consumer<String> consumer = client.newConsumer(Schema.STRING)
-                .topicsPattern(regexSubscriptionPattern)
-                .subscriptionName(subName)
-                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                .patternAutoDiscoveryPeriod(10, TimeUnit.MINUTES)
-                .isAckReceiptEnabled(true)
-                .subscribe();
-        // Pub & Sub -> Verify
-        for (String topic : topicList) {
-            String msgPublished = topic + " -> msg";
-            Producer<String> producer = client.newProducer(Schema.STRING)
-                    .topic(topic)
-                    .create();
-            producer.send(msgPublished);
-            producer.close();
-            // Verify.
-            Message<String> msg = consumer.receive(10, TimeUnit.SECONDS);
-            assertNotNull(msg);
-            assertEquals(msg.getValue(), msgPublished);
-            consumer.acknowledge(msg);
-        }
-        // cleanup.
-        consumer.close();
-        for (String topic : topicList) {
-            if (TopicType.PARTITIONED.equals(topicType)) {
-                admin.topics().deletePartitionedTopic(topic);
-            } else {
-                admin.topics().delete(topic);
             }
         }
     }
@@ -426,24 +331,22 @@ public class ProxyTest extends MockedPulsarServiceBaseTest {
 
 
         Assert.assertEquals(admin.topics().getStats(topic).getSubscriptions().get(subName).getConsumers()
-                .get(0).getClientVersion(), String.format("Pulsar-Java-v%s", PulsarVersion.getVersion()));
+                .get(0).getClientVersion(), PulsarVersion.getVersion());
     }
 
-    private PulsarClient getClientActiveConsumerChangeNotSupported(ClientConfigurationData conf)
+    private static PulsarClient getClientActiveConsumerChangeNotSupported(ClientConfigurationData conf)
             throws Exception {
         ThreadFactory threadFactory = new DefaultThreadFactory("pulsar-client-io", Thread.currentThread().isDaemon());
         EventLoopGroup eventLoopGroup = EventLoopUtil.newEventLoopGroup(conf.getNumIoThreads(), false, threadFactory);
-        registerCloseable(() -> eventLoopGroup.shutdownNow());
 
-        ConnectionPool cnxPool = new ConnectionPool(InstrumentProvider.NOOP, conf, eventLoopGroup, () -> {
-            return new ClientCnx(InstrumentProvider.NOOP, conf, eventLoopGroup, ProtocolVersion.v11_VALUE) {
+        ConnectionPool cnxPool = new ConnectionPool(conf, eventLoopGroup, () -> {
+            return new ClientCnx(conf, eventLoopGroup, ProtocolVersion.v11_VALUE) {
                 @Override
                 protected void handleActiveConsumerChange(CommandActiveConsumerChange change) {
                     throw new UnsupportedOperationException();
                 }
             };
-        }, null);
-        registerCloseable(cnxPool);
+        });
 
         return new PulsarClientImpl(conf, eventLoopGroup, cnxPool);
     }

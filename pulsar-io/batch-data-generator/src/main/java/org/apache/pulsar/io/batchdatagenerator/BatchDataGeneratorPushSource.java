@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.batchdatagenerator;
 
 import io.codearte.jfairy.Fairy;
@@ -61,7 +62,7 @@ public class BatchDataGeneratorPushSource extends BatchPushSource<Person> implem
   public void prepare(byte[] instanceSplit) throws Exception {
     log.info("Instance " + sourceContext.getInstanceId() + " got a new discovered task {}",
             new String(instanceSplit, StandardCharsets.UTF_8));
-    executor.execute(this);
+    executor.submit(this);
   }
 
   @Override

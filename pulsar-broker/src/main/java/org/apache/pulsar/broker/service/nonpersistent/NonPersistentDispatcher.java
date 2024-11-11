@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,14 +19,35 @@
 package org.apache.pulsar.broker.service.nonpersistent;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.Dispatcher;
+import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
 import org.apache.pulsar.common.stats.Rate;
 
 
 public interface NonPersistentDispatcher extends Dispatcher {
+
+    CompletableFuture<Void> addConsumer(Consumer consumer);
+
+    void removeConsumer(Consumer consumer) throws BrokerServiceException;
+
+    boolean isConsumerConnected();
+
+    List<Consumer> getConsumers();
+
+    boolean canUnsubscribe(Consumer consumer);
+
+    CompletableFuture<Void> close();
+
+    CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor);
+
+    void reset();
+
+    SubType getType();
 
     void sendMessages(List<Entry> entries);
 
@@ -40,7 +61,7 @@ public interface NonPersistentDispatcher extends Dispatcher {
     }
 
     @Override
-    default void redeliverUnacknowledgedMessages(Consumer consumer, List<Position> positions) {
+    default void redeliverUnacknowledgedMessages(Consumer consumer, List<PositionImpl> positions) {
         // No-op
     }
 

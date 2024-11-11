@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -81,9 +81,7 @@ public class CurrentLedgerRolloverIfFullTest extends BrokerTestBase {
         }
 
         ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) persistentTopic.getManagedLedger();
-        Awaitility.await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
-            Assert.assertEquals(managedLedger.getLedgersInfoAsList().size(), msgNum / 2 + 1);
-        });
+        Assert.assertEquals(managedLedger.getLedgersInfoAsList().size(), msgNum / 2);
 
         for (int i = 0; i < msgNum; i++) {
             Message<byte[]> msg = consumer.receive(2, TimeUnit.SECONDS);

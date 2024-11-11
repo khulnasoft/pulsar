@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -121,7 +121,7 @@ public class LedgerLostAndSkipNonRecoverableTest extends ProducerConsumerBase {
 
         log.info("Make lost ledger [{}].", individualPosition.getLedgerId());
         pulsar.getBrokerService().getTopic(topicName, false).get().get().close(false);
-        pulsarTestContext.getMockBookKeeper().deleteLedger(individualPosition.getLedgerId());
+        mockBookKeeper.deleteLedger(individualPosition.getLedgerId());
 
         log.info("send some messages.");
         sendManyMessages(topicName, 3, messageCountPerEntry);
@@ -283,7 +283,6 @@ public class LedgerLostAndSkipNonRecoverableTest extends ProducerConsumerBase {
 
     private Consumer<String> createConsumer(String topicName, String subName, boolean enabledBatch) throws Exception {
         final Consumer<String> consumer = pulsarClient.newConsumer(Schema.JSON(String.class))
-                .autoScaledReceiverQueueSizeEnabled(false)
                 .subscriptionType(SubscriptionType.Failover)
                 .isAckReceiptEnabled(true)
                 .enableBatchIndexAcknowledgment(enabledBatch)

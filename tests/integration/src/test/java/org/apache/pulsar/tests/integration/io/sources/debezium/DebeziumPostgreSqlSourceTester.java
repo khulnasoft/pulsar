@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,8 +18,6 @@
  */
 package org.apache.pulsar.tests.integration.io.sources.debezium;
 
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.tests.integration.containers.DebeziumPostgreSqlContainer;
@@ -29,17 +27,21 @@ import org.apache.pulsar.tests.integration.io.sources.SourceTester;
 import org.apache.pulsar.tests.integration.topologies.PulsarCluster;
 import org.testng.Assert;
 
+import java.io.Closeable;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * A tester for testing Debezium Postgresql source.
  *
  * It reads binlog from Postgres, and store the debezium output into Pulsar.
  * This test verify that the target topic contains wanted number messages.
  *
- * Debezium Postgresql Container is "debezium/example-postgres:0.10",
+ * Debezium Postgresql Container is "debezium/example-postgres:2.5.0.Final",
  * which is a Postgresql database server preconfigured with an inventory database.
  */
 @Slf4j
-public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgreSqlContainer> {
+public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgreSqlContainer> implements Closeable {
 
     private static final String NAME = "debezium-postgres";
 
@@ -65,6 +67,7 @@ public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgre
 
         pulsarServiceUrl = "pulsar://pulsar-proxy:" + PulsarContainer.BROKER_PORT;
 
+        sourceConfig.put("connector.class", "io.debezium.connector.postgresql.PostgresConnector");
         sourceConfig.put("database.hostname", DebeziumPostgreSqlContainer.NAME);
         sourceConfig.put("database.port", "5432");
         sourceConfig.put("database.user", "postgres");
@@ -74,8 +77,9 @@ public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgre
         sourceConfig.put("database.dbname", "postgres");
         sourceConfig.put("schema.whitelist", "inventory");
         sourceConfig.put("table.blacklist", "inventory.spatial_ref_sys,inventory.geom");
-        sourceConfig.put("database.history.pulsar.service.url", pulsarServiceUrl);
+        sourceConfig.put("schema.history.internal.pulsar.service.url", pulsarServiceUrl);
         sourceConfig.put("topic.namespace", "debezium/postgresql");
+        sourceConfig.put("topic.prefix", "dbserver1");
     }
 
     @Override
@@ -137,7 +141,7 @@ public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgre
             String lastConfirmedFlushLsn = res.getStdout();
             log.info("Current confirmedFlushLsn: \n{} \nLast confirmedFlushLsn: \n{}",
                     confirmedFlushLsn.get(), lastConfirmedFlushLsn);
-            Assert.assertNotEquals(confirmedFlushLsn.get(), lastConfirmedFlushLsn);
+            org.junit.Assert.assertNotEquals(confirmedFlushLsn.get(), lastConfirmedFlushLsn);
             confirmedFlushLsn.set(lastConfirmedFlushLsn);
         } catch (Exception e) {
             Assert.fail("failed to get flush lsn", e);
@@ -153,10 +157,7 @@ public class DebeziumPostgreSqlSourceTester extends SourceTester<DebeziumPostgre
     @Override
     public void close() {
         if (pulsarCluster != null) {
-            if (debeziumPostgresqlContainer != null) {
-                PulsarCluster.stopService(DebeziumPostgreSqlContainer.NAME, debeziumPostgresqlContainer);
-                debeziumPostgresqlContainer = null;
-            }
+            PulsarCluster.stopService(DebeziumPostgreSqlContainer.NAME, debeziumPostgresqlContainer);
         }
     }
 

@@ -23,19 +23,8 @@
 
 workerId: standalone
 workerHostname: localhost
-# Set to null to disable the non-TLS service port.
 workerPort: 6750
 workerPortTls: 6751
-
-# Enable or disable the use of HA proxy protocol for resolving the client IP for http/https requests.
-webServiceHaProxyProtocolEnabled: false
-
-# Trust X-Forwarded-For header for resolving the client IP for http/https requests. Default is false.
-webServiceTrustXForwardedFor: false
-
-# Add detailed client/remote and server/local addresses and ports to http/https request logging.
-# Defaults to true when either webServiceHaProxyProtocolEnabled or webServiceTrustXForwardedFor is enabled.
-webServiceLogDetailedAddresses: null
 
 # The Configuration metadata store url
 # Examples:
@@ -69,17 +58,8 @@ enableClassloadingOfExternalFiles: false
 
 numFunctionPackageReplicas: 1
 downloadDirectory: download/pulsar_functions
-#Enable Functions Worker to use packageManagement Service to store package.
-functionsWorkerEnablePackageManagement: false
 # Classname of Pluggable JVM GC metrics logger that can log GC specific metrics
 # jvmGCMetricsLoggerClassName:
-
-################################
-# Function Metrics
-################################
-
-# Whether the '/metrics' endpoint requires authentication. Defaults to true
-authenticateMetricsEndpoint: true
 
 #################################################################
 # Function metadata management (assignment, scheduling, and etc)

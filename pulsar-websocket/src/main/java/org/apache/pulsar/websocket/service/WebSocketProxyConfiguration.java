@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,6 +32,14 @@ import org.apache.pulsar.common.configuration.PulsarConfiguration;
 @Getter
 @Setter
 public class WebSocketProxyConfiguration implements PulsarConfiguration {
+
+    // Number of threads used by Proxy server
+    public static final int PROXY_SERVER_EXECUTOR_THREADS = 2 * Runtime.getRuntime().availableProcessors();
+    // Number of threads used by Websocket service
+    public static final int WEBSOCKET_SERVICE_THREADS = 20;
+    // Number of threads used by Global ZK
+    public static final int GLOBAL_ZK_THREADS = 8;
+
     @FieldContext(required = true, doc = "Name of the cluster to which this broker belongs to")
     private String clusterName;
 
@@ -61,9 +69,7 @@ public class WebSocketProxyConfiguration implements PulsarConfiguration {
     @Deprecated
     @FieldContext(
             deprecated = true,
-            doc = "Configuration store connection string (as a comma-separated list). Deprecated in favor of "
-                    + "`configurationMetadataStoreUrl`"
-    )
+            doc = "Connection string of configuration store servers")
     private String configurationStoreServers;
 
     @FieldContext(doc = "Connection string of configuration metadata store servers")
@@ -95,20 +101,6 @@ public class WebSocketProxyConfiguration implements PulsarConfiguration {
 
     @FieldContext(doc = "Hostname or IP address the service binds on, default is 0.0.0.0.")
     private String bindAddress = "0.0.0.0";
-
-    @FieldContext(doc = "Enable or disable the use of HA proxy protocol for resolving the client IP for http/https "
-                    + "requests. Default is false.")
-    private boolean webServiceHaProxyProtocolEnabled = false;
-
-    @FieldContext(doc = "Trust X-Forwarded-For header for resolving the client IP for http/https requests.\n"
-                    + "Default is false.")
-    private boolean webServiceTrustXForwardedFor = false;
-
-    @FieldContext(doc =
-            "Add detailed client/remote and server/local addresses and ports to http/https request logging.\n"
-                    + "Defaults to true when either webServiceHaProxyProtocolEnabled or webServiceTrustXForwardedFor "
-                    + "is enabled.")
-    private Boolean webServiceLogDetailedAddresses;
 
     @FieldContext(doc = "Maximum size of a text message during parsing in WebSocket proxy")
     private int webSocketMaxTextFrameSize = 1024 * 1024;
@@ -153,31 +145,8 @@ public class WebSocketProxyConfiguration implements PulsarConfiguration {
     @FieldContext(doc = "Number of threads to used in HTTP server")
     private int numHttpServerThreads = Math.max(6, Runtime.getRuntime().availableProcessors());
 
-    @FieldContext(doc = "Number of threads used by Websocket service")
-    private int webSocketNumServiceThreads = 20;
-
-    @FieldContext(doc = "Max concurrent web requests")
-    private int maxConcurrentHttpRequests = 1024;
-
-    @FieldContext(doc = "Capacity for thread pool queue in the HTTP server"
-                    + " Default is set to 8192."
-    )
-    private int httpServerThreadPoolQueueSize = 8192;
-
-    @FieldContext(doc = "Capacity for accept queue in the HTTP server"
-                    + " Default is set to 8192."
-    )
-    private int httpServerAcceptQueueSize = 8192;
-
-    @FieldContext(doc = "Maximum number of inbound http connections. "
-            + "(0 to disable limiting)")
-    private int maxHttpServerConnections = 2048;
-
     @FieldContext(doc = "Number of connections per broker in Pulsar client used in WebSocket proxy")
     private int webSocketConnectionsPerBroker = Runtime.getRuntime().availableProcessors();
-
-    @FieldContext(doc = "Memory limit in MBs for direct memory in Pulsar Client used in WebSocket proxy")
-    private int webSocketPulsarClientMemoryLimitInMB = 0;
 
     @FieldContext(doc = "Timeout of idling WebSocket session (in milliseconds)")
     private int webSocketSessionIdleTimeoutMillis = 300000;
@@ -268,11 +237,6 @@ public class WebSocketProxyConfiguration implements PulsarConfiguration {
                     + "Example:- [TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256]"
     )
     private Set<String> webServiceTlsCiphers = new TreeSet<>();
-
-    @FieldContext(
-            doc = "CryptoKeyReader factory classname to support encryption at websocket."
-    )
-    private String cryptoKeyReaderFactoryClassName;
 
     @FieldContext(doc = "Key-value properties. Types are all String")
     private Properties properties = new Properties();

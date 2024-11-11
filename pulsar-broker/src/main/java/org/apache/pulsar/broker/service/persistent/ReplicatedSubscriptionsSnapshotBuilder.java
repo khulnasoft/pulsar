@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,6 +20,7 @@ package org.apache.pulsar.broker.service.persistent;
 
 import io.prometheus.client.Summary;
 import java.time.Clock;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -28,12 +29,11 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.stats.OpenTelemetryReplicatedSubscriptionStats;
 import org.apache.pulsar.common.api.proto.MarkersMessageIdData;
 import org.apache.pulsar.common.api.proto.ReplicatedSubscriptionsSnapshotResponse;
 import org.apache.pulsar.common.protocol.Markers;
-import org.apache.pulsar.opentelemetry.annotations.PulsarDeprecatedMetric;
 
 @Slf4j
 public class ReplicatedSubscriptionsSnapshotBuilder {
@@ -42,7 +42,7 @@ public class ReplicatedSubscriptionsSnapshotBuilder {
     private final ReplicatedSubscriptionsController controller;
 
     private final Map<String, MarkersMessageIdData> responses = new TreeMap<>();
-    private final Set<String> remoteClusters;
+    private final List<String> remoteClusters;
     private final Set<String> missingClusters;
 
     private final boolean needTwoRounds;
@@ -53,13 +53,11 @@ public class ReplicatedSubscriptionsSnapshotBuilder {
 
     private final Clock clock;
 
-    @PulsarDeprecatedMetric(newMetricName = OpenTelemetryReplicatedSubscriptionStats.SNAPSHOT_DURATION_METRIC_NAME)
-    @Deprecated
-    public static final Summary SNAPSHOT_METRIC = Summary.build("pulsar_replicated_subscriptions_snapshot_ms",
+    private static final Summary snapshotMetric = Summary.build("pulsar_replicated_subscriptions_snapshot_ms",
             "Time taken to create a consistent snapshot across clusters").register();
 
     public ReplicatedSubscriptionsSnapshotBuilder(ReplicatedSubscriptionsController controller,
-                                                  Set<String> remoteClusters, ServiceConfiguration conf, Clock clock) {
+            List<String> remoteClusters, ServiceConfiguration conf, Clock clock) {
         this.snapshotId = UUID.randomUUID().toString();
         this.controller = controller;
         this.remoteClusters = remoteClusters;
@@ -120,12 +118,14 @@ public class ReplicatedSubscriptionsSnapshotBuilder {
             log.debug("[{}] Snapshot is complete {}", controller.topic().getName(), snapshotId);
         }
         // Snapshot is now complete, store it in the local topic
-        Position p = position;
+        PositionImpl p = (PositionImpl) position;
         controller.writeMarker(
                 Markers.newReplicatedSubscriptionsSnapshot(snapshotId, controller.localCluster(),
                         p.getLedgerId(), p.getEntryId(), responses));
         controller.snapshotCompleted(snapshotId);
 
+        double latencyMillis = clock.millis() - startTimeMillis;
+        snapshotMetric.observe(latencyMillis);
     }
 
     boolean isTimedOut() {
@@ -134,9 +134,5 @@ public class ReplicatedSubscriptionsSnapshotBuilder {
 
     long getStartTimeMillis() {
         return startTimeMillis;
-    }
-
-    long getDurationMillis() {
-        return clock.millis() - startTimeMillis;
     }
 }

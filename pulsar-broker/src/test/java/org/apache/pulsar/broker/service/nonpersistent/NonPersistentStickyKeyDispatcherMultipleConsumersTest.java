@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,21 +23,23 @@ import static org.apache.pulsar.common.protocol.Commands.serializeMetadataAndPay
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPromise;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.impl.EntryImpl;
 import org.apache.pulsar.broker.PulsarService;
@@ -49,9 +51,11 @@ import org.apache.pulsar.broker.service.EntryBatchSizes;
 import org.apache.pulsar.broker.service.HashRangeAutoSplitStickyKeyConsumerSelector;
 import org.apache.pulsar.broker.service.RedeliveryTracker;
 import org.apache.pulsar.broker.service.StickyKeyConsumerSelector;
+import org.apache.pulsar.broker.service.persistent.DispatchRateLimiter;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.policies.data.HierarchyTopicPolicies;
 import org.apache.pulsar.common.protocol.Commands;
+import org.mockito.MockedStatic;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -91,19 +95,18 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumersTest {
         doReturn(topicPolicies).when(topicMock).getHierarchyTopicPolicies();
 
         subscriptionMock = mock(NonPersistentSubscription.class);
-        selector = new HashRangeAutoSplitStickyKeyConsumerSelector();
-        nonpersistentDispatcher = new NonPersistentStickyKeyDispatcherMultipleConsumers(
-            topicMock, subscriptionMock, selector);
-    }
 
-    @Test(timeOut = 10000)
-    public void testAddConsumerWhenClosed() throws Exception {
-        nonpersistentDispatcher.close().get();
-        Consumer consumer = mock(Consumer.class);
-        nonpersistentDispatcher.addConsumer(consumer);
-        verify(consumer, times(1)).disconnect();
-        assertEquals(0, nonpersistentDispatcher.getConsumers().size());
-        assertTrue(selector.getConsumerKeyHashRanges().isEmpty());
+        try (MockedStatic<DispatchRateLimiter> rateLimiterMockedStatic = mockStatic(DispatchRateLimiter.class);) {
+            rateLimiterMockedStatic.when(() -> DispatchRateLimiter.isDispatchRateNeeded(
+                            any(BrokerService.class),
+                            any(Optional.class),
+                            anyString(),
+                            any(DispatchRateLimiter.Type.class)))
+                    .thenReturn(false);
+            selector = new HashRangeAutoSplitStickyKeyConsumerSelector();
+            nonpersistentDispatcher = new NonPersistentStickyKeyDispatcherMultipleConsumers(
+                    topicMock, subscriptionMock, selector);
+        }
     }
 
     @Test(timeOut = 10000)
@@ -128,15 +131,15 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumersTest {
                 assertEquals(byteBuf.toString(UTF_8), "message" + index);
             };
             return mockPromise;
-        }).when(consumerMock).sendMessages(any(List.class), any(List.class), any(EntryBatchSizes.class), any(),
-                anyInt(), anyLong(), anyLong(), any(RedeliveryTracker.class), anyLong());
+        }).when(consumerMock).sendMessages(any(List.class), any(EntryBatchSizes.class), any(),
+                anyInt(), anyLong(), anyLong(), any(RedeliveryTracker.class));
         try {
             nonpersistentDispatcher.sendMessages(entries);
         } catch (Exception e) {
             fail("Failed to sendMessages.", e);
         }
-        verify(consumerMock, times(1)).sendMessages(any(List.class), any(List.class), any(EntryBatchSizes.class),
-                eq(null), anyInt(), anyLong(), anyLong(), any(RedeliveryTracker.class), anyLong());
+        verify(consumerMock, times(1)).sendMessages(any(List.class), any(EntryBatchSizes.class),
+                eq(null), anyInt(), anyLong(), anyLong(), any(RedeliveryTracker.class));
     }
 
     @Test(timeOut = 10000)

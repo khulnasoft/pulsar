@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,12 +20,9 @@ package org.apache.pulsar.broker.authorization;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import java.net.SocketAddress;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 import javax.ws.rs.core.Response;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -33,8 +30,6 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationParameters;
 import org.apache.pulsar.broker.resources.PulsarResources;
-import org.apache.pulsar.client.admin.GrantTopicPermissionOptions;
-import org.apache.pulsar.client.admin.RevokeTopicPermissionOptions;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
@@ -128,17 +123,6 @@ public class AuthorizationService {
     }
 
     /**
-     *
-     * Revoke authorization-action permission on a namespace to the given client.
-     *
-     * @param namespace
-     * @param role
-     */
-    public CompletableFuture<Void> revokePermissionAsync(NamespaceName namespace, String role) {
-        return provider.revokePermissionAsync(namespace, role);
-    }
-
-    /**
      * Grant permission to roles that can access subscription-admin api.
      *
      * @param namespace
@@ -172,34 +156,16 @@ public class AuthorizationService {
      * NOTE: used to complete with {@link IllegalArgumentException} when namespace not found or with
      * {@link IllegalStateException} when failed to grant permission.
      *
-     * @param topicName
+     * @param topicname
      * @param role
      * @param authDataJson
      *            additional authdata in json for targeted authorization provider
      * @completesWith null when the permissions are updated successfully.
      * @completesWith {@link MetadataStoreException} when the MetadataStore is not updated.
      */
-    public CompletableFuture<Void> grantPermissionAsync(TopicName topicName, Set<AuthAction> actions, String role,
+    public CompletableFuture<Void> grantPermissionAsync(TopicName topicname, Set<AuthAction> actions, String role,
                                                         String authDataJson) {
-        return provider.grantPermissionAsync(topicName, actions, role, authDataJson);
-    }
-
-    public CompletableFuture<Void> grantPermissionAsync(List<GrantTopicPermissionOptions> options) {
-        return provider.grantPermissionAsync(options);
-    }
-
-    public CompletableFuture<Void> revokePermissionAsync(List<RevokeTopicPermissionOptions> options) {
-        return provider.revokePermissionAsync(options);
-    }
-
-    /**
-     * Revoke authorization-action permission on a topic to the given client.
-     *
-     * @param topicName
-     * @param role
-     */
-    public CompletableFuture<Void> revokePermissionAsync(TopicName topicName, String role) {
-        return provider.revokePermissionAsync(topicName, role);
+        return provider.grantPermissionAsync(topicname, actions, role, authDataJson);
     }
 
     /**
@@ -255,7 +221,7 @@ public class AuthorizationService {
         try {
             return canProduceAsync(topicName, role, authenticationData).get(
                     conf.getMetadataStoreOperationTimeoutSeconds(), SECONDS);
-        } catch (TimeoutException e) {
+        } catch (InterruptedException e) {
             log.warn("Time-out {} sec while checking authorization on {} ",
                     conf.getMetadataStoreOperationTimeoutSeconds(), topicName);
             throw e;
@@ -271,7 +237,7 @@ public class AuthorizationService {
         try {
             return canConsumeAsync(topicName, role, authenticationData, subscription)
                     .get(conf.getMetadataStoreOperationTimeoutSeconds(), SECONDS);
-        } catch (TimeoutException e) {
+        } catch (InterruptedException e) {
             log.warn("Time-out {} sec while checking authorization on {} ",
                     conf.getMetadataStoreOperationTimeoutSeconds(), topicName);
             throw e;
@@ -297,7 +263,7 @@ public class AuthorizationService {
         try {
             return canLookupAsync(topicName, role, authenticationData)
                     .get(conf.getMetadataStoreOperationTimeoutSeconds(), SECONDS);
-        } catch (TimeoutException e) {
+        } catch (InterruptedException e) {
             log.warn("Time-out {} sec while checking authorization on {} ",
                     conf.getMetadataStoreOperationTimeoutSeconds(), topicName);
             throw e;
@@ -437,8 +403,10 @@ public class AuthorizationService {
                     if (op.isPresent()) {
                         return isTenantAdmin(tenant, role, op.get(), authData);
                     } else {
-                        return CompletableFuture.failedFuture(new RestException(Response.Status.NOT_FOUND,
+                        CompletableFuture<Boolean> future = new CompletableFuture<>();
+                        future.completeExceptionally(new RestException(Response.Status.NOT_FOUND,
                                 "Tenant does not exist"));
+                        return future;
                     }
                 });
     }
@@ -451,7 +419,7 @@ public class AuthorizationService {
     /**
      * Whether the authenticatedPrincipal and the originalPrincipal form a valid pair. This method assumes that
      * authenticatedPrincipal and originalPrincipal can be equal, as long as they are not a proxy role. This use
-     * case is relevant for the admin server because of the way the proxy handles authentication. The binary protocol
+     * case is relvant for the admin server because of the way the proxy handles authentication. The binary protocol
      * should not use this method.
      * @return true when roles are a valid combination and false when roles are an invalid combination
      */
@@ -498,7 +466,7 @@ public class AuthorizationService {
         }
     }
 
-    public boolean isProxyRole(String role) {
+    private boolean isProxyRole(String role) {
         return role != null && conf.getProxyRoles().contains(role);
     }
 
@@ -544,10 +512,6 @@ public class AuthorizationService {
         }
     }
 
-    /**
-     * @deprecated - will be removed after 2.12. Use async variant.
-     */
-    @Deprecated
     public boolean allowTenantOperation(String tenantName,
                                         TenantOperation operation,
                                         String originalRole,
@@ -650,10 +614,6 @@ public class AuthorizationService {
         }
     }
 
-    /**
-     * @deprecated - will be removed after 2.12. Use async variant.
-     */
-    @Deprecated
     public boolean allowNamespacePolicyOperation(NamespaceName namespaceName,
                                                  PolicyName policy,
                                                  PolicyOperation operation,
@@ -714,10 +674,6 @@ public class AuthorizationService {
     }
 
 
-    /**
-     * @deprecated - will be removed after 2.12. Use async variant.
-     */
-    @Deprecated
     public Boolean allowTopicPolicyOperation(TopicName topicName,
                                              PolicyName policy,
                                              PolicyOperation operation,
@@ -809,10 +765,6 @@ public class AuthorizationService {
         }
     }
 
-    /**
-     * @deprecated - will be removed after 2.12. Use async variant.
-     */
-    @Deprecated
     public Boolean allowTopicOperation(TopicName topicName,
                                        TopicOperation operation,
                                        String originalRole,
@@ -826,21 +778,5 @@ public class AuthorizationService {
         } catch (ExecutionException e) {
             throw new RestException(e.getCause());
         }
-    }
-
-    public CompletableFuture<Void> removePermissionsAsync(TopicName topicName) {
-        return provider.removePermissionsAsync(topicName);
-    }
-
-    public CompletableFuture<Map<String, Set<AuthAction>>> getPermissionsAsync(TopicName topicName) {
-        return provider.getPermissionsAsync(topicName);
-    }
-
-    public CompletableFuture<Map<String, Set<AuthAction>>> getPermissionsAsync(NamespaceName namespaceName) {
-        return provider.getPermissionsAsync(namespaceName);
-    }
-
-    public CompletableFuture<Map<String, Set<String>>> getSubscriptionPermissionsAsync(NamespaceName namespaceName) {
-        return provider.getSubscriptionPermissionsAsync(namespaceName);
     }
 }

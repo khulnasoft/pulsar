@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,10 +18,10 @@
  */
 package org.apache.pulsar.broker.admin.impl;
 
-import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static javax.ws.rs.core.Response.Status.METHOD_NOT_ALLOWED;
 import static javax.ws.rs.core.Response.Status.NOT_FOUND;
 import static javax.ws.rs.core.Response.Status.SERVICE_UNAVAILABLE;
+import com.google.common.collect.Lists;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,24 +34,17 @@ import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.admin.AdminResource;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.broker.transaction.buffer.AbortedTxnProcessor;
 import org.apache.pulsar.broker.web.RestException;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.Transactions;
 import org.apache.pulsar.client.api.transaction.TxnID;
-import org.apache.pulsar.common.api.proto.TxnAction;
 import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.common.naming.SystemTopicNames;
 import org.apache.pulsar.common.naming.TopicDomain;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
-import org.apache.pulsar.common.policies.data.SnapshotSystemTopicInternalStats;
-import org.apache.pulsar.common.policies.data.TransactionBufferInternalStats;
 import org.apache.pulsar.common.policies.data.TransactionBufferStats;
 import org.apache.pulsar.common.policies.data.TransactionCoordinatorInfo;
 import org.apache.pulsar.common.policies.data.TransactionCoordinatorInternalStats;
@@ -62,7 +55,6 @@ import org.apache.pulsar.common.policies.data.TransactionLogStats;
 import org.apache.pulsar.common.policies.data.TransactionMetadata;
 import org.apache.pulsar.common.policies.data.TransactionPendingAckInternalStats;
 import org.apache.pulsar.common.policies.data.TransactionPendingAckStats;
-import org.apache.pulsar.common.stats.PositionInPendingAckStats;
 import org.apache.pulsar.common.util.Codec;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.transaction.coordinator.TransactionCoordinatorID;
@@ -85,7 +77,7 @@ public abstract class TransactionsBase extends AdminResource {
         }
         Map<Integer, TransactionCoordinatorInfo> result = new HashMap<>();
         admin.lookups()
-                .lookupPartitionedTopicAsync(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartitionedTopicName())
+                .lookupPartitionedTopicAsync(TopicName.TRANSACTION_COORDINATOR_ASSIGN.getPartitionedTopicName())
                 .thenAccept(map -> {
                     map.forEach((topicPartition, brokerServiceUrl) -> {
                         final int coordinatorId = TopicName.getPartitionIndex(topicPartition);
@@ -105,7 +97,7 @@ public abstract class TransactionsBase extends AdminResource {
     protected void internalGetCoordinatorStats(AsyncResponse asyncResponse, boolean authoritative,
                                                Integer coordinatorId) {
         if (coordinatorId != null) {
-            validateTopicOwnership(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId),
+            validateTopicOwnership(TopicName.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId),
                     authoritative);
             TransactionMetadataStore transactionMetadataStore =
                     pulsar().getTransactionMetadataStoreService().getStores()
@@ -117,7 +109,7 @@ public abstract class TransactionsBase extends AdminResource {
             }
             asyncResponse.resume(transactionMetadataStore.getCoordinatorStats());
         } else {
-            getPartitionedTopicMetadataAsync(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN,
+            getPartitionedTopicMetadataAsync(TopicName.TRANSACTION_COORDINATOR_ASSIGN,
                     false, false).thenAccept(partitionMetadata -> {
                 if (partitionMetadata.partitions == 0) {
                     asyncResponse.resume(new RestException(Response.Status.NOT_FOUND,
@@ -125,7 +117,7 @@ public abstract class TransactionsBase extends AdminResource {
                     return;
                 }
                 List<CompletableFuture<TransactionCoordinatorStats>> transactionMetadataStoreInfoFutures =
-                        new ArrayList<>();
+                        Lists.newArrayList();
                 for (int i = 0; i < partitionMetadata.partitions; i++) {
                     try {
                         transactionMetadataStoreInfoFutures
@@ -174,23 +166,21 @@ public abstract class TransactionsBase extends AdminResource {
                 .thenApply(topic -> topic.getTransactionInBufferStats(new TxnID(mostSigBits, leastSigBits)));
     }
 
-    protected CompletableFuture<TransactionBufferStats> internalGetTransactionBufferStats(boolean authoritative,
-                                                                                          boolean lowWaterMarks,
-                                                                                          boolean segmentStats) {
+    protected CompletableFuture<TransactionBufferStats> internalGetTransactionBufferStats(boolean authoritative) {
         return getExistingPersistentTopicAsync(authoritative)
-                .thenApply(topic -> topic.getTransactionBufferStats(lowWaterMarks, segmentStats));
+                .thenApply(topic -> topic.getTransactionBufferStats());
     }
 
     protected CompletableFuture<TransactionPendingAckStats> internalGetPendingAckStats(
-            boolean authoritative, String subName, boolean lowWaterMarks) {
+            boolean authoritative, String subName) {
         return getExistingPersistentTopicAsync(authoritative)
-                .thenApply(topic -> topic.getTransactionPendingAckStats(subName, lowWaterMarks));
+                .thenApply(topic -> topic.getTransactionPendingAckStats(subName));
     }
 
     protected void internalGetTransactionMetadata(AsyncResponse asyncResponse,
                                                   boolean authoritative, int mostSigBits, long leastSigBits) {
         try {
-            validateTopicOwnership(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartition(mostSigBits),
+            validateTopicOwnership(TopicName.TRANSACTION_COORDINATOR_ASSIGN.getPartition(mostSigBits),
                     authoritative);
             CompletableFuture<TransactionMetadata> transactionMetadataFuture = new CompletableFuture<>();
             TxnMeta txnMeta = pulsar().getTransactionMetadataStoreService()
@@ -300,7 +290,7 @@ public abstract class TransactionsBase extends AdminResource {
                                                boolean authoritative, long timeout, Integer coordinatorId) {
         try {
             if (coordinatorId != null) {
-                validateTopicOwnership(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId),
+                validateTopicOwnership(TopicName.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId),
                         authoritative);
                 TransactionMetadataStore transactionMetadataStore =
                         pulsar().getTransactionMetadataStoreService().getStores()
@@ -336,7 +326,7 @@ public abstract class TransactionsBase extends AdminResource {
                     asyncResponse.resume(transactionMetadata);
                 });
             } else {
-                getPartitionedTopicMetadataAsync(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN,
+                getPartitionedTopicMetadataAsync(TopicName.TRANSACTION_COORDINATOR_ASSIGN,
                         false, false).thenAccept(partitionMetadata -> {
                     if (partitionMetadata.partitions == 0) {
                         asyncResponse.resume(new RestException(Response.Status.NOT_FOUND,
@@ -344,7 +334,7 @@ public abstract class TransactionsBase extends AdminResource {
                         return;
                     }
                     List<CompletableFuture<Map<String, TransactionMetadata>>> completableFutures =
-                            new ArrayList<>();
+                            Lists.newArrayList();
                     for (int i = 0; i < partitionMetadata.partitions; i++) {
                         try {
                             completableFutures
@@ -389,7 +379,7 @@ public abstract class TransactionsBase extends AdminResource {
     protected void internalGetCoordinatorInternalStats(AsyncResponse asyncResponse, boolean authoritative,
                                                        boolean metadata, int coordinatorId) {
         try {
-            TopicName topicName = SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId);
+            TopicName topicName = TopicName.TRANSACTION_COORDINATOR_ASSIGN.getPartition(coordinatorId);
             validateTopicOwnership(topicName, authoritative);
             TransactionMetadataStore metadataStore = pulsar().getTransactionMetadataStoreService()
                     .getStores().get(TransactionCoordinatorID.get(coordinatorId));
@@ -437,78 +427,16 @@ public abstract class TransactionsBase extends AdminResource {
                 );
     }
 
-    protected CompletableFuture<TransactionBufferInternalStats> internalGetTransactionBufferInternalStats(
-            boolean authoritative, boolean metadata) {
-        TransactionBufferInternalStats transactionBufferInternalStats = new TransactionBufferInternalStats();
-        return getExistingPersistentTopicAsync(authoritative)
-                .thenCompose(topic -> {
-                    AbortedTxnProcessor.SnapshotType snapshotType = topic.getTransactionBuffer().getSnapshotType();
-                    if (snapshotType == null) {
-                        return FutureUtil.failedFuture(new RestException(NOT_FOUND,
-                                "Transaction buffer Snapshot for the topic does not exist"));
-                    } else if (snapshotType == AbortedTxnProcessor.SnapshotType.Segment) {
-                        transactionBufferInternalStats.snapshotType = snapshotType.toString();
-                        TopicName segmentTopic = TopicName.get(TopicDomain.persistent.toString(), namespaceName,
-                                SystemTopicNames.TRANSACTION_BUFFER_SNAPSHOT_SEGMENTS);
-                        CompletableFuture<SnapshotSystemTopicInternalStats> segmentInternalStatsFuture =
-                                getTxnSnapshotInternalStats(segmentTopic, metadata);
-                        TopicName indexTopic = TopicName.get(TopicDomain.persistent.toString(),
-                                namespaceName,
-                                SystemTopicNames.TRANSACTION_BUFFER_SNAPSHOT_INDEXES);
-                        CompletableFuture<SnapshotSystemTopicInternalStats> segmentIndexInternalStatsFuture =
-                                getTxnSnapshotInternalStats(indexTopic, metadata);
-                        return segmentIndexInternalStatsFuture
-                                .thenCombine(segmentInternalStatsFuture, (indexStats, segmentStats) -> {
-                                    transactionBufferInternalStats.segmentIndexInternalStats = indexStats;
-                                    transactionBufferInternalStats.segmentInternalStats = segmentStats;
-                                    return transactionBufferInternalStats;
-                                });
-                    } else if (snapshotType == AbortedTxnProcessor.SnapshotType.Single) {
-                        transactionBufferInternalStats.snapshotType = snapshotType.toString();
-                        TopicName singleSnapshotTopic = TopicName.get(TopicDomain.persistent.toString(), namespaceName,
-                                SystemTopicNames.TRANSACTION_BUFFER_SNAPSHOT);
-                        return getTxnSnapshotInternalStats(singleSnapshotTopic, metadata)
-                                .thenApply(snapshotSystemTopicInternalStats -> {
-                                   transactionBufferInternalStats.singleSnapshotSystemTopicInternalStats =
-                                           snapshotSystemTopicInternalStats;
-                                   return transactionBufferInternalStats;
-                                });
-                    }
-                    return FutureUtil.failedFuture(new RestException(INTERNAL_SERVER_ERROR, "Unknown SnapshotType "
-                            + snapshotType));
-                });
-    }
-
-    private CompletableFuture<SnapshotSystemTopicInternalStats> getTxnSnapshotInternalStats(TopicName topicName,
-                                                                                            boolean metadata) {
-        final PulsarAdmin admin;
-        try {
-            admin = pulsar().getAdminClient();
-        } catch (PulsarServerException e) {
-            return FutureUtil.failedFuture(new RestException(e));
-        }
-        return admin.topics().getInternalStatsAsync(topicName.toString(), metadata)
-                        .thenApply(persistentTopicInternalStats -> {
-                            SnapshotSystemTopicInternalStats
-                                    snapshotSystemTopicInternalStats = new SnapshotSystemTopicInternalStats();
-                            snapshotSystemTopicInternalStats.managedLedgerInternalStats = persistentTopicInternalStats;
-                            snapshotSystemTopicInternalStats.managedLedgerName = topicName.getEncodedLocalName();
-                            return snapshotSystemTopicInternalStats;
-                        });
-    }
-
     protected CompletableFuture<PersistentTopic> getExistingPersistentTopicAsync(boolean authoritative) {
         return validateTopicOwnershipAsync(topicName, authoritative).thenCompose(__ -> {
             CompletableFuture<Optional<Topic>> topicFuture = pulsar().getBrokerService()
                     .getTopics().get(topicName.toString());
             if (topicFuture == null) {
-                return FutureUtil.failedFuture(new RestException(NOT_FOUND,
-                        String.format("Topic not found %s", topicName.toString())));
+                return FutureUtil.failedFuture(new RestException(NOT_FOUND, "Topic not found"));
             }
             return topicFuture.thenCompose(optionalTopic -> {
                 if (!optionalTopic.isPresent()) {
-                    return FutureUtil.failedFuture(new RestException(NOT_FOUND,
-                            String.format("Topic not found %s", topicName.toString())));
+                    return FutureUtil.failedFuture(new RestException(NOT_FOUND, "Topic not found"));
                 }
                 return CompletableFuture.completedFuture((PersistentTopic) optionalTopic.get());
             });
@@ -532,49 +460,5 @@ public abstract class TransactionsBase extends AdminResource {
                     topic, e);
             throw new RestException(Response.Status.PRECONDITION_FAILED, "Topic name is not valid");
         }
-    }
-
-    protected CompletableFuture<Void> internalScaleTransactionCoordinators(int replicas) {
-        return validateSuperUserAccessAsync()
-                .thenCompose((ignore) -> namespaceResources().getPartitionedTopicResources()
-                        .updatePartitionedTopicAsync(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN, p -> {
-                            if (p.partitions >= replicas) {
-                                throw new RestException(Response.Status.NOT_ACCEPTABLE,
-                                        "Number of transaction coordinators should "
-                                                + "be more than the current number of transaction coordinator");
-                            }
-                            return new PartitionedTopicMetadata(replicas);
-                        }));
-    }
-
-    protected CompletableFuture<PositionInPendingAckStats> internalGetPositionStatsPendingAckStats(
-            boolean authoritative, String subName, Position position, Integer batchIndex) {
-        CompletableFuture<PositionInPendingAckStats> completableFuture = new CompletableFuture<>();
-        getExistingPersistentTopicAsync(authoritative)
-                .thenAccept(topic -> {
-                    PositionInPendingAckStats result = topic.getSubscription(subName)
-                    .checkPositionInPendingAckState(position, batchIndex);
-                    completableFuture.complete(result);
-                }).exceptionally(ex -> {
-                    completableFuture.completeExceptionally(ex);
-                    return null;
-        });
-        return completableFuture;
-    }
-
-    protected CompletableFuture<Void> internalAbortTransaction(boolean authoritative, long mostSigBits,
-                                                               long leastSigBits) {
-
-        if (mostSigBits < 0 || mostSigBits > Integer.MAX_VALUE) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("mostSigBits out of bounds"));
-        }
-
-        int partitionIdx = (int) mostSigBits;
-
-        return validateTopicOwnershipAsync(
-                SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN.getPartition(partitionIdx), authoritative)
-                .thenCompose(__ -> validateSuperUserAccessAsync())
-                .thenCompose(__ -> pulsar().getTransactionMetadataStoreService()
-                        .endTransaction(new TxnID(mostSigBits, leastSigBits), TxnAction.ABORT_VALUE, false));
     }
 }

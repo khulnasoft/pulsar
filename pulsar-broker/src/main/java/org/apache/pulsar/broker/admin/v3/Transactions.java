@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,7 +29,6 @@ import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.Encoded;
 import javax.ws.rs.GET;
-import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -37,26 +36,11 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.pulsar.broker.admin.impl.TransactionsBase;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.web.RestException;
-import org.apache.pulsar.common.policies.data.TransactionBufferInternalStats;
-import org.apache.pulsar.common.policies.data.TransactionBufferStats;
-import org.apache.pulsar.common.policies.data.TransactionCoordinatorInfo;
-import org.apache.pulsar.common.policies.data.TransactionCoordinatorInternalStats;
-import org.apache.pulsar.common.policies.data.TransactionCoordinatorStats;
-import org.apache.pulsar.common.policies.data.TransactionInBufferStats;
-import org.apache.pulsar.common.policies.data.TransactionInPendingAckStats;
-import org.apache.pulsar.common.policies.data.TransactionMetadata;
-import org.apache.pulsar.common.policies.data.TransactionPendingAckInternalStats;
-import org.apache.pulsar.common.policies.data.TransactionPendingAckStats;
-import org.apache.pulsar.common.stats.PositionInPendingAckStats;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.jetbrains.annotations.Nullable;
 
 @Path("/transactions")
 @Produces(MediaType.APPLICATION_JSON)
@@ -67,8 +51,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/coordinators")
-    @ApiOperation(value = "List transaction coordinators.",
-            response = TransactionCoordinatorInfo.class, responseContainer = "List")
+    @ApiOperation(value = "List transaction coordinators.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 503, message = "This Broker is not "
                     + "configured with transactionCoordinatorEnabled=true.")})
@@ -79,7 +62,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/coordinatorStats")
-    @ApiOperation(value = "Get transaction coordinator stats.", response = TransactionCoordinatorStats.class)
+    @ApiOperation(value = "Get transaction coordinator stats.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 503, message = "This Broker is not "
                     + "configured with transactionCoordinatorEnabled=true."),
@@ -95,7 +78,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/transactionInBufferStats/{tenant}/{namespace}/{topic}/{mostSigBits}/{leastSigBits}")
-    @ApiOperation(value = "Get transaction state in transaction buffer.", response = TransactionInBufferStats.class)
+    @ApiOperation(value = "Get transaction state in transaction buffer.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic doesn't exist"),
             @ApiResponse(code = 503, message = "This Broker is not configured "
@@ -116,12 +99,8 @@ public class Transactions extends TransactionsBase {
             validateTopicName(tenant, namespace, encodedTopic);
             internalGetTransactionInBufferStats(authoritative, Long.parseLong(mostSigBits),
                     Long.parseLong(leastSigBits))
-                    .thenAccept(asyncResponse::resume)
+                    .thenAccept(stat -> asyncResponse.resume(stat))
                     .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get transaction state in transaction buffer {}",
-                                    clientAppId(), topicName, ex);
-                        }
                         resumeAsyncResponseExceptionally(asyncResponse, ex);
                         return null;
                     });
@@ -132,7 +111,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/transactionInPendingAckStats/{tenant}/{namespace}/{topic}/{subName}/{mostSigBits}/{leastSigBits}")
-    @ApiOperation(value = "Get transaction state in pending ack.", response = TransactionInPendingAckStats.class)
+    @ApiOperation(value = "Get transaction state in pending ack.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic doesn't exist"),
             @ApiResponse(code = 503, message = "This Broker is not configured "
@@ -154,12 +133,8 @@ public class Transactions extends TransactionsBase {
             validateTopicName(tenant, namespace, encodedTopic);
             internalGetTransactionInPendingAckStats(authoritative, Long.parseLong(mostSigBits),
                     Long.parseLong(leastSigBits), subName)
-                    .thenAccept(asyncResponse::resume)
+                    .thenAccept(stat -> asyncResponse.resume(stat))
                     .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get transaction state in pending ack {}",
-                                    clientAppId(), topicName, ex);
-                        }
                         resumeAsyncResponseExceptionally(asyncResponse, ex);
                         return null;
                     });
@@ -170,7 +145,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/transactionBufferStats/{tenant}/{namespace}/{topic}")
-    @ApiOperation(value = "Get transaction buffer stats in topic.", response = TransactionBufferStats.class)
+    @ApiOperation(value = "Get transaction buffer stats in topic.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic doesn't exist"),
             @ApiResponse(code = 503, message = "This Broker is not configured "
@@ -183,21 +158,13 @@ public class Transactions extends TransactionsBase {
                                           @DefaultValue("false") boolean authoritative,
                                           @PathParam("tenant") String tenant,
                                           @PathParam("namespace") String namespace,
-                                          @PathParam("topic") @Encoded String encodedTopic,
-                                          @QueryParam("lowWaterMarks") @DefaultValue("false")
-                                                      boolean lowWaterMarks,
-                                          @QueryParam("segmentStats") @DefaultValue("false")
-                                              boolean segmentStats) {
+                                          @PathParam("topic") @Encoded String encodedTopic) {
         try {
             checkTransactionCoordinatorEnabled();
             validateTopicName(tenant, namespace, encodedTopic);
-            internalGetTransactionBufferStats(authoritative, lowWaterMarks, segmentStats)
-                    .thenAccept(asyncResponse::resume)
+            internalGetTransactionBufferStats(authoritative)
+                    .thenAccept(stat -> asyncResponse.resume(stat))
                     .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get transaction buffer stats in topic {}",
-                                    clientAppId(), topicName, ex);
-                        }
                         resumeAsyncResponseExceptionally(asyncResponse, ex);
                         return null;
                     });
@@ -208,7 +175,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/pendingAckStats/{tenant}/{namespace}/{topic}/{subName}")
-    @ApiOperation(value = "Get transaction pending ack stats in topic.", response = TransactionPendingAckStats.class)
+    @ApiOperation(value = "Get transaction pending ack stats in topic.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic or subName doesn't exist"),
             @ApiResponse(code = 503, message = "This Broker is not configured "
@@ -222,18 +189,13 @@ public class Transactions extends TransactionsBase {
                                    @PathParam("tenant") String tenant,
                                    @PathParam("namespace") String namespace,
                                    @PathParam("topic") @Encoded String encodedTopic,
-                                   @PathParam("subName") String subName,
-                                   @QueryParam("lowWaterMarks") @DefaultValue("false") boolean lowWaterMarks) {
+                                   @PathParam("subName") String subName) {
         try {
             checkTransactionCoordinatorEnabled();
             validateTopicName(tenant, namespace, encodedTopic);
-            internalGetPendingAckStats(authoritative, subName, lowWaterMarks)
-                    .thenAccept(asyncResponse::resume)
+            internalGetPendingAckStats(authoritative, subName)
+                    .thenAccept(stats -> asyncResponse.resume(stats))
                     .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get transaction pending ack stats in topic {}",
-                                    clientAppId(), topicName, ex);
-                        }
                         resumeAsyncResponseExceptionally(asyncResponse, ex);
                         return null;
                     });
@@ -244,7 +206,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/transactionMetadata/{mostSigBits}/{leastSigBits}")
-    @ApiOperation(value = "Get transaction metadata", response = TransactionMetadata.class)
+    @ApiOperation(value = "Get transaction metadata")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic "
                     + "or coordinator or transaction doesn't exist"),
@@ -265,7 +227,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/slowTransactions/{timeout}")
-    @ApiOperation(value = "Get slow transactions.", response = TransactionMetadata.class, responseContainer = "Map")
+    @ApiOperation(value = "Get slow transactions.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic "
                     + "or coordinator or transaction doesn't exist"),
@@ -285,7 +247,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/coordinatorInternalStats/{coordinatorId}")
-    @ApiOperation(value = "Get coordinator internal stats.", response = TransactionCoordinatorInternalStats.class)
+    @ApiOperation(value = "Get coordinator internal stats.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 503, message = "This Broker is not "
                     + "configured with transactionCoordinatorEnabled=true."),
@@ -303,8 +265,7 @@ public class Transactions extends TransactionsBase {
 
     @GET
     @Path("/pendingAckInternalStats/{tenant}/{namespace}/{topic}/{subName}")
-    @ApiOperation(value = "Get transaction pending ack internal stats.",
-            response = TransactionPendingAckInternalStats.class)
+    @ApiOperation(value = "Get transaction pending ack internal stats.")
     @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
             @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic "
                     + "or subscription name doesn't exist"),
@@ -326,162 +287,23 @@ public class Transactions extends TransactionsBase {
             checkTransactionCoordinatorEnabled();
             validateTopicName(tenant, namespace, encodedTopic);
             internalGetPendingAckInternalStats(authoritative, subName, metadata)
-                    .thenAccept(asyncResponse::resume)
+                    .thenAccept(stats -> asyncResponse.resume(stats))
                     .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get pending ack internal stats {}",
-                                    clientAppId(), topicName, ex);
+                        Throwable cause = FutureUtil.unwrapCompletionException(ex);
+                        log.error("[{}] Failed to get pending ack internal stats {}", clientAppId(), topicName, cause);
+                        if (cause instanceof BrokerServiceException.ServiceUnitNotReadyException) {
+                            asyncResponse.resume(new RestException(SERVICE_UNAVAILABLE, cause));
+                        } else if (cause instanceof BrokerServiceException.NotAllowedException) {
+                            asyncResponse.resume(new RestException(METHOD_NOT_ALLOWED, cause));
+                        } else if (cause instanceof BrokerServiceException.SubscriptionNotFoundException) {
+                            asyncResponse.resume(new RestException(NOT_FOUND, cause));
+                        } else {
+                            asyncResponse.resume(new RestException(cause));
                         }
-                        return resumeAsyncResponseWithBrokerException(asyncResponse, ex);
-                    });
-        } catch (Exception ex) {
-            resumeAsyncResponseExceptionally(asyncResponse, ex);
-        }
-    }
-
-    @Nullable
-    private Void resumeAsyncResponseWithBrokerException(@Suspended AsyncResponse asyncResponse,
-                                                        Throwable ex) {
-        Throwable cause = FutureUtil.unwrapCompletionException(ex);
-        if (cause instanceof BrokerServiceException.ServiceUnitNotReadyException) {
-            asyncResponse.resume(new RestException(SERVICE_UNAVAILABLE, cause));
-        } else if (cause instanceof BrokerServiceException.NotAllowedException) {
-            asyncResponse.resume(new RestException(METHOD_NOT_ALLOWED, cause));
-        } else if (cause instanceof BrokerServiceException.SubscriptionNotFoundException) {
-            asyncResponse.resume(new RestException(NOT_FOUND, cause));
-        } else {
-            asyncResponse.resume(new RestException(cause));
-        }
-        return null;
-    }
-
-    @GET
-    @Path("/transactionBufferInternalStats/{tenant}/{namespace}/{topic}")
-    @ApiOperation(value = "Get transaction buffer internal stats.", response = TransactionBufferInternalStats.class)
-    @ApiResponses(value = {
-            @ApiResponse(code = 403, message = "Don't have admin permission"),
-            @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic doesn't exist"),
-            @ApiResponse(code = 503, message = "This Broker is not enable transaction"),
-            @ApiResponse(code = 307, message = "Topic is not owned by this broker!"),
-            @ApiResponse(code = 405, message = "Transaction buffer don't use managedLedger!"),
-            @ApiResponse(code = 400, message = "Topic is not a persistent topic!"),
-            @ApiResponse(code = 409, message = "Concurrent modification")
-    })
-    public void getTransactionBufferInternalStats(@Suspended final AsyncResponse asyncResponse,
-                                                  @QueryParam("authoritative")
-                                                  @DefaultValue("false") boolean authoritative,
-                                                  @PathParam("tenant") String tenant,
-                                                  @PathParam("namespace") String namespace,
-                                                  @PathParam("topic") @Encoded String encodedTopic,
-                                                  @QueryParam("metadata") @DefaultValue("false") boolean metadata) {
-        try {
-            validateTopicName(tenant, namespace, encodedTopic);
-            internalGetTransactionBufferInternalStats(authoritative, metadata)
-                    .thenAccept(asyncResponse::resume)
-                    .exceptionally(ex -> {
-                        if (isNot307And404Exception(ex)) {
-                            log.error("[{}] Failed to get transaction buffer internal stats {}",
-                                    clientAppId(), topicName, ex);
-                        }
-                        return resumeAsyncResponseWithBrokerException(asyncResponse, ex);
-                    });
-        } catch (Exception ex) {
-            resumeAsyncResponseExceptionally(asyncResponse, ex);
-        }
-    }
-
-    @POST
-    @Path("/transactionCoordinator/replicas")
-    @ApiResponses(value = {
-            @ApiResponse(code = 204, message = "Operation successful"),
-            @ApiResponse(code = 503, message = "This Broker is not configured "
-                    + "with transactionCoordinatorEnabled=true."),
-            @ApiResponse(code = 406, message = "The number of replicas should be more than "
-                    + "the current number of transaction coordinator replicas"),
-            @ApiResponse(code = 401, message = "This operation requires super-user access")})
-    public void scaleTransactionCoordinators(@Suspended final AsyncResponse asyncResponse, int replicas) {
-        try {
-            checkTransactionCoordinatorEnabled();
-            internalScaleTransactionCoordinators(replicas)
-                    .thenRun(() -> asyncResponse.resume(Response.noContent().build()))
-                    .exceptionally(e -> {
-                        resumeAsyncResponseExceptionally(asyncResponse, e);
-                        return null;
-                    });
-        } catch (Exception e) {
-            log.warn("{} Failed to update the scale of transaction coordinators", clientAppId());
-            resumeAsyncResponseExceptionally(asyncResponse, e);
-        }
-    }
-
-    @GET
-    @Path("/positionStatsInPendingAck/{tenant}/{namespace}/{topic}/{subName}/{ledgerId}/{entryId}")
-    @ApiOperation(value = "Get position stats in pending ack.", response = PositionInPendingAckStats.class)
-    @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission"),
-            @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic "
-                    + "or subscription name doesn't exist"),
-            @ApiResponse(code = 503, message = "This Broker is not configured "
-                    + "with transactionCoordinatorEnabled=true."),
-            @ApiResponse(code = 307, message = "Topic is not owned by this broker!"),
-            @ApiResponse(code = 405, message = "Pending ack handle don't use managedLedger!"),
-            @ApiResponse(code = 400, message = "Topic is not a persistent topic!"),
-            @ApiResponse(code = 409, message = "Concurrent modification")})
-    public void getPositionStatsInPendingAck(@Suspended final AsyncResponse asyncResponse,
-                                             @QueryParam("authoritative")
-                                             @DefaultValue("false") boolean authoritative,
-                                             @PathParam("tenant") String tenant,
-                                             @PathParam("namespace") String namespace,
-                                             @PathParam("topic") @Encoded String encodedTopic,
-                                             @PathParam("subName") String subName,
-                                             @PathParam("ledgerId") Long ledgerId,
-                                             @PathParam("entryId") Long entryId,
-                                             @QueryParam("batchIndex") Integer batchIndex) {
-        try {
-            checkTransactionCoordinatorEnabled();
-            validateTopicName(tenant, namespace, encodedTopic);
-            Position position = PositionFactory.create(ledgerId, entryId);
-            internalGetPositionStatsPendingAckStats(authoritative, subName, position, batchIndex)
-                    .thenAccept(asyncResponse::resume)
-                    .exceptionally(ex -> {
-                        log.warn("{} Failed to check position [{}] stats for topic [{}], subscription [{}]",
-                                clientAppId(), position, topicName, subName, ex);
-                        resumeAsyncResponseExceptionally(asyncResponse, ex);
                         return null;
                     });
         } catch (Exception ex) {
-            log.warn("Failed to get position stats in pending ack", ex);
             resumeAsyncResponseExceptionally(asyncResponse, ex);
-        }
-    }
-
-    @POST
-    @Path("/abortTransaction/{mostSigBits}/{leastSigBits}")
-    @ApiOperation(value = "Abort transaction")
-    @ApiResponses(value = {
-            @ApiResponse(code = 204, message = "Operation successful"),
-            @ApiResponse(code = 404, message = "Tenant or cluster or namespace or topic "
-                    + "or coordinator or transaction doesn't exist"),
-            @ApiResponse(code = 503, message = "This Broker is not configured "
-                    + "with transactionCoordinatorEnabled=true."),
-            @ApiResponse(code = 307, message = "Topic is not owned by this broker!"),
-            @ApiResponse(code = 400, message = "Topic is not a persistent topic!"),
-            @ApiResponse(code = 409, message = "Concurrent modification"),
-            @ApiResponse(code = 401, message = "This operation requires super-user access")})
-    public void abortTransaction(@Suspended final AsyncResponse asyncResponse,
-                                 @QueryParam("authoritative")
-                                 @DefaultValue("false") boolean authoritative,
-                                 @PathParam("mostSigBits") String mostSigBits,
-                                 @PathParam("leastSigBits") String leastSigBits) {
-        try {
-            checkTransactionCoordinatorEnabled();
-            internalAbortTransaction(authoritative, Long.parseLong(mostSigBits), Long.parseLong(leastSigBits))
-                    .thenAccept(__ -> asyncResponse.resume(Response.noContent().build()))
-                    .exceptionally(ex -> {
-                        resumeAsyncResponseExceptionally(asyncResponse, ex);
-                        return null;
-                    });
-        } catch (Exception e) {
-            resumeAsyncResponseExceptionally(asyncResponse, e);
         }
     }
 }

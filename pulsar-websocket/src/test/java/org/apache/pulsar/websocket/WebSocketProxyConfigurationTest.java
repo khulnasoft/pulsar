@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -34,7 +34,6 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNull;
 
 public class WebSocketProxyConfigurationTest {
 
@@ -65,7 +64,6 @@ public class WebSocketProxyConfigurationTest {
             printWriter.println("metadataStoreCacheExpirySeconds=500");
             printWriter.println("zooKeeperSessionTimeoutMillis=-1");
             printWriter.println("zooKeeperCacheExpirySeconds=-1");
-            printWriter.println("cryptoKeyReaderFactoryClassName=");
         }
         testConfigFile.deleteOnExit();
         stream = new FileInputStream(testConfigFile);
@@ -73,7 +71,6 @@ public class WebSocketProxyConfigurationTest {
         stream.close();
         assertEquals(serviceConfig.getMetadataStoreSessionTimeoutMillis(), 60);
         assertEquals(serviceConfig.getMetadataStoreCacheExpirySeconds(), 500);
-        assertNull(serviceConfig.getCryptoKeyReaderFactoryClassName());
 
         testConfigFile = new File("tmp." + System.currentTimeMillis() + ".properties");
         if (testConfigFile.exists()) {
@@ -84,7 +81,6 @@ public class WebSocketProxyConfigurationTest {
             printWriter.println("metadataStoreCacheExpirySeconds=30");
             printWriter.println("zooKeeperSessionTimeoutMillis=100");
             printWriter.println("zooKeeperCacheExpirySeconds=300");
-            printWriter.println("cryptoKeyReaderFactoryClassName=A.class");
         }
         testConfigFile.deleteOnExit();
         stream = new FileInputStream(testConfigFile);
@@ -92,7 +88,6 @@ public class WebSocketProxyConfigurationTest {
         stream.close();
         assertEquals(serviceConfig.getMetadataStoreSessionTimeoutMillis(), 100);
         assertEquals(serviceConfig.getMetadataStoreCacheExpirySeconds(), 300);
-        assertEquals(serviceConfig.getCryptoKeyReaderFactoryClassName(), "A.class");
     }
 
     @Test

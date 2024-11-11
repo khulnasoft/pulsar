@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -377,7 +377,7 @@ public class PulsarLedgerManager implements LedgerManager {
         }
     }
 
-    public String getLedgerPath(long ledgerId) {
+    private String getLedgerPath(long ledgerId) {
         return this.ledgerRootPath + StringUtils.getHybridHierarchicalLedgerPath(ledgerId);
     }
 
@@ -423,7 +423,7 @@ public class PulsarLedgerManager implements LedgerManager {
                     if (log.isDebugEnabled()) {
                         log.debug("Ledger metadata is changed for {} : {}.", ledgerId, result);
                     }
-                    scheduler.execute(() -> {
+                    scheduler.submit(() -> {
                         synchronized (listenerSet) {
                             for (BookkeeperInternalCallbacks.LedgerMetadataListener listener : listenerSet) {
                                 listener.onChanged(ledgerId, result);

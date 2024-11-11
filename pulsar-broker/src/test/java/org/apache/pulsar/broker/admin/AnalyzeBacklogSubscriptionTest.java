@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,14 +18,7 @@
  */
 package org.apache.pulsar.broker.admin;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertThrows;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import com.google.common.collect.Lists;
 import lombok.Cleanup;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Consumer;
@@ -39,6 +32,16 @@ import org.apache.pulsar.common.util.FutureUtil;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertThrows;
 
 @Test(groups = "broker-admin")
 public class AnalyzeBacklogSubscriptionTest extends ProducerConsumerBase {
@@ -75,7 +78,7 @@ public class AnalyzeBacklogSubscriptionTest extends ProducerConsumerBase {
         String subName = "sub-1";
         admin.topics().createSubscription(topic, subName, MessageId.latest);
 
-        assertEquals(admin.topics().getSubscriptions(topic), List.of("sub-1"));
+        assertEquals(admin.topics().getSubscriptions(topic), Lists.newArrayList("sub-1"));
 
         verifyBacklog(topic, subName, 0, 0);
 
@@ -154,17 +157,17 @@ public class AnalyzeBacklogSubscriptionTest extends ProducerConsumerBase {
         AnalyzeSubscriptionBacklogResult analyzeSubscriptionBacklogResult
                 = admin.topics().analyzeSubscriptionBacklog(topic, subscription, Optional.empty());
 
-        assertEquals(analyzeSubscriptionBacklogResult.getEntries(), numEntries);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterAcceptedEntries(), numEntries);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterRejectedEntries(), 0);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterRescheduledEntries(), 0);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterRescheduledEntries(), 0);
+        assertEquals(numEntries, analyzeSubscriptionBacklogResult.getEntries());
+        assertEquals(numEntries, analyzeSubscriptionBacklogResult.getFilterAcceptedEntries());
+        assertEquals(0, analyzeSubscriptionBacklogResult.getFilterRejectedEntries());
+        assertEquals(0, analyzeSubscriptionBacklogResult.getFilterRescheduledEntries());
+        assertEquals(0, analyzeSubscriptionBacklogResult.getFilterRescheduledEntries());
 
-        assertEquals(analyzeSubscriptionBacklogResult.getMessages(), numMessages);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterAcceptedMessages(), numMessages);
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterRejectedMessages(), 0);
+        assertEquals(numMessages, analyzeSubscriptionBacklogResult.getMessages());
+        assertEquals(numMessages, analyzeSubscriptionBacklogResult.getFilterAcceptedMessages());
+        assertEquals(0, analyzeSubscriptionBacklogResult.getFilterRejectedMessages());
 
-        assertEquals(analyzeSubscriptionBacklogResult.getFilterRescheduledMessages(), 0);
+        assertEquals(0, analyzeSubscriptionBacklogResult.getFilterRescheduledMessages());
         assertFalse(analyzeSubscriptionBacklogResult.isAborted());
     }
 
@@ -175,7 +178,7 @@ public class AnalyzeBacklogSubscriptionTest extends ProducerConsumerBase {
         String subName = "sub-1";
         admin.topics().createPartitionedTopic(topic, 2);
         admin.topics().createSubscription(topic, subName, MessageId.latest);
-        assertEquals(admin.topics().getSubscriptions(topic), List.of("sub-1"));
+        assertEquals(admin.topics().getSubscriptions(topic), Lists.newArrayList("sub-1"));
 
         // you cannot use this feature on a partitioned topic
         assertThrows(PulsarAdminException.NotAllowedException.class, () -> {

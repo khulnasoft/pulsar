@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.pulsar.functions.worker;
 
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerEventListener;
@@ -27,6 +26,8 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.ConsumerImpl;
+
+import java.util.function.Supplier;
 
 @Slf4j
 public class LeaderService implements AutoCloseable, ConsumerEventListener {
@@ -41,11 +42,11 @@ public class LeaderService implements AutoCloseable, ConsumerEventListener {
     private ConsumerImpl<byte[]> consumer;
     private final WorkerConfig workerConfig;
     private final PulsarClient pulsarClient;
-    private volatile boolean isLeader = false;
+    private boolean isLeader = false;
 
     static final String COORDINATION_TOPIC_SUBSCRIPTION = "participants";
 
-    private static final String WORKER_IDENTIFIER = "id";
+    private static String WORKER_IDENTIFIER = "id";
 
     public LeaderService(WorkerService workerService,
                          PulsarClient pulsarClient,
@@ -90,9 +91,7 @@ public class LeaderService implements AutoCloseable, ConsumerEventListener {
     @Override
     public void becameActive(Consumer<?> consumer, int partitionId) {
         synchronized (this) {
-            if (isLeader) {
-                return;
-            }
+            if (isLeader) return;
             log.info("Worker {} became the leader.", consumerName);
             try {
 
@@ -110,8 +109,7 @@ public class LeaderService implements AutoCloseable, ConsumerEventListener {
                 Producer<byte[]> functionMetaDataManagerExclusiveProducer = null;
                 try {
                     scheduleManagerExclusiveProducer = schedulerManager.acquireExclusiveWrite(checkIsStillLeader);
-                    functionMetaDataManagerExclusiveProducer = functionMetaDataManager
-                            .acquireExclusiveWrite(checkIsStillLeader);
+                    functionMetaDataManagerExclusiveProducer = functionMetaDataManager.acquireExclusiveWrite(checkIsStillLeader);
                 } catch (WorkerUtils.NotLeaderAnymore e) {
                     log.info("Worker {} is not leader anymore. Exiting becoming leader routine.", consumer);
                     if (scheduleManagerExclusiveProducer != null) {
@@ -172,7 +170,7 @@ public class LeaderService implements AutoCloseable, ConsumerEventListener {
         }
     }
 
-    public boolean isLeader() {
+    public synchronized boolean isLeader() {
         return isLeader;
     }
 

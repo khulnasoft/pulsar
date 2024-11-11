@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -40,7 +40,6 @@ import java.util.stream.Collectors;
 import lombok.Getter;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SchemaSerializationException;
 import org.apache.pulsar.client.impl.schema.AbstractSchema;
@@ -306,13 +305,6 @@ public class MessageImpl<T> implements Message<T> {
         return msg;
     }
 
-    public static MessageImpl<byte[]> deserializeMetadataWithEmptyPayload(
-            ByteBuf headersAndPayloadWithBrokerEntryMetadata) throws IOException {
-        MessageImpl<byte[]> msg = deserializeSkipBrokerEntryMetaData(headersAndPayloadWithBrokerEntryMetadata);
-        msg.payload = Unpooled.EMPTY_BUFFER;
-        return msg;
-    }
-
     public void setReplicatedFrom(String cluster) {
         msgMetadata.setReplicatedFrom(cluster);
     }
@@ -505,19 +497,11 @@ public class MessageImpl<T> implements Message<T> {
         if (value != null) {
             return value;
         }
-
         if (null == schemaVersion) {
-            return schema.decode(getByteBuffer());
+            return schema.decode(getData());
         } else {
-            return schema.decode(getByteBuffer(), schemaVersion);
+            return schema.decode(getData(), schemaVersion);
         }
-    }
-
-    private ByteBuffer getByteBuffer() {
-        if (msgMetadata.isNullValue()) {
-            return null;
-        }
-        return this.payload.nioBuffer();
     }
 
     private T getKeyValueBySchemaVersion() {
@@ -722,10 +706,9 @@ public class MessageImpl<T> implements Message<T> {
     @Override
     public Optional<Long> getIndex() {
         if (brokerEntryMetadata != null && brokerEntryMetadata.hasIndex()) {
-            MessageIdAdv messageIdAdv = (MessageIdAdv) messageId;
-            if (msgMetadata.hasNumMessagesInBatch() && MessageIdAdvUtils.isBatch(messageIdAdv)) {
-                int batchSize = messageIdAdv.getBatchSize();
-                int batchIndex = messageIdAdv.getBatchIndex();
+            if (msgMetadata.hasNumMessagesInBatch() && messageId instanceof BatchMessageIdImpl) {
+                int batchSize = ((BatchMessageIdImpl) messageId).getBatchSize();
+                int batchIndex = ((BatchMessageIdImpl) messageId).getBatchIndex();
                 return Optional.of(brokerEntryMetadata.getIndex() - batchSize + batchIndex + 1);
             }
             return Optional.of(brokerEntryMetadata.getIndex());
@@ -762,7 +745,7 @@ public class MessageImpl<T> implements Message<T> {
         return msgMetadata.hasReplicatedFrom();
     }
 
-    public void setMessageId(MessageId messageId) {
+    void setMessageId(MessageId messageId) {
         this.messageId = messageId;
     }
 

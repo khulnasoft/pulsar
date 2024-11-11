@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,11 +29,11 @@ import org.apache.pulsar.common.classification.InterfaceStability;
 @InterfaceAudience.Public
 @InterfaceStability.Stable
 @FunctionalInterface
-public interface WindowFunction<X, T> {
+public interface WindowFunction<I, O> {
     /**
      * Process the input.
      *
      * @return the output
      */
-    T process(Collection<Record<X>> input, WindowContext context) throws Exception;
+    O process(Collection<Record<I>> input, WindowContext context) throws Exception;
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,7 @@
  */
 package org.apache.pulsar.broker.service.schema;
 
+import static com.google.common.collect.Iterables.concat;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.protobuf.ByteString.copyFrom;
 import static java.util.Objects.isNull;
@@ -52,11 +53,7 @@ import org.apache.bookkeeper.mledger.impl.LedgerMetadataUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.service.schema.SchemaStorageFormat.IndexEntry;
-import org.apache.pulsar.broker.service.schema.SchemaStorageFormat.SchemaLocator;
-import org.apache.pulsar.broker.service.schema.exceptions.IncompatibleSchemaException;
 import org.apache.pulsar.broker.service.schema.exceptions.SchemaException;
-import org.apache.pulsar.common.policies.data.SchemaMetadata;
 import org.apache.pulsar.common.protocol.schema.SchemaStorage;
 import org.apache.pulsar.common.protocol.schema.SchemaVersion;
 import org.apache.pulsar.common.protocol.schema.StoredSchema;
@@ -113,7 +110,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
             pulsar.getIoEventLoopGroup(),
             Optional.empty(),
             null
-        ).join();
+        );
     }
 
     @Override
@@ -181,7 +178,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
                 log.debug("[{}] Get all schemas - locator: {}", key, locator);
             }
 
-            if (locator.isEmpty()) {
+            if (!locator.isPresent()) {
                 return Pair.of(locator, Collections.emptyList());
             }
 
@@ -466,15 +463,12 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
                 .setHash(copyFrom(hash))
                 .build();
 
-        final ArrayList<SchemaStorageFormat.IndexEntry> indexList = new ArrayList<>();
-        indexList.addAll(locator.getIndexList());
-        indexList.add(info);
         return updateSchemaLocator(getSchemaPath(schemaId),
-                SchemaStorageFormat.SchemaLocator.newBuilder()
-                        .setInfo(info)
-                        .addAllIndex(indexList)
-                        .build()
-                , locatorEntry.version
+            SchemaStorageFormat.SchemaLocator.newBuilder()
+                .setInfo(info)
+                .addAllIndex(
+                        concat(locator.getIndexList(), newArrayList(info))
+                ).build(), locatorEntry.version
         ).thenApply(ignore -> nextVersion).whenComplete((__, ex) -> {
             if (ex != null) {
                 Throwable cause = FutureUtil.unwrapCompletionException(ex);
@@ -531,7 +525,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
 
         return openLedger(position.getLedgerId())
             .thenCompose((ledger) ->
-                Functions.getLedgerEntry(ledger, position.getEntryId(), config.isSchemaLedgerForceRecovery())
+                Functions.getLedgerEntry(ledger, position.getEntryId())
                     .thenCompose(entry -> closeLedger(ledger)
                         .thenApply(ignore -> entry)
                     )
@@ -557,31 +551,13 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
                         o.map(r -> new LocatorEntry(r.getValue(), r.getStat().getVersion())));
     }
 
-    public CompletableFuture<SchemaMetadata> getSchemaMetadata(String schema) {
-        return getLocator(schema).thenApply(locator -> {
-            if (!locator.isPresent()) {
-                return null;
-            }
-            SchemaLocator sl = locator.get().locator;
-            SchemaMetadata metadata = new SchemaMetadata();
-            IndexEntry info = sl.getInfo();
-            metadata.info = new SchemaMetadata.Entry(info.getPosition().getLedgerId(), info.getPosition().getEntryId(),
-                    info.getVersion());
-            metadata.index = sl.getIndexList() == null ? null
-                    : sl.getIndexList().stream().map(i -> new SchemaMetadata.Entry(i.getPosition().getLedgerId(),
-                            i.getPosition().getEntryId(), i.getVersion())).collect(Collectors.toList());
-            return metadata;
-        });
-    }
-
     @NotNull
     private CompletableFuture<Long> addEntry(LedgerHandle ledgerHandle, SchemaStorageFormat.SchemaEntry entry) {
         final CompletableFuture<Long> future = new CompletableFuture<>();
         ledgerHandle.asyncAddEntry(entry.toByteArray(),
             (rc, handle, entryId, ctx) -> {
                 if (rc != BKException.Code.OK) {
-                    future.completeExceptionally(bkException("Failed to add entry", rc, ledgerHandle.getId(), -1,
-                            config.isSchemaLedgerForceRecovery()));
+                    future.completeExceptionally(bkException("Failed to add entry", rc, ledgerHandle.getId(), -1));
                 } else {
                     future.complete(entryId);
                 }
@@ -603,8 +579,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
                     LedgerPassword,
                     (rc, handle, ctx) -> {
                         if (rc != BKException.Code.OK) {
-                            future.completeExceptionally(bkException("Failed to create ledger", rc, -1, -1,
-                                    config.isSchemaLedgerForceRecovery()));
+                            future.completeExceptionally(bkException("Failed to create ledger", rc, -1, -1));
                         } else {
                             future.complete(handle);
                         }
@@ -625,8 +600,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
             LedgerPassword,
             (rc, handle, ctx) -> {
                 if (rc != BKException.Code.OK) {
-                    future.completeExceptionally(bkException("Failed to open ledger", rc, ledgerId, -1,
-                            config.isSchemaLedgerForceRecovery()));
+                    future.completeExceptionally(bkException("Failed to open ledger", rc, ledgerId, -1));
                 } else {
                     future.complete(handle);
                 }
@@ -640,8 +614,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
         CompletableFuture<Void> future = new CompletableFuture<>();
         ledgerHandle.asyncClose((rc, handle, ctx) -> {
             if (rc != BKException.Code.OK) {
-                future.completeExceptionally(bkException("Failed to close ledger", rc, ledgerHandle.getId(), -1,
-                        config.isSchemaLedgerForceRecovery()));
+                future.completeExceptionally(bkException("Failed to close ledger", rc, ledgerHandle.getId(), -1));
             } else {
                 future.complete(null);
             }
@@ -672,14 +645,12 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
     }
 
     interface Functions {
-        static CompletableFuture<LedgerEntry> getLedgerEntry(LedgerHandle ledger, long entry,
-                boolean forceRecovery) {
+        static CompletableFuture<LedgerEntry> getLedgerEntry(LedgerHandle ledger, long entry) {
             final CompletableFuture<LedgerEntry> future = new CompletableFuture<>();
             ledger.asyncReadEntries(entry, entry,
                 (rc, handle, entries, ctx) -> {
                     if (rc != BKException.Code.OK) {
-                        future.completeExceptionally(bkException("Failed to read entry", rc, ledger.getId(), entry,
-                                forceRecovery));
+                        future.completeExceptionally(bkException("Failed to read entry", rc, ledger.getId(), entry));
                     } else {
                         future.complete(entries.nextElement());
                     }
@@ -726,8 +697,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
         }
     }
 
-    public static Exception bkException(String operation, int rc, long ledgerId, long entryId,
-            boolean forceRecovery) {
+    public static Exception bkException(String operation, int rc, long ledgerId, long entryId) {
         String message = org.apache.bookkeeper.client.api.BKException.getMessage(rc)
                 + " -  ledger=" + ledgerId + " - operation=" + operation;
 
@@ -735,11 +705,7 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
             message += " - entry=" + entryId;
         }
         boolean recoverable = rc != BKException.Code.NoSuchLedgerExistsException
-                && rc != BKException.Code.NoSuchEntryException
-                && rc != BKException.Code.NoSuchLedgerExistsOnMetadataServerException
-                // if force-recovery is enabled then made it non-recoverable exception
-                // and force schema to skip this exception and recover immediately
-                && !forceRecovery;
+                && rc != BKException.Code.NoSuchEntryException;
         return new SchemaException(recoverable, message);
     }
 
@@ -747,10 +713,8 @@ public class BookkeeperSchemaStorage implements SchemaStorage {
         return source.exceptionally(t -> {
             if (t.getCause() != null
                     && (t.getCause() instanceof SchemaException)
-                    && !(t.getCause() instanceof IncompatibleSchemaException)
                     && !((SchemaException) t.getCause()).isRecoverable()) {
-                // Meeting NoSuchLedgerExistsException, NoSuchEntryException or
-                // NoSuchLedgerExistsOnMetadataServerException when reading schemas in
+                // Meeting NoSuchLedgerExistsException or NoSuchEntryException when reading schemas in
                 // bookkeeper. This also means that the data has already been deleted by other operations
                 // in deleting schema.
                 if (log.isDebugEnabled()) {

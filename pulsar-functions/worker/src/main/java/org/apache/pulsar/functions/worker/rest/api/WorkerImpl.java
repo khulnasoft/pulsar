@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,7 +27,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
@@ -52,7 +51,23 @@ import org.apache.pulsar.functions.worker.PulsarWorkerService;
 import org.apache.pulsar.functions.worker.SchedulerManager;
 import org.apache.pulsar.functions.worker.WorkerService;
 import org.apache.pulsar.functions.worker.WorkerUtils;
+
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.core.UriBuilder;
+import java.io.IOException;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 import org.apache.pulsar.functions.worker.service.api.Workers;
+
+import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.pulsar.functions.worker.rest.RestUtils.throwUnavailableException;
 
 @Slf4j
 public class WorkerImpl implements Workers<PulsarWorkerService> {
@@ -65,7 +80,7 @@ public class WorkerImpl implements Workers<PulsarWorkerService> {
 
     private PulsarWorkerService worker() {
         try {
-            return Objects.requireNonNull(workerServiceSupplier.get());
+            return checkNotNull(workerServiceSupplier.get());
         } catch (Throwable t) {
             log.info("Failed to get worker service", t);
             throw t;
@@ -173,8 +188,7 @@ public class WorkerImpl implements Workers<PulsarWorkerService> {
             FunctionRuntimeInfo functionRuntimeInfo = entry.getValue();
 
             if (worker().getFunctionRuntimeManager().getRuntimeFactory().externallyManaged()) {
-                Function.FunctionDetails functionDetails =
-                        functionRuntimeInfo.getFunctionInstance().getFunctionMetaData().getFunctionDetails();
+                Function.FunctionDetails functionDetails = functionRuntimeInfo.getFunctionInstance().getFunctionMetaData().getFunctionDetails();
                 int parallelism = functionDetails.getParallelism();
                 for (int i = 0; i < parallelism; ++i) {
                     FunctionInstanceStatsImpl functionInstanceStats =
@@ -225,6 +239,7 @@ public class WorkerImpl implements Workers<PulsarWorkerService> {
             }
         } else {
             WorkerInfo workerInfo = worker().getMembershipManager().getLeader();
+
             if (workerInfo == null) {
                 throw new RestException(Status.INTERNAL_SERVER_ERROR, "Leader cannot be determined");
             }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -48,15 +48,13 @@ public class AdminShellTest {
         final PulsarAdmin admin = mock(PulsarAdmin.class);
         when(builder.build()).thenReturn(admin);
         when(admin.topics()).thenReturn(mock(Topics.class));
-        PulsarAdminSupplier pulsarAdminSupplier = adminShell.getPulsarAdminSupplier();
-        pulsarAdminSupplier.setAdminBuilder(builder);
+        adminShell.setPulsarAdminSupplier(new PulsarAdminSupplier(builder, adminShell.getRootParams()));
         assertTrue(run(new String[]{"topics", "list", "public/default"}));
-        verify(builder, times(1)).build();
+        verify(builder).build();
         assertTrue(run(new String[]{"topics", "list", "public/default"}));
-        verify(builder, times(1)).build();
+        verify(builder).build();
         assertTrue(run(new String[]{"--admin-url", "http://localhost:8081",
                 "topics", "list", "public/default"}));
-        verify(builder, times(2)).build();
         assertTrue(run(new String[]{"topics", "list", "public/default"}));
         verify(builder, times(3)).build();
         assertTrue(run(new String[]{"--admin-url", "http://localhost:8080",
@@ -64,7 +62,11 @@ public class AdminShellTest {
         verify(builder, times(3)).build();
     }
 
-    private boolean run(String[] args) {
-        return adminShell.runCommand(args);
+    private boolean run(String[] args) throws Exception {
+        try {
+            return adminShell.runCommand(args);
+        } finally {
+            adminShell.cleanupState(props);
+        }
     }
 }

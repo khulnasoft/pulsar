@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,6 +26,7 @@ import java.util.Map;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.broker.ClassLoaderSwitcher;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.common.nar.NarClassLoader;
@@ -43,79 +44,52 @@ class ProtocolHandlerWithClassLoader implements ProtocolHandler {
 
     @Override
     public String protocolName() {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             return handler.protocolName();
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public boolean accept(String protocol) {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             return handler.accept(protocol);
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public void initialize(ServiceConfiguration conf) throws Exception {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             handler.initialize(conf);
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public String getProtocolDataToAdvertise() {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             return handler.getProtocolDataToAdvertise();
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public void start(BrokerService service) {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             handler.start(service);
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             return handler.newChannelInitializers();
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
     }
 
     @Override
     public void close() {
-        ClassLoader prevClassLoader = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(classLoader);
+        try (ClassLoaderSwitcher ignored = new ClassLoaderSwitcher(classLoader)) {
             handler.close();
-        } finally {
-            Thread.currentThread().setContextClassLoader(prevClassLoader);
         }
+
         try {
             classLoader.close();
         } catch (IOException e) {

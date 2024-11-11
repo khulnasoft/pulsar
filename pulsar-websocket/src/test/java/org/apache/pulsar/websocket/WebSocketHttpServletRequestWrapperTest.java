@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.pulsar.websocket;
 
-import lombok.Cleanup;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.websocket.service.WebSocketProxyConfiguration;
 import org.eclipse.jetty.websocket.servlet.UpgradeHttpServletRequest;
@@ -71,7 +70,6 @@ public class WebSocketHttpServletRequestWrapperTest {
                 WebSocketProxyConfiguration.class);
         String publicKeyPath = "file://" + this.getClass().getClassLoader().getResource("my-public.key").getFile();
         config.getProperties().setProperty("tokenPublicKey", publicKeyPath);
-        @Cleanup
         WebSocketService service = new WebSocketService(config);
         service.start();
 

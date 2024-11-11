@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,7 +30,6 @@ import org.apache.bookkeeper.common.allocator.ByteBufAllocatorBuilder;
 import org.apache.bookkeeper.common.allocator.LeakDetectionPolicy;
 import org.apache.bookkeeper.common.allocator.OutOfMemoryPolicy;
 import org.apache.bookkeeper.common.allocator.PoolingPolicy;
-import org.apache.pulsar.common.util.ShutdownUtil;
 
 /**
  * Holder of a ByteBuf allocator.
@@ -85,7 +84,7 @@ public class PulsarByteBufAllocator {
 
                     if (isExitOnOutOfMemory) {
                         log.info("Exiting JVM process for OOM error: {}", oomException.getMessage(), oomException);
-                        ShutdownUtil.triggerImmediateForcefulShutdown();
+                        Runtime.getRuntime().halt(1);
                     }
                 });
 

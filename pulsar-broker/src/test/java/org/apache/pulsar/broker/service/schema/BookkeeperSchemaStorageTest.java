@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.broker.service.schema;
 import java.nio.ByteBuffer;
 import org.apache.bookkeeper.client.api.BKException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.service.schema.exceptions.SchemaException;
 import org.apache.pulsar.common.schema.LongSchemaVersion;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.testng.annotations.Test;
@@ -30,29 +29,23 @@ import static org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage.bk
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
 
 @Test(groups = "broker")
 public class BookkeeperSchemaStorageTest {
 
     @Test
     public void testBkException() {
-        Exception ex = bkException("test", BKException.Code.ReadException, 1, -1, false);
+        Exception ex = bkException("test", BKException.Code.ReadException, 1, -1);
         assertEquals("Error while reading ledger -  ledger=1 - operation=test", ex.getMessage());
-        ex = bkException("test", BKException.Code.ReadException, 1, 0, false);
+        ex = bkException("test", BKException.Code.ReadException, 1, 0);
         assertEquals("Error while reading ledger -  ledger=1 - operation=test - entry=0",
                 ex.getMessage());
-        ex = bkException("test", BKException.Code.QuorumException, 1, -1, false);
+        ex = bkException("test", BKException.Code.QuorumException, 1, -1);
         assertEquals("Invalid quorum size on ensemble size -  ledger=1 - operation=test",
                 ex.getMessage());
-        ex = bkException("test", BKException.Code.QuorumException, 1, 0, false);
+        ex = bkException("test", BKException.Code.QuorumException, 1, 0);
         assertEquals("Invalid quorum size on ensemble size -  ledger=1 - operation=test - entry=0",
                 ex.getMessage());
-        SchemaException sc = (SchemaException) bkException("test", BKException.Code.BookieHandleNotAvailableException, 1, 0, false);
-        assertTrue(sc.isRecoverable());
-        sc = (SchemaException) bkException("test", BKException.Code.BookieHandleNotAvailableException, 1, 0, true);
-        assertFalse(sc.isRecoverable());
     }
 
     @Test

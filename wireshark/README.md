@@ -19,8 +19,6 @@
 
 -->
 
-> **Note**: This Lua script may cause a crash in the newest version of Wireshark, see [#18439](https://github.com/apache/pulsar/issues/18439). Make sure the version of Wireshark is earlier than v4.0.0.
-
 # How to use 
 
 ## Step 1: prepare PulsarApi.proto file
@@ -32,9 +30,6 @@ You need to put PulsarApi.proto to a separate path.
 
 3. Add the path of PulsarApi.proto.
 
-4. Check `Dissect Protobuf fields as Wireshark fields` box. When this box is checked, 
-you can use `pbf.pulsar.proto` to visit fields in protobuf package.  
-
 ## Step 2: add pulsar.lua to plugins
 
 1. Open Wireshark.
@@ -45,8 +40,6 @@ you can use `pbf.pulsar.proto` to visit fields in protobuf package.
 
 ## Step 3: start to use
 
-This plugin registers a Pulsar protocol automatically in 6650. You can use this Wireshark filter string to find out Pulsar packages (ignore ping/pong):
+This plugin registers a Pulsar protocol automatically in 6650. You can use it to decode Pulsar messages now.
 
-```
-tcp.port eq 6650 and pulsar and pbf.pulsar.proto.BaseCommand.type ne "ping" and pbf.pulsar.proto.BaseCommand.type ne "pong"
-```
+

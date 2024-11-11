@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,8 +24,6 @@ import static org.testng.Assert.assertEquals;
 import com.google.common.collect.Range;
 import com.google.common.hash.Hashing;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.resources.LoadBalanceResources;
-import org.apache.pulsar.broker.resources.PulsarResources;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceBundleFactory;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -43,24 +41,14 @@ public class BundlesQuotasTest {
 
     private MetadataStore store;
     private NamespaceBundleFactory bundleFactory;
-    private PulsarService pulsar;
 
     @BeforeMethod
     public void setup() throws Exception {
         store = MetadataStoreFactory.create("memory:local", MetadataStoreConfig.builder().build());
-        LoadBalanceResources.QuotaResources quotaResources = new LoadBalanceResources.QuotaResources(store, 30000);
 
-        pulsar = mock(PulsarService.class);
+        PulsarService pulsar = mock(PulsarService.class);
         when(pulsar.getLocalMetadataStore()).thenReturn(mock(MetadataStoreExtended.class));
         when(pulsar.getConfigurationMetadataStore()).thenReturn(mock(MetadataStoreExtended.class));
-
-        LoadBalanceResources loadBalanceResources = mock(LoadBalanceResources.class);
-        when(loadBalanceResources.getQuotaResources()).thenReturn(quotaResources);
-
-        PulsarResources pulsarResources = mock(PulsarResources.class);
-        when(pulsarResources.getLoadBalanceResources()).thenReturn(loadBalanceResources);
-
-        when(pulsar.getPulsarResources()).thenReturn(pulsarResources);
         bundleFactory = new NamespaceBundleFactory(pulsar, Hashing.crc32());
     }
 
@@ -71,7 +59,7 @@ public class BundlesQuotasTest {
 
     @Test
     public void testGetSetDefaultQuota() throws Exception {
-        BundlesQuotas bundlesQuotas = new BundlesQuotas(pulsar);
+        BundlesQuotas bundlesQuotas = new BundlesQuotas(store);
         ResourceQuota quota2 = new ResourceQuota();
         quota2.setMsgRateIn(10);
         quota2.setMsgRateOut(20);
@@ -87,7 +75,7 @@ public class BundlesQuotasTest {
 
     @Test
     public void testGetSetBundleQuota() throws Exception {
-        BundlesQuotas bundlesQuotas = new BundlesQuotas(pulsar);
+        BundlesQuotas bundlesQuotas = new BundlesQuotas(store);
         NamespaceBundle testBundle = new NamespaceBundle(NamespaceName.get("pulsar/test/ns-2"),
                 Range.closedOpen(0L, (long) Integer.MAX_VALUE),
                 bundleFactory);

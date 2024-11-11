@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,33 +19,39 @@
 package org.apache.pulsar.metadata;
 
 import static org.testng.Assert.assertTrue;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.Properties;
-import lombok.SneakyThrows;
+
+import java.nio.charset.StandardCharsets;
+
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.commons.io.FileUtils;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.server.ContainerManager;
+import org.apache.zookeeper.server.NIOServerCnxnFactory;
+import org.apache.zookeeper.server.Request;
+import org.apache.zookeeper.server.RequestProcessor;
 import org.apache.zookeeper.server.ServerCnxnFactory;
+import org.apache.zookeeper.server.SessionTracker;
 import org.apache.zookeeper.server.ZooKeeperServer;
-import org.apache.zookeeper.server.ZooKeeperServerMain;
-import org.apache.zookeeper.server.embedded.ExitHandler;
-import org.apache.zookeeper.server.embedded.ZooKeeperServerEmbedded;
 import org.assertj.core.util.Files;
 
 @Slf4j
 public class TestZKServer implements AutoCloseable {
-
     public static final int TICK_TIME = 1000;
-
+    protected ZooKeeperServer zks;
     private final File zkDataDir;
-    private int zkPort; // initially this is zero
-    private ZooKeeperServerEmbedded zooKeeperServerEmbedded;
+    private ServerCnxnFactory serverFactory;
+    private ContainerManager containerManager;
+
+    private int zkPort = 0;
 
     public TestZKServer() throws Exception {
         this.zkDataDir = Files.newTemporaryFolder();
@@ -58,87 +64,86 @@ public class TestZKServer implements AutoCloseable {
     }
 
     public void start() throws Exception {
-        final Properties configZookeeper = new Properties();
-        configZookeeper.put("clientPort", zkPort + "");
-        configZookeeper.put("host", "127.0.0.1");
-        configZookeeper.put("ticktime", TICK_TIME + "");
-        zooKeeperServerEmbedded = ZooKeeperServerEmbedded
-                .builder()
-                .baseDir(zkDataDir.toPath())
-                .configuration(configZookeeper)
-                .exitHandler(ExitHandler.LOG_ONLY)
-                .build();
+        this.zks = new ZooKeeperServer(zkDataDir, zkDataDir, TICK_TIME);
+        this.zks.setMaxSessionTimeout(300_000);
+        this.serverFactory = new NIOServerCnxnFactory();
+        this.serverFactory.configure(new InetSocketAddress(zkPort), 1000);
+        this.serverFactory.startup(zks, true);
 
-        zooKeeperServerEmbedded.start(60_000);
-        log.info("Started test ZK server on at {}", zooKeeperServerEmbedded.getConnectionString());
-
-        ZooKeeperServerMain zooKeeperServerMain = getZooKeeperServerMain(zooKeeperServerEmbedded);
-        ServerCnxnFactory serverCnxnFactory = getServerCnxnFactory(zooKeeperServerMain);
-        // save the port, in order to allow restarting on the same port
-        zkPort = serverCnxnFactory.getLocalPort();
+        this.zkPort = serverFactory.getLocalPort();
+        log.info("Started test ZK server on port {}", zkPort);
 
         boolean zkServerReady = waitForServerUp(this.getConnectionString(), 30_000);
         assertTrue(zkServerReady);
-    }
 
-    @SneakyThrows
-    private static ZooKeeperServerMain getZooKeeperServerMain(ZooKeeperServerEmbedded zooKeeperServerEmbedded) {
-        ZooKeeperServerMain zooKeeperServerMain = readField(zooKeeperServerEmbedded.getClass(),
-                "mainsingle", zooKeeperServerEmbedded);
-        return zooKeeperServerMain;
-    }
+        this.containerManager = new ContainerManager(zks.getZKDatabase(), new RequestProcessor() {
+            @Override
+            public void processRequest(Request request) throws RequestProcessorException {
+                String path = StandardCharsets.UTF_8.decode(request.request).toString();
+                try {
+                    zks.getZKDatabase().getDataTree().deleteNode(path, -1);
+                } catch (KeeperException.NoNodeException e) {
+                    // Ok
+                }
+            }
 
-    @SneakyThrows
-    private static ContainerManager getContainerManager(ZooKeeperServerMain zooKeeperServerMain) {
-        ContainerManager containerManager = readField(ZooKeeperServerMain.class, "containerManager", zooKeeperServerMain);
-        return containerManager;
-    }
+            @Override
+            public void shutdown() {
 
-    @SneakyThrows
-    private static ZooKeeperServer getZooKeeperServer(ZooKeeperServerMain zooKeeperServerMain) {
-        ServerCnxnFactory serverCnxnFactory = getServerCnxnFactory(zooKeeperServerMain);
-        ZooKeeperServer zkServer = readField(ServerCnxnFactory.class, "zkServer", serverCnxnFactory);
-        return zkServer;
-    }
-
-    @SneakyThrows
-    private static <T> T readField(Class clazz, String field, Object object) {
-        Field declaredField = clazz.getDeclaredField(field);
-        boolean accessible = declaredField.isAccessible();
-        if (!accessible) {
-            declaredField.setAccessible(true);
-        }
-        try {
-            return (T) declaredField.get(object);
-        } finally {
-            declaredField.setAccessible(accessible);
-        }
-    }
-
-    private static ServerCnxnFactory getServerCnxnFactory(ZooKeeperServerMain zooKeeperServerMain) throws Exception {
-        ServerCnxnFactory serverCnxnFactory = readField(ZooKeeperServerMain.class, "cnxnFactory", zooKeeperServerMain);
-        return serverCnxnFactory;
+            }
+        }, 10, 10000, 0L);
     }
 
     public void checkContainers() throws Exception {
         // Make sure the container nodes are actually deleted
         Thread.sleep(1000);
 
-        ContainerManager containerManager = getContainerManager(getZooKeeperServerMain(zooKeeperServerEmbedded));
         containerManager.checkContainers();
     }
 
     public void stop() throws Exception {
-        if (zooKeeperServerEmbedded != null) {
-            zooKeeperServerEmbedded.close();
-            zooKeeperServerEmbedded = null;
+        if (containerManager != null) {
+            containerManager.stop();
+            containerManager = null;
         }
+
+        if (serverFactory != null) {
+            serverFactory.shutdown();
+            serverFactory = null;
+        }
+
+        if (zks != null) {
+            SessionTracker sessionTracker = zks.getSessionTracker();
+            zks.shutdown();
+            zks.getZKDatabase().close();
+            if (sessionTracker instanceof Thread) {
+                Thread sessionTrackerThread = (Thread) sessionTracker;
+                sessionTrackerThread.interrupt();
+                sessionTrackerThread.join();
+            }
+            zks = null;
+        }
+
         log.info("Stopped test ZK server");
     }
 
     public void expireSession(long sessionId) {
-        getZooKeeperServer(getZooKeeperServerMain(zooKeeperServerEmbedded))
-                .expire(sessionId);
+        zks.expire(new SessionTracker.Session() {
+            @Override
+            public long getSessionId() {
+                return sessionId;
+            }
+
+            @Override
+            public int getTimeout() {
+                return 10_000;
+            }
+
+            @Override
+            public boolean isClosing() {
+                return false;
+            }
+        });
     }
 
     @Override
@@ -147,14 +152,17 @@ public class TestZKServer implements AutoCloseable {
         FileUtils.deleteDirectory(zkDataDir);
     }
 
-    @SneakyThrows
+    public int getPort() {
+        return zkPort;
+    }
+
     public String getConnectionString() {
-        return zooKeeperServerEmbedded.getConnectionString();
+        return "127.0.0.1:" + getPort();
     }
 
     public static boolean waitForServerUp(String hp, long timeout) {
         long start = System.currentTimeMillis();
-        String[] split = hp.split(":");
+        String split[] = hp.split(":");
         String host = split[0];
         int port = Integer.parseInt(split[1]);
         while (true) {

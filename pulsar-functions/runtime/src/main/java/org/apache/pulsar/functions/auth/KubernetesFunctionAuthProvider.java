@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,9 +24,12 @@ import java.util.Map;
 import java.util.Optional;
 import org.apache.pulsar.common.util.Reflections;
 import org.apache.pulsar.functions.proto.Function;
+import org.apache.pulsar.common.util.Reflections;
+
+import java.util.Optional;
 
 /**
- * Kubernetes runtime specific functions authentication provider.
+ * Kubernetes runtime specific functions authentication provider
  */
 public interface KubernetesFunctionAuthProvider extends FunctionAuthProvider {
 
@@ -36,7 +39,7 @@ public interface KubernetesFunctionAuthProvider extends FunctionAuthProvider {
      * @deprecated use
      * {@link #initialize(CoreV1Api, byte[], java.util.function.Function, Map)}
      */
-    @Deprecated(since = "3.0.0")
+    @Deprecated
     default void initialize(CoreV1Api coreClient, byte[] caBytes,
                             java.util.function.Function<Function.FunctionDetails, String> namespaceCustomizerFunc) {
         setCaBytes(caBytes);
@@ -59,14 +62,13 @@ public interface KubernetesFunctionAuthProvider extends FunctionAuthProvider {
     }
 
     /**
-     * Configure function statefulset spec based on function auth data.
+     * Configure function statefulset spec based on function auth data
      * @param statefulSet statefulset spec for function
      * @param functionAuthData function auth data
      */
     void configureAuthDataStatefulSet(V1StatefulSet statefulSet, Optional<FunctionAuthData> functionAuthData);
 
     static KubernetesFunctionAuthProvider getAuthProvider(String className) {
-        return Reflections.createInstance(className, KubernetesFunctionAuthProvider.class,
-                Thread.currentThread().getContextClassLoader());
+        return Reflections.createInstance(className, KubernetesFunctionAuthProvider.class, Thread.currentThread().getContextClassLoader());
     }
 }

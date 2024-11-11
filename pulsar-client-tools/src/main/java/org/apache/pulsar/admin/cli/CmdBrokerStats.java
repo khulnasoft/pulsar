@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,8 @@
  */
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.gson.Gson;
@@ -27,21 +29,19 @@ import com.google.gson.stream.JsonWriter;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Supplier;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.stats.AllocatorStats;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
-@Command(description = "Operations to collect broker statistics")
+@Parameters(commandDescription = "Operations to collect broker statistics")
 public class CmdBrokerStats extends CmdBase {
     private static final String DEFAULT_INDENTATION = "    ";
 
-    @Command(description = "dump metrics for Monitoring")
+    @Parameters(commandDescription = "dump metrics for Monitoring")
     private class CmdMonitoringMetrics extends CliCommand {
-        @Option(names = {"-i", "--indent"}, description = "Indent JSON output", required = false)
+        @Parameter(names = { "-i", "--indent" }, description = "Indent JSON output", required = false)
         private boolean indent = false;
 
         @Override
@@ -67,9 +67,9 @@ public class CmdBrokerStats extends CmdBase {
         }
     }
 
-    @Command(description = "dump mbean stats")
+    @Parameters(commandDescription = "dump mbean stats")
     private class CmdDumpMBeans extends CliCommand {
-        @Option(names = {"-i", "--indent"}, description = "Indent JSON output", required = false)
+        @Parameter(names = { "-i", "--indent" }, description = "Indent JSON output", required = false)
         private boolean indent = false;
 
         @Override
@@ -88,7 +88,7 @@ public class CmdBrokerStats extends CmdBase {
 
     }
 
-    @Command(description = "dump broker load-report")
+    @Parameters(commandDescription = "dump broker load-report")
     private class CmdLoadReport extends CliCommand {
 
         @Override
@@ -97,9 +97,9 @@ public class CmdBrokerStats extends CmdBase {
         }
     }
 
-    @Command(description = "dump topics stats")
+    @Parameters(commandDescription = "dump topics stats")
     private class CmdTopics extends CliCommand {
-        @Option(names = {"-i", "--indent"}, description = "Indent JSON output", required = false)
+        @Parameter(names = { "-i", "--indent" }, description = "Indent JSON output", required = false)
         private boolean indent = false;
 
         @Override
@@ -118,14 +118,14 @@ public class CmdBrokerStats extends CmdBase {
 
     }
 
-    @Command(description = "dump allocator stats")
+    @Parameters(commandDescription = "dump allocator stats")
     private class CmdAllocatorStats extends CliCommand {
-        @Parameters(description = "allocator-name", arity = "1")
-        private String allocatorName;
+        @Parameter(description = "allocator-name", required = true)
+        private List<String> params;
 
         @Override
         void run() throws Exception {
-            AllocatorStats stats = getAdmin().brokerStats().getAllocatorStats(allocatorName);
+            AllocatorStats stats = getAdmin().brokerStats().getAllocatorStats(params.get(0));
             ObjectMapper mapper = ObjectMapperFactory.create();
             ObjectWriter writer = mapper.writerWithDefaultPrettyPrinter();
             try (Writer out = new OutputStreamWriter(System.out, StandardCharsets.UTF_8)) {
@@ -138,11 +138,11 @@ public class CmdBrokerStats extends CmdBase {
 
     public CmdBrokerStats(Supplier<PulsarAdmin> admin) {
         super("broker-stats", admin);
-        addCommand("monitoring-metrics", new CmdMonitoringMetrics());
-        addCommand("mbeans", new CmdDumpMBeans());
-        addCommand("topics", new CmdTopics(), "destinations");
-        addCommand("allocator-stats", new CmdAllocatorStats());
-        addCommand("load-report", new CmdLoadReport());
+        jcommander.addCommand("monitoring-metrics", new CmdMonitoringMetrics());
+        jcommander.addCommand("mbeans", new CmdDumpMBeans());
+        jcommander.addCommand("topics", new CmdTopics(), "destinations");
+        jcommander.addCommand("allocator-stats", new CmdAllocatorStats());
+        jcommander.addCommand("load-report", new CmdLoadReport());
     }
 
 }

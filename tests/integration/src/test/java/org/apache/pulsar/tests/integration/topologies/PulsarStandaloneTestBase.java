@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -82,8 +82,7 @@ public abstract class PulsarStandaloneTestBase extends PulsarTestBase {
         container = new StandaloneContainer(clusterName, pulsarImageName)
             .withNetwork(network)
             .withNetworkAliases(StandaloneContainer.NAME + "-" + clusterName)
-            .withEnv("PF_stateStorageServiceUrl", "bk://localhost:4181")
-            .withEnv("PULSAR_STANDALONE_USE_ZOOKEEPER", "true");
+            .withEnv("PF_stateStorageServiceUrl", "bk://localhost:4181");
         container.start();
         log.info("Pulsar cluster {} is up running:", clusterName);
         log.info("\tBinary Service Url : {}", container.getPlainTextServiceUrl());

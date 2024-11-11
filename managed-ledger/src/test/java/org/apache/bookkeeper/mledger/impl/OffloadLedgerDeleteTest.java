@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -82,7 +82,6 @@ public class OffloadLedgerDeleteTest extends MockedBookKeeperTestCase {
                 OffloadPoliciesImpl.DEFAULT_MAX_BLOCK_SIZE_IN_BYTES,
                 OffloadPoliciesImpl.DEFAULT_READ_BUFFER_SIZE_IN_BYTES,
                 OffloadPoliciesImpl.DEFAULT_OFFLOAD_THRESHOLD_IN_BYTES,
-                OffloadPoliciesImpl.DEFAULT_OFFLOAD_THRESHOLD_IN_SECONDS,
                 OffloadPoliciesImpl.DEFAULT_OFFLOAD_DELETION_LAG_IN_MILLIS,
                 OffloadPoliciesImpl.DEFAULT_OFFLOADED_READ_PRIORITY);
 
@@ -382,10 +381,6 @@ public class OffloadLedgerDeleteTest extends MockedBookKeeperTestCase {
         offloadPolicies.setManagedLedgerOffloadDeletionLagInMillis(500L);
         needsDelete = managedLedger.isOffloadedNeedsDelete(offloadContext, Optional.of(offloadPolicies));
         Assert.assertTrue(needsDelete);
-
-        offloadPolicies.setManagedLedgerOffloadDeletionLagInMillis(-1L);
-        needsDelete = managedLedger.isOffloadedNeedsDelete(offloadContext, Optional.of(offloadPolicies));
-        Assert.assertFalse(needsDelete);
 
         offloadPolicies.setManagedLedgerOffloadDeletionLagInMillis(1000L * 2);
         needsDelete = managedLedger.isOffloadedNeedsDelete(offloadContext, Optional.of(offloadPolicies));

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,16 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.pulsar.broker.service;
 
 import static org.apache.pulsar.broker.BrokerTestUtil.spyWithClassAndConstructorArgs;
 import static org.apache.pulsar.broker.BrokerTestUtil.spyWithClassAndConstructorArgsRecordingInvocations;
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest.createMockBookKeeper;
+import static org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest.createMockZooKeeper;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,6 +32,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.matches;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,37 +41,29 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
+import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
-import io.netty.channel.DefaultChannelId;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.vertx.core.impl.ConcurrentHashSet;
-import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
@@ -84,51 +74,44 @@ import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
-import org.apache.commons.lang3.mutable.MutableInt;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.TransactionMetadataStoreService;
 import org.apache.pulsar.broker.auth.MockAlwaysExpiredAuthenticationProvider;
-import org.apache.pulsar.broker.auth.MockAuthenticationProvider;
 import org.apache.pulsar.broker.auth.MockAuthorizationProvider;
-import org.apache.pulsar.broker.auth.MockMultiStageAuthenticationProvider;
 import org.apache.pulsar.broker.auth.MockMutableAuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSubscription;
+import org.apache.pulsar.broker.auth.MockAuthenticationProvider;
+import org.apache.pulsar.broker.auth.MockMultiStageAuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider;
+import org.apache.pulsar.broker.cache.ConfigurationCacheService;
+import org.apache.pulsar.broker.intercept.BrokerInterceptor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
+import org.apache.pulsar.broker.resources.NamespaceResources;
+import org.apache.pulsar.broker.resources.PulsarResources;
 import org.apache.pulsar.broker.service.BrokerServiceException.ServiceUnitNotReadyException;
 import org.apache.pulsar.broker.service.ServerCnx.State;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
+import org.apache.pulsar.broker.service.schema.DefaultSchemaRegistryService;
 import org.apache.pulsar.broker.service.utils.ClientChannelHelper;
-import org.apache.pulsar.broker.testcontext.PulsarTestContext;
-import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.transaction.TxnID;
-import org.apache.pulsar.client.util.ConsumerName;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.api.proto.AuthMethod;
 import org.apache.pulsar.common.api.proto.BaseCommand;
 import org.apache.pulsar.common.api.proto.BaseCommand.Type;
 import org.apache.pulsar.common.api.proto.CommandAck.AckType;
 import org.apache.pulsar.common.api.proto.CommandAddPartitionToTxnResponse;
-import org.apache.pulsar.common.api.proto.CommandAddSubscriptionToTxnResponse;
 import org.apache.pulsar.common.api.proto.CommandAuthChallenge;
 import org.apache.pulsar.common.api.proto.CommandAuthResponse;
 import org.apache.pulsar.common.api.proto.CommandCloseProducer;
 import org.apache.pulsar.common.api.proto.CommandConnected;
-import org.apache.pulsar.common.api.proto.CommandEndTxnOnPartitionResponse;
-import org.apache.pulsar.common.api.proto.CommandEndTxnOnSubscriptionResponse;
-import org.apache.pulsar.common.api.proto.CommandEndTxnResponse;
 import org.apache.pulsar.common.api.proto.CommandError;
-import org.apache.pulsar.common.api.proto.CommandGetTopicsOfNamespace;
-import org.apache.pulsar.common.api.proto.CommandGetTopicsOfNamespaceResponse;
 import org.apache.pulsar.common.api.proto.CommandLookupTopicResponse;
 import org.apache.pulsar.common.api.proto.CommandPartitionedTopicMetadataResponse;
-import org.apache.pulsar.common.api.proto.CommandPing;
 import org.apache.pulsar.common.api.proto.CommandProducerSuccess;
 import org.apache.pulsar.common.api.proto.CommandSendError;
 import org.apache.pulsar.common.api.proto.CommandSendReceipt;
@@ -136,13 +119,9 @@ import org.apache.pulsar.common.api.proto.CommandSubscribe;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.InitialPosition;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
 import org.apache.pulsar.common.api.proto.CommandSuccess;
-import org.apache.pulsar.common.api.proto.CommandWatchTopicListSuccess;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.api.proto.ProtocolVersion;
 import org.apache.pulsar.common.api.proto.ServerError;
-import org.apache.pulsar.common.api.proto.Subscription;
-import org.apache.pulsar.common.api.proto.TxnAction;
-import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
 import org.apache.pulsar.common.policies.data.Policies;
@@ -151,34 +130,34 @@ import org.apache.pulsar.common.protocol.ByteBufPair;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
 import org.apache.pulsar.common.protocol.PulsarHandler;
-import org.apache.pulsar.common.protocol.schema.EmptyVersion;
-import org.apache.pulsar.common.topics.TopicList;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.collections.ConcurrentLongHashMap;
-import org.apache.pulsar.transaction.coordinator.TxnMeta;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
+import org.apache.pulsar.metadata.impl.ZKMetadataStore;
+import org.apache.zookeeper.ZooKeeper;
 import org.awaitility.Awaitility;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-@Slf4j
 @SuppressWarnings("unchecked")
 @Test(groups = "broker")
 public class ServerCnxTest {
     protected EmbeddedChannel channel;
     private ServiceConfiguration svcConfig;
     private ServerCnx serverCnx;
-
-    protected PulsarTestContext pulsarTestContext;
-
-    protected PulsarService pulsar;
     protected BrokerService brokerService;
+    private ManagedLedgerFactory mlFactoryMock;
     private ClientChannelHelper clientChannelHelper;
+    private PulsarService pulsar;
+    private MetadataStoreExtended store;
+    private ConfigurationCacheService configCacheService;
+    private NamespaceResources namespaceResources;
     protected NamespaceService namespaceService;
     private final int currentProtocolVersion = ProtocolVersion.values()[ProtocolVersion.values().length - 1]
             .getValue();
@@ -188,53 +167,62 @@ public class ServerCnxTest {
     private final String nonOwnedTopicName = "persistent://prop/use/ns-abc/success-not-owned-topic";
     private final String encryptionRequiredTopicName = "persistent://prop/use/ns-abc/successEncryptionRequiredTopic";
     private final String successSubName = "successSub";
-    private final String nonExistentTopicName =
-            "persistent://nonexistent-prop/nonexistent-cluster/nonexistent-namespace/successNonExistentTopic";
+    private final String nonExistentTopicName = "persistent://nonexistent-prop/nonexistent-cluster/nonexistent-namespace/successNonExistentTopic";
     private final String topicWithNonLocalCluster = "persistent://prop/usw/ns-abc/successTopic";
-    private final List<String> matchingTopics = Arrays.asList(
-            "persistent://use/ns-abc/topic-1",
-            "persistent://use/ns-abc/topic-2");
-
-    private final List<String> topics = Arrays.asList(
-            "persistent://use/ns-abc/topic-1",
-            "persistent://use/ns-abc/topic-2",
-            "persistent://use/ns-abc/topic");
 
     private ManagedLedger ledgerMock;
     private ManagedCursor cursorMock;
-    private ConcurrentHashSet<EmbeddedChannel> channelsStoppedAnswerHealthCheck = new ConcurrentHashSet<>();
-    private ManagedLedgerFactory managedLedgerFactory;
-
+    private OrderedExecutor executor;
+    private EventLoopGroup eventLoopGroup;
 
     @BeforeMethod(alwaysRun = true)
     public void setup() throws Exception {
-        channelsStoppedAnswerHealthCheck.clear();
-        svcConfig = new ServiceConfiguration();
+        eventLoopGroup = new NioEventLoopGroup();
+        executor = OrderedExecutor.newBuilder().numThreads(1).build();
+        svcConfig = spy(ServiceConfiguration.class);
         svcConfig.setBrokerShutdownTimeoutMs(0L);
         svcConfig.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
+        svcConfig.setClusterName("pulsar-cluster");
+        pulsar = spyWithClassAndConstructorArgs(PulsarService.class, svcConfig);
+        doReturn(new DefaultSchemaRegistryService()).when(pulsar).getSchemaRegistryService();
+
         svcConfig.setKeepAliveIntervalSeconds(inSec(1, TimeUnit.SECONDS));
         svcConfig.setBacklogQuotaCheckEnabled(false);
-        svcConfig.setClusterName("use");
-        pulsarTestContext = PulsarTestContext.builderForNonStartableContext()
-                .config(svcConfig)
-                .spyByDefault()
-                .build();
-        pulsar = pulsarTestContext.getPulsarService();
-        managedLedgerFactory = pulsarTestContext.getDefaultManagedLedgerFactory();
-        brokerService = pulsarTestContext.getBrokerService();
+        doReturn(svcConfig).when(pulsar).getConfiguration();
+        doReturn(mock(PulsarResources.class)).when(pulsar).getPulsarResources();
 
-        namespaceService = pulsar.getNamespaceService();
+        doReturn("use").when(svcConfig).getClusterName();
+
+        mlFactoryMock = mock(ManagedLedgerFactory.class);
+        doReturn(mlFactoryMock).when(pulsar).getManagedLedgerFactory();
+
+        ZooKeeper mockZk = createMockZooKeeper();
+        doReturn(createMockBookKeeper(executor))
+            .when(pulsar).getBookKeeperClient();
+
+        store = new ZKMetadataStore(mockZk);
+
+        doReturn(store).when(pulsar).getLocalMetadataStore();
+        doReturn(store).when(pulsar).getConfigurationMetadataStore();
+
+        brokerService = spyWithClassAndConstructorArgs(BrokerService.class, pulsar, eventLoopGroup);
+        BrokerInterceptor interceptor = mock(BrokerInterceptor.class);
+        doReturn(interceptor).when(brokerService).getInterceptor();
+        doReturn(brokerService).when(pulsar).getBrokerService();
+        doReturn(executor).when(pulsar).getOrderedExecutor();
+
+        PulsarResources pulsarResources = spyWithClassAndConstructorArgs(PulsarResources.class, store, store);
+        namespaceResources = spyWithClassAndConstructorArgs(NamespaceResources.class, store, store, 30);
+        doReturn(namespaceResources).when(pulsarResources).getNamespaceResources();
+        doReturn(pulsarResources).when(pulsar).getPulsarResources();
+
+        namespaceService = mock(NamespaceService.class);
         doReturn(CompletableFuture.completedFuture(null)).when(namespaceService).getBundleAsync(any());
+        doReturn(namespaceService).when(pulsar).getNamespaceService();
         doReturn(true).when(namespaceService).isServiceUnitOwned(any());
         doReturn(true).when(namespaceService).isServiceUnitActive(any());
         doReturn(CompletableFuture.completedFuture(true)).when(namespaceService).isServiceUnitActiveAsync(any());
         doReturn(CompletableFuture.completedFuture(true)).when(namespaceService).checkTopicOwnership(any());
-        doReturn(CompletableFuture.completedFuture(topics)).when(namespaceService).getListOfTopics(
-                NamespaceName.get("use", "ns-abc"), CommandGetTopicsOfNamespace.Mode.ALL);
-        doReturn(CompletableFuture.completedFuture(topics)).when(namespaceService).getListOfUserTopics(
-                NamespaceName.get("use", "ns-abc"), CommandGetTopicsOfNamespace.Mode.ALL);
-        doReturn(CompletableFuture.completedFuture(topics)).when(namespaceService).getListOfPersistentTopics(
-                NamespaceName.get("use", "ns-abc"));
 
         setupMLAsyncCallbackMocks();
 
@@ -253,10 +241,13 @@ public class ServerCnxTest {
         if (channel != null) {
             channel.close();
         }
-        if (pulsarTestContext != null) {
-            pulsarTestContext.close();
-            pulsarTestContext = null;
+        pulsar.close();
+        brokerService.close();
+        executor.shutdownNow();
+        if (eventLoopGroup != null) {
+            eventLoopGroup.shutdownGracefully().get();
         }
+        store.close();
     }
 
     @Test(timeOut = 30000)
@@ -321,49 +312,6 @@ public class ServerCnxTest {
     }
 
     @Test(timeOut = 30000)
-    public void testConnectCommandWithProxyVersion() throws Exception {
-        resetChannel();
-        assertTrue(channel.isActive());
-        assertEquals(serverCnx.getState(), State.Start);
-
-        ByteBuf clientCommand = Commands.newConnect("none", null, 1, null, null, null, null, null,
-                "my-pulsar-proxy");
-        channel.writeInbound(clientCommand);
-
-        assertEquals(serverCnx.getState(), State.Connected);
-        assertEquals(serverCnx.getProxyVersion(), "my-pulsar-proxy");
-        channel.finish();
-    }
-
-    @DataProvider(name = "clientVersions")
-    public Object[][] clientVersions() {
-        return new Object[][]{
-                {"Pulsar Client", true},
-                {"Pulsar Go 0.2.1", true},
-                {"Pulsar-Client-Java-v1.15.2", true},
-                {"pulsar-java-3.0.0", true},
-                {"", false},
-                {" ", false}
-        };
-    }
-
-    @Test(dataProvider = "clientVersions")
-    public void testStoreClientVersionWhenNotBlank(String clientVersion, boolean expectSetToClientVersion) throws Exception {
-        resetChannel();
-        assertTrue(channel.isActive());
-        assertEquals(serverCnx.getState(), State.Start);
-
-        ByteBuf clientCommand = Commands.newConnect("", "", clientVersion);
-        channel.writeInbound(clientCommand);
-
-        assertEquals(serverCnx.getState(), State.Connected);
-        assertTrue(getResponse() instanceof CommandConnected);
-
-        assertEquals(serverCnx.getClientVersion(), expectSetToClientVersion ? clientVersion : null);
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
     public void testKeepAlive() throws Exception {
         resetChannel();
         assertTrue(channel.isActive());
@@ -380,7 +328,7 @@ public class ServerCnxTest {
         // Connection will be closed in 2 seconds, in the meantime give chance to run the cleanup logic
         for (int i = 0; i < 3; i++) {
             channel.runPendingTasks();
-            channel.advanceTimeBy(1, TimeUnit.SECONDS);
+            Thread.sleep(1000);
         }
 
         assertFalse(channel.isActive());
@@ -395,8 +343,7 @@ public class ServerCnxTest {
         assertEquals(serverCnx.getState(), State.Start);
 
         // test server response to CONNECT
-        ByteBuf clientCommand =
-                Commands.newConnect("none", "", ProtocolVersion.v0.getValue(), null, null, null, null, null);
+        ByteBuf clientCommand = Commands.newConnect("none", "", ProtocolVersion.v0.getValue(), null, null, null, null, null);
         channel.writeInbound(clientCommand);
 
         assertEquals(serverCnx.getState(), State.Connected);
@@ -407,7 +354,7 @@ public class ServerCnxTest {
         // Connection will *not* be closed in 2 seconds
         for (int i = 0; i < 3; i++) {
             channel.runPendingTasks();
-            channel.advanceTimeBy(1, TimeUnit.SECONDS);
+            Thread.sleep(1000);
         }
         assertTrue(channel.isActive());
 
@@ -425,7 +372,7 @@ public class ServerCnxTest {
         // Connection will be closed in 2 seconds, in the meantime give chance to run the cleanup logic
         for (int i = 0; i < 3; i++) {
             channel.runPendingTasks();
-            channel.advanceTimeBy(1, TimeUnit.SECONDS);
+            Thread.sleep(1000);
         }
 
         assertFalse(channel.isActive());
@@ -520,41 +467,6 @@ public class ServerCnxTest {
     }
 
     @Test(timeOut = 30000)
-    public void testConnectCommandWithPassingOriginalAuthDataAndSetAnonymousUserRole() throws Exception {
-        AuthenticationService authenticationService = mock(AuthenticationService.class);
-        AuthenticationProvider authenticationProvider = new MockAuthenticationProvider();
-        String authMethodName = authenticationProvider.getAuthMethodName();
-
-        String anonymousUserRole = "admin";
-        when(brokerService.getAuthenticationService()).thenReturn(authenticationService);
-        when(authenticationService.getAuthenticationProvider(authMethodName)).thenReturn(authenticationProvider);
-        when(authenticationService.getAnonymousUserRole()).thenReturn(Optional.of(anonymousUserRole));
-        svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setAuthenticateOriginalAuthData(true);
-        svcConfig.setProxyRoles(Collections.singleton("pass.proxy"));
-        svcConfig.setAnonymousUserRole(anonymousUserRole);
-
-        resetChannel();
-        assertTrue(channel.isActive());
-        assertEquals(serverCnx.getState(), State.Start);
-
-        // When both the proxy and the broker set the anonymousUserRole option
-        // the proxy will use anonymousUserRole to delegate the client's role when connecting.
-        ByteBuf clientCommand = Commands.newConnect(authMethodName, "pass.proxy", 1, null,
-                null, anonymousUserRole, null, null);
-        channel.writeInbound(clientCommand);
-
-        Object response1 = getResponse();
-        assertTrue(response1 instanceof CommandConnected);
-        assertEquals(serverCnx.getState(), State.Connected);
-        assertEquals(serverCnx.getAuthRole(), anonymousUserRole);
-        assertEquals(serverCnx.getPrincipal(), anonymousUserRole);
-        assertEquals(serverCnx.getOriginalPrincipal(), anonymousUserRole);
-        assertTrue(serverCnx.isActive());
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
     public void testConnectCommandWithPassingOriginalPrincipal() throws Exception {
         AuthenticationService authenticationService = mock(AuthenticationService.class);
         AuthenticationProvider authenticationProvider = new MockAuthenticationProvider();
@@ -585,32 +497,6 @@ public class ServerCnxTest {
         channel.finish();
     }
 
-    @Test
-    public void testConnectWithNonProxyRoleAndProxyVersion() throws Exception {
-        AuthenticationService authenticationService = mock(AuthenticationService.class);
-        AuthenticationProvider authenticationProvider = new MockAuthenticationProvider();
-        String authMethodName = authenticationProvider.getAuthMethodName();
-
-        when(brokerService.getAuthenticationService()).thenReturn(authenticationService);
-        when(authenticationService.getAuthenticationProvider(authMethodName)).thenReturn(authenticationProvider);
-        svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setAuthorizationEnabled(true);
-
-        resetChannel();
-        assertTrue(channel.isActive());
-        assertEquals(serverCnx.getState(), State.Start);
-
-        ByteBuf clientCommand = Commands.newConnect(authMethodName, AuthData.of("pass.pass".getBytes()),
-                1, null, null, null, null, null, "my-pulsar-proxy");
-        channel.writeInbound(clientCommand);
-        Object response = getResponse();
-        assertTrue(response instanceof CommandError);
-        assertEquals(((CommandError) response).getError(), ServerError.AuthorizationError);
-        assertEquals(serverCnx.getState(), State.Failed);
-        channel.finish();
-    }
-
-    @Test
     public void testAuthChallengePrincipalChangeFails() throws Exception {
         AuthenticationService authenticationService = mock(AuthenticationService.class);
         AuthenticationProvider authenticationProvider = new MockAlwaysExpiredAuthenticationProvider();
@@ -770,7 +656,7 @@ public class ServerCnxTest {
         AuthenticationService authenticationService = mock(AuthenticationService.class);
         doReturn(authenticationService).when(brokerService).getAuthenticationService();
         doReturn(Optional.empty()).when(authenticationService).getAnonymousUserRole();
-        svcConfig.setAuthenticationEnabled(true);
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
 
         resetChannel();
         assertTrue(channel.isActive());
@@ -801,13 +687,13 @@ public class ServerCnxTest {
         assertTrue(channel.isActive());
         assertEquals(serverCnx.getState(), State.Start);
 
-        ByteBuf clientCommand = Commands.newConnect(authMethodName, "pass.proxy", 1, null,
+        ByteBuf clientCommand = Commands.newConnect(authMethodName, "pass.proxy", 1,null,
                 null, "client", "fail", authMethodName);
         channel.writeInbound(clientCommand);
 
         Object response1 = getResponse();
         assertTrue(response1 instanceof CommandError);
-        assertEquals(((CommandError) response1).getMessage(), "Failed to authenticate");
+        assertEquals(((CommandError) response1).getMessage(), "Unable to authenticate");
         assertEquals(serverCnx.getState(), State.Failed);
         assertFalse(serverCnx.isActive());
         channel.finish();
@@ -836,8 +722,7 @@ public class ServerCnxTest {
         assertEquals(serverCnx.getState(), State.Connecting);
 
         // Trigger another AuthChallenge to verify that code path continues to challenge
-        ByteBuf authResponse1 =
-                Commands.newAuthResponse(authMethodName, AuthData.of("challenge.client".getBytes()), 1, "1");
+        ByteBuf authResponse1 = Commands.newAuthResponse(authMethodName, AuthData.of("challenge.client".getBytes()), 1, "1");
         channel.writeInbound(authResponse1);
 
         Object challenge2 = getResponse();
@@ -850,7 +735,7 @@ public class ServerCnxTest {
 
         Object response3 = getResponse();
         assertTrue(response3 instanceof CommandError);
-        assertEquals(((CommandError) response3).getMessage(), "Failed to authenticate");
+        assertEquals(((CommandError) response3).getMessage(), "Unable to authenticate");
         assertEquals(serverCnx.getState(), State.Failed);
         assertFalse(serverCnx.isActive());
         channel.finish();
@@ -883,7 +768,7 @@ public class ServerCnxTest {
         Object response = getResponse();
         assertTrue(response instanceof CommandError);
 
-        assertEquals(((CommandError) response).getMessage(), "Failed to authenticate");
+        assertEquals(((CommandError) response).getMessage(), "Unable to authenticate");
         assertEquals(serverCnx.getState(), State.Failed);
         assertFalse(serverCnx.isActive());
         channel.finish();
@@ -907,7 +792,7 @@ public class ServerCnxTest {
         svcConfig.setAuthorizationProvider("org.apache.pulsar.broker.auth.MockAuthorizationProvider");
         AuthorizationService authorizationService =
                 spyWithClassAndConstructorArgsRecordingInvocations(AuthorizationService.class, svcConfig,
-                        pulsarTestContext.getPulsarResources());
+                        pulsar.getPulsarResources());
         when(brokerService.getAuthorizationService()).thenReturn(authorizationService);
         svcConfig.setAuthorizationEnabled(true);
 
@@ -985,324 +870,6 @@ public class ServerCnxTest {
                 }));
     }
 
-    @Test
-    public void testDuplicateProducer() throws Exception {
-        final String tName = successTopicName;
-        final long producerId = 1;
-        final MutableInt requestId = new MutableInt(1);
-        final MutableInt epoch = new MutableInt(1);
-        final Map<String, String> metadata = Collections.emptyMap();
-        final String pName = "p1";
-        resetChannel();
-        setChannelConnected();
-
-        // The producer register using the first connection.
-        ByteBuf cmdProducer1 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        channel.writeInbound(cmdProducer1);
-        assertTrue(getResponse() instanceof CommandProducerSuccess);
-        PersistentTopic topicRef = (PersistentTopic) brokerService.getTopicReference(tName).get();
-        assertNotNull(topicRef);
-        assertEquals(topicRef.getProducers().size(), 1);
-
-        // Verify the second producer will be reject due to the previous one still is active.
-        // Every second try once, total 10 times, all requests should fail.
-        ClientChannel channel2 = new ClientChannel();
-        BackGroundExecutor backGroundExecutor1 = startBackgroundExecutorForEmbeddedChannel(channel);
-        BackGroundExecutor autoResponseForHeartBeat = autoResponseForHeartBeat(channel, clientChannelHelper);
-        BackGroundExecutor backGroundExecutor2 = startBackgroundExecutorForEmbeddedChannel(channel2.channel);
-        setChannelConnected(channel2.serverCnx);
-
-        for (int i = 0; i < 10; i++) {
-            ByteBuf cmdProducer2 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                    pName, false, metadata, null, epoch.incrementAndGet(), false,
-                    ProducerAccessMode.Shared, Optional.empty(), false);
-            channel2.channel.writeInbound(cmdProducer2);
-            Object response2 = getResponse(channel2.channel, channel2.clientChannelHelper);
-            assertTrue(response2 instanceof CommandError);
-            assertEquals(topicRef.getProducers().size(), 1);
-            assertTrue(channel.isActive());
-            Thread.sleep(500);
-        }
-
-        // cleanup.
-        autoResponseForHeartBeat.close();
-        backGroundExecutor1.close();
-        backGroundExecutor2.close();
-        channel.finish();
-        channel2.close();
-    }
-
-    @Test
-    public void testProducerChangeSocket() throws Exception {
-        final String tName = successTopicName;
-        final long producerId = 1;
-        final MutableInt requestId = new MutableInt(1);
-        final MutableInt epoch = new MutableInt(1);
-        final Map<String, String> metadata = Collections.emptyMap();
-        final String pName = "p1";
-        resetChannel();
-        setChannelConnected();
-
-        // The producer register using the first connection.
-        ByteBuf cmdProducer1 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        channel.writeInbound(cmdProducer1);
-        assertTrue(getResponse() instanceof CommandProducerSuccess);
-        PersistentTopic topicRef = (PersistentTopic) brokerService.getTopicReference(tName).get();
-        assertNotNull(topicRef);
-        assertEquals(topicRef.getProducers().size(), 1);
-
-        // Verify the second producer using a new connection will override the producer who using a stopped channel.
-        channelsStoppedAnswerHealthCheck.add(channel);
-        ClientChannel channel2 = new ClientChannel();
-        BackGroundExecutor backGroundExecutor1 = startBackgroundExecutorForEmbeddedChannel(channel);
-        BackGroundExecutor backGroundExecutor2 = startBackgroundExecutorForEmbeddedChannel(channel2.channel);
-        setChannelConnected(channel2.serverCnx);
-
-        ByteBuf cmdProducer2 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        channel2.channel.writeInbound(cmdProducer2);
-        Object response2 = getResponse(channel2.channel, channel2.clientChannelHelper);
-        assertTrue(response2 instanceof CommandProducerSuccess);
-        assertEquals(topicRef.getProducers().size(), 1);
-
-        // cleanup.
-        channelsStoppedAnswerHealthCheck.clear();
-        backGroundExecutor1.close();
-        backGroundExecutor2.close();
-        channel.finish();
-        channel2.close();
-    }
-
-    @Test
-    public void testHandleConsumerAfterClientChannelInactive() throws Exception {
-        final String tName = successTopicName;
-        final long consumerId = 1;
-        final MutableInt requestId = new MutableInt(1);
-        final String sName = successSubName;
-        final String cName1 = ConsumerName.generateRandomName();
-        final String cName2 = ConsumerName.generateRandomName();
-        resetChannel();
-        setChannelConnected();
-
-        // The producer register using the first connection.
-        ByteBuf cmdSubscribe1 = Commands.newSubscribe(tName, sName, consumerId, requestId.incrementAndGet(),
-                SubType.Exclusive, 0, cName1, 0);
-        channel.writeInbound(cmdSubscribe1);
-        assertTrue(getResponse() instanceof CommandSuccess);
-        PersistentTopic topicRef = (PersistentTopic) brokerService.getTopicReference(tName).get();
-        assertNotNull(topicRef);
-        assertNotNull(topicRef.getSubscription(sName).getConsumers());
-        assertEquals(topicRef.getSubscription(sName).getConsumers().size(), 1);
-        assertEquals(topicRef.getSubscription(sName).getConsumers().iterator().next().consumerName(), cName1);
-
-        // Verify the second producer using a new connection will override the consumer who using a stopped channel.
-        channelsStoppedAnswerHealthCheck.add(channel);
-        ClientChannel channel2 = new ClientChannel();
-        setChannelConnected(channel2.serverCnx);
-        ByteBuf cmdSubscribe2 = Commands.newSubscribe(tName, sName, consumerId, requestId.incrementAndGet(),
-                CommandSubscribe.SubType.Exclusive, 0, cName2, 0);
-        channel2.channel.writeInbound(cmdSubscribe2);
-        BackGroundExecutor backGroundExecutor = startBackgroundExecutorForEmbeddedChannel(channel);
-
-        assertTrue(getResponse(channel2.channel, channel2.clientChannelHelper) instanceof CommandSuccess);
-        assertEquals(topicRef.getSubscription(sName).getConsumers().size(), 1);
-        assertEquals(topicRef.getSubscription(sName).getConsumers().iterator().next().consumerName(), cName2);
-        backGroundExecutor.close();
-
-        // cleanup.
-        channel.finish();
-        channel2.close();
-    }
-
-    @Test
-    public void test2ndSubFailedIfDisabledConCheck()
-            throws Exception {
-        final String tName = successTopicName;
-        final long consumerId = 1;
-        final MutableInt requestId = new MutableInt(1);
-        final String sName = successSubName;
-        final String cName1 = ConsumerName.generateRandomName();
-        final String cName2 = ConsumerName.generateRandomName();
-        // Disabled connection check.
-        pulsar.getConfig().setConnectionLivenessCheckTimeoutMillis(-1);
-        resetChannel();
-        setChannelConnected();
-
-        // The consumer register using the first connection.
-        ByteBuf cmdSubscribe1 = Commands.newSubscribe(tName, sName, consumerId, requestId.incrementAndGet(),
-                SubType.Exclusive, 0, cName1, 0);
-        channel.writeInbound(cmdSubscribe1);
-        assertTrue(getResponse() instanceof CommandSuccess);
-        PersistentTopic topicRef = (PersistentTopic) brokerService.getTopicReference(tName).orElse(null);
-        assertNotNull(topicRef);
-        assertNotNull(topicRef.getSubscription(sName).getConsumers());
-        assertEquals(topicRef.getSubscription(sName).getConsumers().stream().map(Consumer::consumerName)
-                .collect(Collectors.toList()), Collections.singletonList(cName1));
-
-        // Verify the consumer using a new connection will override the consumer who using a stopped channel.
-        channelsStoppedAnswerHealthCheck.add(channel);
-        ClientChannel channel2 = new ClientChannel();
-        setChannelConnected(channel2.serverCnx);
-        ByteBuf cmdSubscribe2 = Commands.newSubscribe(tName, sName, consumerId, requestId.incrementAndGet(),
-                CommandSubscribe.SubType.Exclusive, 0, cName2, 0);
-        channel2.channel.writeInbound(cmdSubscribe2);
-        BackGroundExecutor backGroundExecutor = startBackgroundExecutorForEmbeddedChannel(channel);
-
-        // Since the feature "ConnectionLiveness" has been disabled, the fix
-        // by https://github.com/apache/pulsar/pull/21183 will not be affected, so the client will still get an error.
-        Object responseOfConnection2 = getResponse(channel2.channel, channel2.clientChannelHelper);
-        assertTrue(responseOfConnection2 instanceof CommandError);
-        assertTrue(((CommandError) responseOfConnection2).getMessage()
-                .contains("Exclusive consumer is already connected"));
-        assertEquals(topicRef.getSubscription(sName).getConsumers().size(), 1);
-        assertEquals(topicRef.getSubscription(sName).getConsumers().iterator().next().consumerName(), cName1);
-        backGroundExecutor.close();
-
-        // cleanup.
-        channel.finish();
-        channel2.close();
-        // Reset configuration.
-        pulsar.getConfig().setConnectionLivenessCheckTimeoutMillis(5000);
-    }
-
-    /**
-     * When a channel typed "EmbeddedChannel", once we call channel.execute(runnable), there is no background thread
-     * to run it.
-     * So starting a background thread to trigger the tasks in the queue.
-     */
-    private BackGroundExecutor startBackgroundExecutorForEmbeddedChannel(final EmbeddedChannel channel) {
-        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-        ScheduledFuture scheduledFuture = executor.scheduleWithFixedDelay(() -> {
-            channel.runPendingTasks();
-        }, 100, 100, TimeUnit.MILLISECONDS);
-        return new BackGroundExecutor(executor, scheduledFuture);
-    }
-
-    /**
-     * Auto answer `Pong` for the `Cmd-Ping`.
-     * Node: This will result in additional threads pop Command from the Command queue, so do not call this
-     * method if the channel needs to accept other Command.
-     */
-    private BackGroundExecutor autoResponseForHeartBeat(EmbeddedChannel channel,
-                                                        ClientChannelHelper clientChannelHelper) {
-        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-        ScheduledFuture scheduledFuture = executor.scheduleWithFixedDelay(() -> {
-            tryPeekResponse(channel, clientChannelHelper);
-        }, 100, 100, TimeUnit.MILLISECONDS);
-        return new BackGroundExecutor(executor, scheduledFuture);
-    }
-
-    @AllArgsConstructor
-    private static class BackGroundExecutor implements Closeable {
-
-        private ScheduledExecutorService executor;
-
-        private ScheduledFuture scheduledFuture;
-
-        @Override
-        public void close() throws IOException {
-            if (scheduledFuture != null) {
-                scheduledFuture.cancel(true);
-            }
-            executor.shutdown();
-        }
-    }
-
-    private class ClientChannel implements Closeable {
-        private ClientChannelHelper clientChannelHelper = new ClientChannelHelper();
-        private ServerCnx serverCnx = new ServerCnx(pulsar);
-        private EmbeddedChannel channel = new EmbeddedChannel(DefaultChannelId.newInstance(),
-                new LengthFieldBasedFrameDecoder(
-                5 * 1024 * 1024,
-                0,
-                4,
-                0,
-                4),
-                serverCnx);
-        public ClientChannel() {
-            serverCnx.setAuthRole("");
-        }
-        public void close(){
-            if (channel != null && channel.isActive()) {
-                serverCnx.close();
-                channel.close();
-            }
-        }
-    }
-
-    @Test
-    public void testHandleProducer() throws Exception {
-        final String tName = "persistent://public/default/test-topic";
-        final long producerId = 1;
-        final MutableInt requestId = new MutableInt(1);
-        final MutableInt epoch = new MutableInt(1);
-        final Map<String, String> metadata = Collections.emptyMap();
-        final String pName = "p1";
-        resetChannel();
-        assertTrue(channel.isActive());
-        assertEquals(serverCnx.getState(), State.Start);
-
-        // connect.
-        ByteBuf cConnect = Commands.newConnect("none", "", null);
-        channel.writeInbound(cConnect);
-        assertEquals(serverCnx.getState(), State.Connected);
-        assertTrue(getResponse() instanceof CommandConnected);
-
-        // There is an in-progress producer registration.
-        ByteBuf cProducer1 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        CompletableFuture existingFuture1 = new CompletableFuture();
-        serverCnx.getProducers().put(producerId, existingFuture1);
-        channel.writeInbound(cProducer1);
-        Object response1 = getResponse();
-        assertTrue(response1 instanceof CommandError);
-        CommandError error1 = (CommandError) response1;
-        assertEquals(error1.getError().toString(), ServerError.ServiceNotReady.toString());
-        assertTrue(error1.getMessage().contains("already present on the connection"));
-
-        // There is a failed registration.
-        ByteBuf cProducer2 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        CompletableFuture existingFuture2 = new CompletableFuture();
-        existingFuture2.completeExceptionally(new BrokerServiceException.ProducerBusyException("123"));
-        serverCnx.getProducers().put(producerId, existingFuture2);
-
-        channel.writeInbound(cProducer2);
-        Object response2 = getResponse();
-        assertTrue(response2 instanceof CommandError);
-        CommandError error2 = (CommandError) response2;
-        assertEquals(error2.getError().toString(), ServerError.ProducerBusy.toString());
-        assertTrue(error2.getMessage().contains("already failed to register present on the connection"));
-
-        // There is an successful registration.
-        ByteBuf cProducer3 = Commands.newProducer(tName, producerId, requestId.incrementAndGet(),
-                pName, false, metadata, null, epoch.incrementAndGet(), false,
-                ProducerAccessMode.Shared, Optional.empty(), false);
-        CompletableFuture existingFuture3 = new CompletableFuture();
-        org.apache.pulsar.broker.service.Producer serviceProducer =
-                mock(org.apache.pulsar.broker.service.Producer.class);
-        when(serviceProducer.getProducerName()).thenReturn(pName);
-        when(serviceProducer.getSchemaVersion()).thenReturn(new EmptyVersion());
-        existingFuture3.complete(serviceProducer);
-        serverCnx.getProducers().put(producerId, existingFuture3);
-
-        channel.writeInbound(cProducer3);
-        Object response3 = getResponse();
-        assertTrue(response3 instanceof CommandProducerSuccess);
-        CommandProducerSuccess cProducerSuccess = (CommandProducerSuccess) response3;
-        assertEquals(cProducerSuccess.getProducerName(), pName);
-
-        // cleanup.
-        channel.finish();
-    }
-
     // This test used to be in the ServerCnxAuthorizationTest class, but it was migrated here because the mocking
     // in that class was too extensive. There is some overlap with this test and other tests in this class. The primary
     // role of this test is verifying that the correct role and AuthenticationDataSource are passed to the
@@ -1320,7 +887,7 @@ public class ServerCnxTest {
         svcConfig.setAuthorizationProvider("org.apache.pulsar.broker.auth.MockAuthorizationProvider");
         AuthorizationService authorizationService =
                 spyWithClassAndConstructorArgsRecordingInvocations(AuthorizationService.class, svcConfig,
-                        pulsarTestContext.getPulsarResources());
+                        pulsar.getPulsarResources());
         when(brokerService.getAuthorizationService()).thenReturn(authorizationService);
         svcConfig.setAuthorizationEnabled(true);
 
@@ -1418,7 +985,7 @@ public class ServerCnxTest {
         svcConfig.setAuthorizationProvider("org.apache.pulsar.broker.auth.MockAuthorizationProvider");
         AuthorizationService authorizationService =
                 spyWithClassAndConstructorArgsRecordingInvocations(AuthorizationService.class, svcConfig,
-                        pulsarTestContext.getPulsarResources());
+                        pulsar.getPulsarResources());
         when(brokerService.getAuthorizationService()).thenReturn(authorizationService);
         svcConfig.setAuthorizationEnabled(true);
 
@@ -1610,11 +1177,10 @@ public class ServerCnxTest {
     @Test(timeOut = 30000)
     public void testProducerCommandWithAuthorizationPositive() throws Exception {
         AuthorizationService authorizationService = mock(AuthorizationService.class);
-        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService)
-                .allowTopicOperationAsync(Mockito.any(),
-                        Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthenticationEnabled(true);
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
         resetChannel();
         setChannelConnected();
 
@@ -1635,19 +1201,16 @@ public class ServerCnxTest {
 
     @Test(timeOut = 30000)
     public void testNonExistentTopic() throws Exception {
-        AuthorizationService authorizationService =
-                spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
+        AuthorizationService authorizationService = spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthorizationEnabled(true);
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
         svcConfig.setAuthorizationEnabled(true);
         Field providerField = AuthorizationService.class.getDeclaredField("provider");
         providerField.setAccessible(true);
-        PulsarAuthorizationProvider authorizationProvider =
-                spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig,
-                        pulsar.getPulsarResources());
+        PulsarAuthorizationProvider authorizationProvider = spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig,
+                pulsar.getPulsarResources());
         providerField.set(authorizationService, authorizationProvider);
-        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider)
-                .isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider).isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
 
         // Test producer creation
         resetChannel();
@@ -1662,8 +1225,7 @@ public class ServerCnxTest {
         resetChannel();
         setChannelConnected();
         ByteBuf newSubscribeCmd = Commands.newSubscribe(nonExistentTopicName, //
-                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
-                "test" /* consumer name */, 0);
+                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0, "test" /* consumer name */, 0);
         channel.writeInbound(newSubscribeCmd);
         assertTrue(getResponse() instanceof CommandError);
         channel.finish();
@@ -1672,23 +1234,18 @@ public class ServerCnxTest {
     @Test(timeOut = 30000)
     public void testClusterAccess() throws Exception {
         svcConfig.setAuthorizationEnabled(true);
-        AuthorizationService authorizationService =
-                spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
+        AuthorizationService authorizationService = spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
         Field providerField = AuthorizationService.class.getDeclaredField("provider");
         providerField.setAccessible(true);
-        PulsarAuthorizationProvider authorizationProvider =
-                spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig,
-                        pulsar.getPulsarResources());
+        PulsarAuthorizationProvider authorizationProvider = spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig,
+                pulsar.getPulsarResources());
         providerField.set(authorizationService, authorizationProvider);
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthorizationEnabled(true);
-        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider)
-                .isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
-        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider)
-                .validateTenantAdminAccess(Mockito.anyString(), Mockito.any(), Mockito.any());
-        doReturn(CompletableFuture.completedFuture(true)).when(authorizationProvider)
-                .checkPermission(any(TopicName.class), Mockito.anyString(),
-                        any(AuthAction.class));
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider).isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationProvider).validateTenantAdminAccess(Mockito.anyString(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationProvider).checkPermission(any(TopicName.class), Mockito.anyString(),
+                any(AuthAction.class));
 
         resetChannel();
         setChannelConnected();
@@ -1708,18 +1265,14 @@ public class ServerCnxTest {
 
     @Test(timeOut = 30000)
     public void testNonExistentTopicSuperUserAccess() throws Exception {
-        AuthorizationService authorizationService =
-                spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
+        AuthorizationService authorizationService = spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig, pulsar.getPulsarResources());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthorizationEnabled(true);
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
         Field providerField = AuthorizationService.class.getDeclaredField("provider");
         providerField.setAccessible(true);
-        PulsarAuthorizationProvider authorizationProvider =
-                spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig,
-                        pulsar.getPulsarResources());
+        PulsarAuthorizationProvider authorizationProvider = spyWithClassAndConstructorArgs(PulsarAuthorizationProvider.class, svcConfig, pulsar.getPulsarResources());
         providerField.set(authorizationService, authorizationProvider);
-        doReturn(CompletableFuture.completedFuture(true)).when(authorizationProvider)
-                .isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationProvider).isSuperUser(Mockito.anyString(), Mockito.any(), Mockito.any());
 
         // Test producer creation
         resetChannel();
@@ -1752,12 +1305,11 @@ public class ServerCnxTest {
     @Test(timeOut = 30000)
     public void testProducerCommandWithAuthorizationNegative() throws Exception {
         AuthorizationService authorizationService = mock(AuthorizationService.class);
-        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService)
-                .allowTopicOperationAsync(Mockito.any(),
-                        Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setAuthorizationEnabled(true);
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
         doReturn("prod1").when(brokerService).generateUniqueProducerName();
         resetChannel();
         setChannelConnected();
@@ -1850,14 +1402,14 @@ public class ServerCnxTest {
         ByteBuf clientCommand1 = Commands.newProducer(successTopicName, 1 /* producer id */, 1 /* request id */,
                 producerName, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand1);
-        assertThat(getResponse()).isInstanceOf(CommandProducerSuccess.class);
+        assertTrue(getResponse() instanceof CommandProducerSuccess);
 
         // Call disconnect method on producer to trigger activity similar to unloading
         Producer producer = serverCnx.getProducers().get(1).get();
         assertNotNull(producer);
         producer.disconnect();
         channel.runPendingTasks();
-        assertThat(getResponse()).isInstanceOf(CommandCloseProducer.class);
+        assertTrue(getResponse() instanceof CommandCloseProducer);
 
         // Send message and expect no response
         sendMessage();
@@ -2013,11 +1565,9 @@ public class ServerCnxTest {
                 "test" /* consumer name */, 0 /* avoid reseting cursor */);
         channel.writeInbound(clientCommand);
 
-        BackGroundExecutor backGroundExecutor = startBackgroundExecutorForEmbeddedChannel(channel);
-
         // Create producer second time
         clientCommand = Commands.newSubscribe(successTopicName, //
-                successSubName, 2 /* consumer id */, 2 /* request id */, SubType.Exclusive, 0,
+                successSubName, 2 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
                 "test" /* consumer name */, 0 /* avoid reseting cursor */);
         channel.writeInbound(clientCommand);
 
@@ -2027,9 +1577,6 @@ public class ServerCnxTest {
             CommandError error = (CommandError) response;
             assertEquals(error.getError(), ServerError.ConsumerBusy);
         });
-
-        // cleanup.
-        backGroundExecutor.close();
         channel.finish();
     }
 
@@ -2041,13 +1588,12 @@ public class ServerCnxTest {
         // Delay the topic creation in a deterministic way
         CompletableFuture<Runnable> openTopicFuture = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openTopicFuture.complete(
-                    () -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock,
-                            null));
+            openTopicFuture.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+            });
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a create producer timeout from client side we expect to see this sequence of commands :
         // 1. create producer
@@ -2063,7 +1609,7 @@ public class ServerCnxTest {
                 producerName, Collections.emptyMap(), false);
         channel.writeInbound(createProducer1);
 
-        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */);
+        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */ );
         channel.writeInbound(closeProducer);
 
         ByteBuf createProducer2 = Commands.newProducer(successTopicName, 1 /* producer id */, 3 /* request id */,
@@ -2096,13 +1642,12 @@ public class ServerCnxTest {
         // Delay the topic creation in a deterministic way
         CompletableFuture<Runnable> openTopicFuture = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openTopicFuture.complete(
-                    () -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock,
-                            null));
+            openTopicFuture.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+            });
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a create producer timeout from client side we expect to see this sequence of commands :
         // 1. create producer
@@ -2120,7 +1665,7 @@ public class ServerCnxTest {
                 producerName, Collections.emptyMap(), false);
         channel.writeInbound(createProducer1);
 
-        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */);
+        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */ );
         channel.writeInbound(closeProducer);
 
         ByteBuf createProducer2 = Commands.newProducer(successTopicName, 1 /* producer id */, 3 /* request id */,
@@ -2162,14 +1707,16 @@ public class ServerCnxTest {
 
         // Delay the topic creation in a deterministic way
         CountDownLatch topicCreationDelayLatch = new CountDownLatch(1);
-        doAnswer((Answer<Object>) invocationOnMock -> {
-            topicCreationDelayLatch.await();
+        doAnswer(new Answer<Object>() {
+            @Override
+            public Object answer(InvocationOnMock invocationOnMock) throws Throwable {
+                topicCreationDelayLatch.await();
 
-            ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
-            return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+                return null;
+            }
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a create producer timeout from client side we expect to see this sequence of commands :
         // 1. create producer
@@ -2185,7 +1732,7 @@ public class ServerCnxTest {
                 producerName, Collections.emptyMap(), false);
         channel.writeInbound(createProducer1);
 
-        ByteBuf closeProducer1 = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */);
+        ByteBuf closeProducer1 = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */ );
         channel.writeInbound(closeProducer1);
 
         ByteBuf createProducer2 = Commands.newProducer(successTopicName, 1 /* producer id */, 3 /* request id */,
@@ -2242,13 +1789,12 @@ public class ServerCnxTest {
         // Delay the topic creation in a deterministic way
         CompletableFuture<Runnable> openFailedTopic = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openFailedTopic.complete(
-                    () -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock,
-                            null));
+            openFailedTopic.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+            });
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a create producer timeout from client side we expect to see this sequence of commands :
         // 1. create a failure producer which will timeout creation after 100msec
@@ -2265,7 +1811,7 @@ public class ServerCnxTest {
                 producerName, Collections.emptyMap(), false);
         channel.writeInbound(createProducer1);
 
-        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */);
+        ByteBuf closeProducer = Commands.newCloseProducer(1 /* producer id */, 2 /* request id */ );
         channel.writeInbound(closeProducer);
 
         ByteBuf createProducer2 = Commands.newProducer(successTopicName, 1 /* producer id */, 3 /* request id */,
@@ -2313,14 +1859,13 @@ public class ServerCnxTest {
         // Delay the topic creation in a deterministic way
         CompletableFuture<Runnable> openTopicTask = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openTopicTask.complete(
-                    () -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock,
-                            null));
+            openTopicTask.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+            });
 
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a subscribe timeout from client side we expect to see this sequence of commands :
         // 1. Subscribe
@@ -2389,22 +1934,22 @@ public class ServerCnxTest {
         // Delay the topic creation in a deterministic way
         CompletableFuture<Runnable> openTopicSuccess = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openTopicSuccess.complete(
-                    () -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock,
-                            null));
+            openTopicSuccess.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+            });
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         CompletableFuture<Runnable> openTopicFail = new CompletableFuture<>();
         doAnswer(invocationOnMock -> {
-            openTopicFail.complete(() -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2])
-                    .openLedgerFailed(new ManagedLedgerException("Managed ledger failure"), null));
+            openTopicFail.complete(() -> {
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2])
+                        .openLedgerFailed(new ManagedLedgerException("Managed ledger failure"), null);
+            });
             return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        }).when(mlFactoryMock).asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // In a subscribe timeout from client side we expect to see this sequence of commands :
         // 1. Subscribe against failtopic which will fail after 100msec
@@ -2419,8 +1964,7 @@ public class ServerCnxTest {
                 "test" /* consumer name */, 0 /* avoid reseting cursor */);
         channel.writeInbound(subscribe1);
 
-        ByteBuf closeConsumer = Commands.newCloseConsumer(1 /* consumer id */, 2 /* request id */,
-                null /* assignedBrokerServiceUrl */, null /* assignedBrokerServiceUrlTls */);
+        ByteBuf closeConsumer = Commands.newCloseConsumer(1 /* consumer id */, 2 /* request id */ );
         channel.writeInbound(closeConsumer);
 
         ByteBuf subscribe2 = Commands.newSubscribe(successTopicName, //
@@ -2471,8 +2015,8 @@ public class ServerCnxTest {
 
         resetChannel();
         setChannelConnected();
-        svcConfig.setAuthenticationEnabled(false);
-        svcConfig.setAuthorizationEnabled(false);
+        doReturn(false).when(brokerService).isAuthenticationEnabled();
+        doReturn(false).when(brokerService).isAuthorizationEnabled();
         // test SUBSCRIBE on topic and cursor creation success
         ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
                 successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
@@ -2511,8 +2055,8 @@ public class ServerCnxTest {
         resetChannel();
         setChannelConnected();
         setConnectionVersion(ProtocolVersion.v3.getValue());
-        svcConfig.setAuthenticationEnabled(false);
-        svcConfig.setAuthorizationEnabled(false);
+        doReturn(false).when(brokerService).isAuthenticationEnabled();
+        doReturn(false).when(brokerService).isAuthorizationEnabled();
         // test SUBSCRIBE on topic and cursor creation success
         ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
                 successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0 /* priority */,
@@ -2539,12 +2083,11 @@ public class ServerCnxTest {
     @Test(timeOut = 30000)
     public void testSubscribeCommandWithAuthorizationPositive() throws Exception {
         AuthorizationService authorizationService = mock(AuthorizationService.class);
-        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService)
-                .allowTopicOperationAsync(Mockito.any(),
-                        Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(true)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setAuthorizationEnabled(true);
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
         resetChannel();
         setChannelConnected();
 
@@ -2562,20 +2105,18 @@ public class ServerCnxTest {
     @Test(timeOut = 30000)
     public void testSubscribeCommandWithAuthorizationNegative() throws Exception {
         AuthorizationService authorizationService = mock(AuthorizationService.class);
-        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService)
-                .allowTopicOperationAsync(Mockito.any(),
-                        Mockito.any(), Mockito.any(), Mockito.any());
+        doReturn(CompletableFuture.completedFuture(false)).when(authorizationService).allowTopicOperationAsync(Mockito.any(),
+                Mockito.any(), Mockito.any(), Mockito.any());
         doReturn(authorizationService).when(brokerService).getAuthorizationService();
-        svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setAuthorizationEnabled(true);
+        doReturn(true).when(brokerService).isAuthenticationEnabled();
+        doReturn(true).when(brokerService).isAuthorizationEnabled();
 
         resetChannel();
         setChannelConnected();
 
         // test SUBSCRIBE on topic and cursor creation success
         ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
-                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
-                "test" /* consumer name */, 0 /*avoid reseting cursor*/);
+                successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0, "test" /* consumer name */, 0 /*avoid reseting cursor*/);
         channel.writeInbound(clientCommand);
         assertTrue(getResponse() instanceof CommandError);
 
@@ -2589,16 +2130,15 @@ public class ServerCnxTest {
 
         ByteBuf clientCommand = Commands.newSubscribe(successTopicName, successSubName, 1 /* consumer id */,
                 1 /*
-                 * request id
-                 */, SubType.Exclusive, 0, "test" /* consumer name */, 0 /*avoid reseting cursor*/);
+                   * request id
+                   */, SubType.Exclusive, 0, "test" /* consumer name */, 0 /*avoid reseting cursor*/);
         channel.writeInbound(clientCommand);
         assertTrue(getResponse() instanceof CommandSuccess);
 
-        Position pos = PositionFactory.create(0, 0);
+        PositionImpl pos = new PositionImpl(0, 0);
 
-        clientCommand =
-                Commands.newAck(1 /* consumer id */, pos.getLedgerId(), pos.getEntryId(), null, AckType.Individual,
-                        null, Collections.emptyMap(), -1);
+        clientCommand = Commands.newAck(1 /* consumer id */, pos.getLedgerId(), pos.getEntryId(), null, AckType.Individual,
+                                        null, Collections.emptyMap(), -1);
         channel.writeInbound(clientCommand);
 
         // verify nothing is sent out on the wire after ack
@@ -2634,25 +2174,23 @@ public class ServerCnxTest {
         // Set encryption_required to true
         Policies policies = mock(Policies.class);
         policies.encryption_required = true;
-        policies.topicDispatchRate = new HashMap<>();
-        policies.clusterSubscribeRate = new HashMap<>();
+        policies.topicDispatchRate = Maps.newHashMap();
+        policies.clusterSubscribeRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.persistent.DispatchRateLimiter.getPoliciesDispatchRate`
-        policies.clusterDispatchRate = new HashMap<>();
+        policies.clusterDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceSubscriptionDispatchRate`
-        policies.subscriptionDispatchRate = new HashMap<>();
+        policies.subscriptionDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceReplicatorDispatchRate`
-        policies.replicatorDispatchRate = new HashMap<>();
-        pulsarTestContext.getPulsarResources().getNamespaceResources()
-                .createPolicies(TopicName.get(encryptionRequiredTopicName).getNamespaceObject(),
-                        policies);
+        policies.replicatorDispatchRate = Maps.newHashMap();
+        doReturn(CompletableFuture.completedFuture(Optional.of(policies))).when(namespaceResources)
+                .getPoliciesAsync(TopicName.get(encryptionRequiredTopicName).getNamespaceObject());
 
         // test success case: encrypted producer can connect
-        ByteBuf clientCommand =
-                Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
-                        "encrypted-producer", true, Collections.emptyMap(), false);
+        ByteBuf clientCommand = Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
+                "encrypted-producer", true, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand);
 
         Object response = getResponse();
@@ -2672,25 +2210,23 @@ public class ServerCnxTest {
         // Set encryption_required to true
         Policies policies = mock(Policies.class);
         policies.encryption_required = true;
-        policies.topicDispatchRate = new HashMap<>();
-        policies.clusterSubscribeRate = new HashMap<>();
+        policies.topicDispatchRate = Maps.newHashMap();
+        policies.clusterSubscribeRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.persistent.DispatchRateLimiter.getPoliciesDispatchRate`
-        policies.clusterDispatchRate = new HashMap<>();
+        policies.clusterDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceSubscriptionDispatchRate`
-        policies.subscriptionDispatchRate = new HashMap<>();
+        policies.subscriptionDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceReplicatorDispatchRate`
-        policies.replicatorDispatchRate = new HashMap<>();
-        pulsarTestContext.getPulsarResources().getNamespaceResources()
-                .createPolicies(TopicName.get(encryptionRequiredTopicName).getNamespaceObject(),
-                        policies);
+        policies.replicatorDispatchRate = Maps.newHashMap();
+        doReturn(CompletableFuture.completedFuture(Optional.of(policies))).when(namespaceResources)
+                .getPoliciesAsync(TopicName.get(encryptionRequiredTopicName).getNamespaceObject());
 
         // test failure case: unencrypted producer cannot connect
-        ByteBuf clientCommand =
-                Commands.newProducer(encryptionRequiredTopicName, 2 /* producer id */, 2 /* request id */,
-                        "unencrypted-producer", false, Collections.emptyMap(), false);
+        ByteBuf clientCommand = Commands.newProducer(encryptionRequiredTopicName, 2 /* producer id */, 2 /* request id */,
+                "unencrypted-producer", false, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand);
 
         Object response = getResponse();
@@ -2715,24 +2251,22 @@ public class ServerCnxTest {
         Policies policies = mock(Policies.class);
         // Namespace policy doesn't require encryption
         policies.encryption_required = false;
-        policies.topicDispatchRate = new HashMap<>();
-        policies.clusterSubscribeRate = new HashMap<>();
+        policies.topicDispatchRate = Maps.newHashMap();
+        policies.clusterSubscribeRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
-        policies.clusterDispatchRate = new HashMap<>();
+        policies.clusterDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceSubscriptionDispatchRate`
-        policies.subscriptionDispatchRate = new HashMap<>();
+        policies.subscriptionDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceReplicatorDispatchRate`
-        policies.replicatorDispatchRate = new HashMap<>();
-        pulsarTestContext.getPulsarResources().getNamespaceResources()
-                .createPolicies(TopicName.get(encryptionRequiredTopicName).getNamespaceObject(),
-                        policies);
+        policies.replicatorDispatchRate = Maps.newHashMap();
+        doReturn(CompletableFuture.completedFuture(Optional.of(policies))).when(namespaceResources)
+                .getPoliciesAsync(TopicName.get(encryptionRequiredTopicName).getNamespaceObject());
 
         // test failure case: unencrypted producer cannot connect
-        ByteBuf clientCommand =
-                Commands.newProducer(encryptionRequiredTopicName, 2 /* producer id */, 2 /* request id */,
-                        "unencrypted-producer", false, Collections.emptyMap(), false);
+        ByteBuf clientCommand = Commands.newProducer(encryptionRequiredTopicName, 2 /* producer id */, 2 /* request id */,
+                "unencrypted-producer", false, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand);
 
         Object response = getResponse();
@@ -2754,24 +2288,22 @@ public class ServerCnxTest {
         // Set encryption_required to true
         Policies policies = mock(Policies.class);
         policies.encryption_required = true;
-        policies.topicDispatchRate = new HashMap<>();
-        policies.clusterSubscribeRate = new HashMap<>();
+        policies.topicDispatchRate = Maps.newHashMap();
+        policies.clusterSubscribeRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.persistent.DispatchRateLimiter.getPoliciesDispatchRate`
-        policies.clusterDispatchRate = new HashMap<>();
+        policies.clusterDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceSubscriptionDispatchRate`
-        policies.subscriptionDispatchRate = new HashMap<>();
+        policies.subscriptionDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceReplicatorDispatchRate`
-        policies.replicatorDispatchRate = new HashMap<>();
-        pulsarTestContext.getPulsarResources().getNamespaceResources()
-                .createPolicies(TopicName.get(encryptionRequiredTopicName).getNamespaceObject(),
-                        policies);
+        policies.replicatorDispatchRate = Maps.newHashMap();
+        doReturn(CompletableFuture.completedFuture(Optional.of(policies))).when(namespaceResources)
+                .getPoliciesAsync(TopicName.get(encryptionRequiredTopicName).getNamespaceObject());
 
-        ByteBuf clientCommand =
-                Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
-                        "prod-name", true, Collections.emptyMap(), false);
+        ByteBuf clientCommand = Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
+                "prod-name", true, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand);
         assertTrue(getResponse() instanceof CommandProducerSuccess);
 
@@ -2800,24 +2332,22 @@ public class ServerCnxTest {
         // Set encryption_required to true
         Policies policies = mock(Policies.class);
         policies.encryption_required = true;
-        policies.topicDispatchRate = new HashMap<>();
-        policies.clusterSubscribeRate = new HashMap<>();
+        policies.topicDispatchRate = Maps.newHashMap();
+        policies.clusterSubscribeRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.persistent.DispatchRateLimiter.getPoliciesDispatchRate`
-        policies.clusterDispatchRate = new HashMap<>();
+        policies.clusterDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceSubscriptionDispatchRate`
-        policies.subscriptionDispatchRate = new HashMap<>();
+        policies.subscriptionDispatchRate = Maps.newHashMap();
         // add `clusterDispatchRate` otherwise there will be a NPE
         // `org.apache.pulsar.broker.service.AbstractTopic.updateNamespaceReplicatorDispatchRate`
-        policies.replicatorDispatchRate = new HashMap<>();
-        pulsarTestContext.getPulsarResources().getNamespaceResources()
-                .createPolicies(TopicName.get(encryptionRequiredTopicName).getNamespaceObject(),
-                        policies);
+        policies.replicatorDispatchRate = Maps.newHashMap();
+        doReturn(CompletableFuture.completedFuture(Optional.of(policies))).when(namespaceResources)
+                .getPoliciesAsync(TopicName.get(encryptionRequiredTopicName).getNamespaceObject());
 
-        ByteBuf clientCommand =
-                Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
-                        "prod-name", true, Collections.emptyMap(), false);
+        ByteBuf clientCommand = Commands.newProducer(encryptionRequiredTopicName, 1 /* producer id */, 1 /* request id */,
+                "prod-name", true, Collections.emptyMap(), false);
         channel.writeInbound(clientCommand);
         assertTrue(getResponse() instanceof CommandProducerSuccess);
 
@@ -2853,10 +2383,6 @@ public class ServerCnxTest {
     }
 
     protected void setChannelConnected() throws Exception {
-        setChannelConnected(serverCnx);
-    }
-
-    protected void setChannelConnected(ServerCnx serverCnx) throws Exception {
         Field channelState = ServerCnx.class.getDeclaredField("state");
         channelState.setAccessible(true);
         channelState.set(serverCnx, State.Connected);
@@ -2870,25 +2396,13 @@ public class ServerCnxTest {
     }
 
     protected Object getResponse() throws Exception {
-        return getResponse(channel, clientChannelHelper);
-    }
-
-    protected Object getResponse(EmbeddedChannel channel, ClientChannelHelper clientChannelHelper) throws Exception {
         // Wait at most for 10s to get a response
         final long sleepTimeMs = 10;
         final long iterations = TimeUnit.SECONDS.toMillis(10) / sleepTimeMs;
         for (int i = 0; i < iterations; i++) {
             if (!channel.outboundMessages().isEmpty()) {
                 Object outObject = channel.outboundMessages().remove();
-                Object cmd = clientChannelHelper.getCommand(outObject);
-                if (cmd instanceof CommandPing) {
-                    if (channelsStoppedAnswerHealthCheck.contains(channel)) {
-                        continue;
-                    }
-                    channel.writeInbound(Commands.newPong());
-                    continue;
-                }
-                return cmd;
+                return clientChannelHelper.getCommand(outObject);
             } else {
                 Thread.sleep(sleepTimeMs);
             }
@@ -2897,60 +2411,48 @@ public class ServerCnxTest {
         throw new IOException("Failed to get response from socket within 10s");
     }
 
-    protected Object tryPeekResponse(EmbeddedChannel channel, ClientChannelHelper clientChannelHelper) {
-        while (true) {
-            if (channel.outboundMessages().isEmpty()) {
-                return null;
-            } else {
-                Object outObject = channel.outboundMessages().peek();
-                Object cmd = clientChannelHelper.getCommand(outObject);
-                if (cmd instanceof CommandPing) {
-                    if (channelsStoppedAnswerHealthCheck.contains(channel)) {
-                        continue;
-                    }
-                    channel.writeInbound(Commands.newPong());
-                    channel.outboundMessages().remove();
-                    continue;
-                }
-                return cmd;
-            }
-        }
-    }
-
     private void setupMLAsyncCallbackMocks() {
         ledgerMock = mock(ManagedLedger.class);
         cursorMock = mock(ManagedCursor.class);
-        doReturn(new ArrayList<>()).when(ledgerMock).getCursors();
-        doReturn(new ManagedLedgerConfig()).when(ledgerMock).getConfig();
+        doReturn(new ArrayList<Object>()).when(ledgerMock).getCursors();
 
         // call openLedgerComplete with ledgerMock on ML factory asyncOpen
-        doAnswer((Answer<Object>) invocationOnMock -> {
-            Thread.sleep(300);
-            ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
-            return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+        doAnswer(new Answer<Object>() {
+            @Override
+            public Object answer(InvocationOnMock invocationOnMock) throws Throwable {
+                Thread.sleep(300);
+                ((OpenLedgerCallback) invocationOnMock.getArguments()[2]).openLedgerComplete(ledgerMock, null);
+                return null;
+            }
+        }).when(mlFactoryMock).asyncOpen(matches(".*success.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // call openLedgerFailed on ML factory asyncOpen
-        doAnswer((Answer<Object>) invocationOnMock -> {
-            Thread.sleep(300);
-            new Thread(() -> ((OpenLedgerCallback) invocationOnMock.getArguments()[2])
-                    .openLedgerFailed(new ManagedLedgerException("Managed ledger failure"), null)).start();
+        doAnswer(new Answer<Object>() {
+            @Override
+            public Object answer(InvocationOnMock invocationOnMock) throws Throwable {
+                Thread.sleep(300);
+                new Thread(() -> {
+                    ((OpenLedgerCallback) invocationOnMock.getArguments()[2])
+                            .openLedgerFailed(new ManagedLedgerException("Managed ledger failure"), null);
+                }).start();
 
-            return null;
-        }).when(managedLedgerFactory)
-                .asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
-                        any(OpenLedgerCallback.class), any(Supplier.class), any());
+                return null;
+            }
+        }).when(mlFactoryMock).asyncOpen(matches(".*fail.*"), any(ManagedLedgerConfig.class),
+                any(OpenLedgerCallback.class), any(Supplier.class), any());
 
         // call addComplete on ledger asyncAddEntry
-        doAnswer((Answer<Object>) invocationOnMock -> {
-            ((AddEntryCallback) invocationOnMock.getArguments()[2]).addComplete(
-                    PositionFactory.create(-1, -1),
-                    null,
-                    invocationOnMock.getArguments()[3]);
-            return null;
-        }).when(ledgerMock).asyncAddEntry(any(ByteBuf.class), anyInt(), any(AddEntryCallback.class), any());
+        doAnswer(new Answer<Object>() {
+            @Override
+            public Object answer(InvocationOnMock invocationOnMock) throws Throwable {
+                ((AddEntryCallback) invocationOnMock.getArguments()[1]).addComplete(
+                        new PositionImpl(-1, -1),
+                        null,
+                        invocationOnMock.getArguments()[2]);
+                return null;
+            }
+        }).when(ledgerMock).asyncAddEntry(any(ByteBuf.class), any(AddEntryCallback.class), any());
 
         doAnswer((Answer<Object>) invocationOnMock -> true).when(cursorMock).isDurable();
 
@@ -2958,34 +2460,29 @@ public class ServerCnxTest {
             Thread.sleep(300);
             ((OpenCursorCallback) invocationOnMock.getArguments()[3]).openCursorComplete(cursorMock, null);
             return null;
-        }).when(ledgerMock)
-                .asyncOpenCursor(matches(".*success.*"), any(InitialPosition.class), any(OpenCursorCallback.class),
-                        any());
+        }).when(ledgerMock).asyncOpenCursor(matches(".*success.*"), any(InitialPosition.class), any(OpenCursorCallback.class), any());
 
         doAnswer((Answer<Object>) invocationOnMock -> {
             Thread.sleep(300);
             ((OpenCursorCallback) invocationOnMock.getArguments()[4]).openCursorComplete(cursorMock, null);
             return null;
-        }).when(ledgerMock)
-                .asyncOpenCursor(matches(".*success.*"), any(InitialPosition.class), any(Map.class), any(Map.class),
-                        any(OpenCursorCallback.class), any());
+        }).when(ledgerMock).asyncOpenCursor(matches(".*success.*"), any(InitialPosition.class), any(Map.class), any(Map.class),
+                any(OpenCursorCallback.class), any());
 
         doAnswer((Answer<Object>) invocationOnMock -> {
             Thread.sleep(300);
             ((OpenCursorCallback) invocationOnMock.getArguments()[3])
                     .openCursorFailed(new ManagedLedgerException("Managed ledger failure"), null);
             return null;
-        }).when(ledgerMock)
-                .asyncOpenCursor(matches(".*fail.*"), any(InitialPosition.class), any(OpenCursorCallback.class), any());
+        }).when(ledgerMock).asyncOpenCursor(matches(".*fail.*"), any(InitialPosition.class), any(OpenCursorCallback.class), any());
 
         doAnswer((Answer<Object>) invocationOnMock -> {
             Thread.sleep(300);
             ((OpenCursorCallback) invocationOnMock.getArguments()[3])
                     .openCursorFailed(new ManagedLedgerException("Managed ledger failure"), null);
             return null;
-        }).when(ledgerMock)
-                .asyncOpenCursor(matches(".*fail.*"), any(InitialPosition.class), any(Map.class), any(Map.class),
-                        any(OpenCursorCallback.class), any());
+        }).when(ledgerMock).asyncOpenCursor(matches(".*fail.*"), any(InitialPosition.class), any(Map.class), any(Map.class),
+                any(OpenCursorCallback.class), any());
 
         doAnswer((Answer<Object>) invocationOnMock -> {
             ((DeleteCursorCallback) invocationOnMock.getArguments()[1]).deleteCursorComplete(null);
@@ -3141,122 +2638,7 @@ public class ServerCnxTest {
     }
 
     @Test
-    public void testGetTopicsOfNamespace() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newGetTopicsOfNamespaceRequest(
-                "use/ns-abc", 1, CommandGetTopicsOfNamespace.Mode.ALL, null, null);
-        channel.writeInbound(clientCommand);
-        CommandGetTopicsOfNamespaceResponse response = (CommandGetTopicsOfNamespaceResponse) getResponse();
-
-        assertEquals(response.getTopicsList(), topics);
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(topics));
-        assertTrue(response.isChanged());
-        assertFalse(response.isFiltered());
-
-        channel.finish();
-    }
-
-    @Test
-    public void testGetTopicsOfNamespaceDisabledFiltering() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(false);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newGetTopicsOfNamespaceRequest(
-                "use/ns-abc", 1, CommandGetTopicsOfNamespace.Mode.ALL,
-                "use/ns-abc/topic-.*", null);
-        channel.writeInbound(clientCommand);
-        CommandGetTopicsOfNamespaceResponse response = (CommandGetTopicsOfNamespaceResponse) getResponse();
-
-        assertEquals(response.getTopicsList(), topics);
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(topics));
-        assertTrue(response.isChanged());
-        assertFalse(response.isFiltered());
-
-        channel.finish();
-    }
-
-    @Test
-    public void testGetTopicsOfNamespaceLongPattern() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(true);
-        svcConfig.setSubscriptionPatternMaxLength(10);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newGetTopicsOfNamespaceRequest(
-                "use/ns-abc", 1, CommandGetTopicsOfNamespace.Mode.ALL,
-                "use/ns-abc/(t|o|to|p|i|c)+-?)+!", null);
-        channel.writeInbound(clientCommand);
-        CommandGetTopicsOfNamespaceResponse response = (CommandGetTopicsOfNamespaceResponse) getResponse();
-
-        assertEquals(response.getTopicsList(), topics);
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(topics));
-        assertTrue(response.isChanged());
-        assertFalse(response.isFiltered());
-
-        channel.finish();
-    }
-
-    @Test
-    public void testGetTopicsOfNamespaceFiltering() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newGetTopicsOfNamespaceRequest(
-                "use/ns-abc", 1, CommandGetTopicsOfNamespace.Mode.ALL,
-                "use/ns-abc/topic-.*", "SOME_HASH");
-        channel.writeInbound(clientCommand);
-        CommandGetTopicsOfNamespaceResponse response = (CommandGetTopicsOfNamespaceResponse) getResponse();
-
-        assertEquals(response.getTopicsList(), matchingTopics);
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(matchingTopics));
-        assertTrue(response.isChanged());
-        assertTrue(response.isFiltered());
-
-        channel.finish();
-    }
-
-    @Test
-    public void testGetTopicsOfNamespaceNoChange() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newGetTopicsOfNamespaceRequest(
-                "use/ns-abc", 1, CommandGetTopicsOfNamespace.Mode.ALL,
-                "use/ns-abc/topic-.*", TopicList.calculateHash(matchingTopics));
-        channel.writeInbound(clientCommand);
-        CommandGetTopicsOfNamespaceResponse response = (CommandGetTopicsOfNamespaceResponse) getResponse();
-
-        assertEquals(response.getTopicsList(), Collections.emptyList());
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(matchingTopics));
-        assertFalse(response.isChanged());
-        assertTrue(response.isFiltered());
-
-        channel.finish();
-    }
-
-    @Test
-    public void testWatchTopicList() throws Exception {
-        svcConfig.setEnableBrokerSideSubscriptionPatternEvaluation(true);
-        resetChannel();
-        setChannelConnected();
-        BaseCommand command = Commands.newWatchTopicList(1, 3, "use/ns-abc", "use/ns-abc/topic-.*", null);
-        ByteBuf serializedCommand = Commands.serializeWithSize(command);
-
-        channel.writeInbound(serializedCommand);
-        Object resp = getResponse();
-        System.out.println(resp);
-        CommandWatchTopicListSuccess response = (CommandWatchTopicListSuccess) resp;
-
-        assertEquals(response.getTopicsList(), matchingTopics);
-        assertEquals(response.getTopicsHash(), TopicList.calculateHash(matchingTopics));
-        assertEquals(response.getWatcherId(), 3);
-
-        channel.finish();
-    }
-
-    @Test
-    public void testNeverDelayConsumerFutureWhenNotFail() throws Exception {
+    public void testNeverDelayConsumerFutureWhenNotFail() throws Exception{
         // Mock ServerCnx.field: consumers
         ConcurrentLongHashMap.Builder mapBuilder = Mockito.mock(ConcurrentLongHashMap.Builder.class);
         Mockito.when(mapBuilder.expectedItems(Mockito.anyInt())).thenReturn(mapBuilder);
@@ -3271,12 +2653,12 @@ public class ServerCnxTest {
         // case2: exists existingConsumerFuture, delay complete after execute 'isDone()' many times
         // Why is the design so complicated, see: https://github.com/apache/pulsar/pull/15051
         // Try a delay of 3 stages. The simulation is successful after repeated judgments.
-        for (AtomicInteger futureWillDoneAfterDelayTimes = new AtomicInteger(1);
-             futureWillDoneAfterDelayTimes.intValue() <= 3;
-             futureWillDoneAfterDelayTimes.incrementAndGet()) {
+        for(AtomicInteger futureWillDoneAfterDelayTimes = new AtomicInteger(1);
+                                            futureWillDoneAfterDelayTimes.intValue() <= 3;
+                                            futureWillDoneAfterDelayTimes.incrementAndGet()){
             final AtomicInteger futureCallTimes = new AtomicInteger();
             final Consumer mockConsumer = Mockito.mock(Consumer.class);
-            CompletableFuture existingConsumerFuture = new CompletableFuture<Consumer>() {
+            CompletableFuture existingConsumerFuture = new CompletableFuture<Consumer>(){
 
                 private boolean complete;
 
@@ -3292,31 +2674,31 @@ public class ServerCnxTest {
 
                 // if trig "getNow()", then complete
                 @Override
-                public Consumer get() {
+                public Consumer get(){
                     complete = true;
                     return mockConsumer;
                 }
 
                 // if trig "get()", then complete
                 @Override
-                public Consumer get(long timeout, TimeUnit unit) {
+                public Consumer get(long timeout, TimeUnit unit){
                     complete = true;
                     return mockConsumer;
                 }
 
                 // if trig "get()", then complete
                 @Override
-                public Consumer getNow(Consumer ifAbsent) {
+                public Consumer getNow(Consumer ifAbsent){
                     complete = true;
                     return mockConsumer;
                 }
 
                 // never fail
-                public boolean isCompletedExceptionally() {
+                public boolean isCompletedExceptionally(){
                     return false;
                 }
             };
-            Mockito.when(consumers.putIfAbsent(anyLong(), Mockito.any())).thenReturn(existingConsumerFuture);
+            Mockito.when(consumers.putIfAbsent(Mockito.anyLong(), Mockito.any())).thenReturn(existingConsumerFuture);
             // do test: delay complete after execute 'isDone()' many times
             // Why is the design so complicated, see: https://github.com/apache/pulsar/pull/15051
             try (MockedStatic<ConcurrentLongHashMap> theMock = Mockito.mockStatic(ConcurrentLongHashMap.class)) {
@@ -3326,8 +2708,8 @@ public class ServerCnxTest {
                 resetChannel();
                 setChannelConnected();
                 // auth check disable
-                svcConfig.setAuthenticationEnabled(false);
-                svcConfig.setAuthorizationEnabled(false);
+                doReturn(false).when(brokerService).isAuthenticationEnabled();
+                doReturn(false).when(brokerService).isAuthorizationEnabled();
                 // do subscribe
                 ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
                         successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
@@ -3355,12 +2737,12 @@ public class ServerCnxTest {
         }
         // case3: exists existingConsumerFuture, already complete and exception
         CompletableFuture existingConsumerFuture = Mockito.mock(CompletableFuture.class);
-        Mockito.when(consumers.putIfAbsent(anyLong(), Mockito.any())).thenReturn(existingConsumerFuture);
+        Mockito.when(consumers.putIfAbsent(Mockito.anyLong(), Mockito.any())).thenReturn(existingConsumerFuture);
         // make consumerFuture delay finish
         Mockito.when(existingConsumerFuture.isDone()).thenReturn(true);
         // when sync get return, future will return success value.
         Mockito.when(existingConsumerFuture.get()).thenThrow(new NullPointerException());
-        Mockito.when(existingConsumerFuture.get(anyLong(), Mockito.any())).
+        Mockito.when(existingConsumerFuture.get(Mockito.anyLong(), Mockito.any())).
                 thenThrow(new NullPointerException());
         Mockito.when(existingConsumerFuture.isCompletedExceptionally()).thenReturn(true);
         Mockito.when(existingConsumerFuture.getNow(Mockito.any())).thenThrow(new NullPointerException());
@@ -3371,8 +2753,8 @@ public class ServerCnxTest {
             resetChannel();
             setChannelConnected();
             // auth check disable
-            svcConfig.setAuthenticationEnabled(false);
-            svcConfig.setAuthorizationEnabled(false);
+            doReturn(false).when(brokerService).isAuthenticationEnabled();
+            doReturn(false).when(brokerService).isAuthorizationEnabled();
             // do subscribe
             ByteBuf clientCommand = Commands.newSubscribe(successTopicName, //
                     successSubName, 1 /* consumer id */, 1 /* request id */, SubType.Exclusive, 0,
@@ -3388,9 +2770,8 @@ public class ServerCnxTest {
             };
             // assert error response
             assertTrue(responseAssert.test(responseAssert));
-            // The delete event will only occur after the future is completed.
-            // assert consumer-delete event will not occur.
-            assertEquals(0L,
+            // assert consumer-delete event occur
+            assertEquals(1L,
                     deleteTimesMark.getAllValues().stream().filter(f -> f == existingConsumerFuture).count());
             // Server will not close the connection
             assertTrue(channel.isOpen());
@@ -3533,24 +2914,6 @@ public class ServerCnxTest {
         serverCnx.handleAddSubscriptionToTxn(any());
     }
 
-    @Test(expectedExceptions = IllegalArgumentException.class)
-    public void shouldFailHandleCommandWatchTopicList() throws Exception {
-        ServerCnx serverCnx = mock(ServerCnx.class, CALLS_REAL_METHODS);
-        Field stateUpdater = ServerCnx.class.getDeclaredField("state");
-        stateUpdater.setAccessible(true);
-        stateUpdater.set(serverCnx, ServerCnx.State.Failed);
-        serverCnx.handleCommandWatchTopicList(any());
-    }
-
-    @Test(expectedExceptions = IllegalArgumentException.class)
-    public void shouldFailHandleCommandWatchTopicListClose() throws Exception {
-        ServerCnx serverCnx = mock(ServerCnx.class, CALLS_REAL_METHODS);
-        Field stateUpdater = ServerCnx.class.getDeclaredField("state");
-        stateUpdater.setAccessible(true);
-        stateUpdater.set(serverCnx, ServerCnx.State.Failed);
-        serverCnx.handleCommandWatchTopicListClose(any());
-    }
-
     @Test(timeOut = 30000)
     public void handleConnectWithServiceNotReady() throws Exception {
         resetChannel();
@@ -3577,61 +2940,11 @@ public class ServerCnxTest {
         doReturn(false).when(pulsar).isRunning();
         assertTrue(channel.isActive());
 
-        ByteBuf clientCommand = Commands.newPartitionMetadataRequest(successTopicName, 1, true);
+        ByteBuf clientCommand = Commands.newPartitionMetadataRequest(successTopicName, 1);
         channel.writeInbound(clientCommand);
         Object response = getResponse();
         assertTrue(response instanceof CommandPartitionedTopicMetadataResponse);
         assertEquals(((CommandPartitionedTopicMetadataResponse) response).getError(), ServerError.ServiceNotReady);
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendAddPartitionToTxnResponse() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.addProducedPartitionToTxn(any(TxnID.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newAddPartitionToTxn(89L, 1L, 12L,
-                List.of("tenant/ns/topic1"));
-        channel.writeInbound(clientCommand);
-        CommandAddPartitionToTxnResponse response = (CommandAddPartitionToTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertFalse(response.hasError());
-        assertFalse(response.hasMessage());
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendAddPartitionToTxnResponseFailed() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.addProducedPartitionToTxn(any(TxnID.class), any()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("server error")));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.newAddPartitionToTxn(89L, 1L, 12L,
-                List.of("tenant/ns/topic1"));
-        channel.writeInbound(clientCommand);
-        CommandAddPartitionToTxnResponse response = (CommandAddPartitionToTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertEquals(response.getError().getValue(), 0);
-        assertEquals(response.getMessage(), "server error");
-
         channel.finish();
     }
 
@@ -3643,12 +2956,12 @@ public class ServerCnxTest {
         when(brokerService.getAuthenticationService()).thenReturn(authenticationService);
         when(authenticationService.getAuthenticationProvider(authMethodName)).thenReturn(authenticationProvider);
         svcConfig.setAuthenticationEnabled(true);
-        svcConfig.setProxyRoles(Set.of("pass.fail"));
+        svcConfig.setProxyRoles(Collections.singleton("pass.fail"));
 
         svcConfig.setAuthorizationProvider(MockAuthorizationProvider.class.getName());
         AuthorizationService authorizationService =
-                spyWithClassAndConstructorArgsRecordingInvocations(AuthorizationService.class, svcConfig,
-                        pulsarTestContext.getPulsarResources());
+                spyWithClassAndConstructorArgs(AuthorizationService.class, svcConfig,
+                        pulsar.getPulsarResources());
         when(brokerService.getAuthorizationService()).thenReturn(authorizationService);
         svcConfig.setAuthorizationEnabled(true);
 
@@ -3665,252 +2978,12 @@ public class ServerCnxTest {
         assertTrue(connectResponse instanceof CommandConnected);
 
         ByteBuf clientCommand = Commands.newAddPartitionToTxn(89L, 1L, 12L,
-                List.of("tenant/ns/topic1"));
+                Collections.singletonList("tenant/ns/topic1"));
         channel.writeInbound(clientCommand);
         CommandAddPartitionToTxnResponse response = (CommandAddPartitionToTxnResponse) getResponse();
 
         assertEquals(response.getError(), ServerError.TransactionNotFound);
         verify(txnStore, never()).addProducedPartitionToTxn(any(TxnID.class), any());
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendAddSubscriptionToTxnResponse() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.addAckedPartitionToTxn(any(TxnID.class), any()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        final Subscription sub = new Subscription();
-        sub.setTopic("topic1");
-        sub.setSubscription("sub1");
-        ByteBuf clientCommand = Commands.newAddSubscriptionToTxn(89L, 1L, 12L,
-                List.of(sub));
-        channel.writeInbound(clientCommand);
-        CommandAddSubscriptionToTxnResponse response = (CommandAddSubscriptionToTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertFalse(response.hasError());
-        assertFalse(response.hasMessage());
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendAddSubscriptionToTxnResponseFailed() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.addAckedPartitionToTxn(any(TxnID.class), any()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("server error")));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        final Subscription sub = new Subscription();
-        sub.setTopic("topic1");
-        sub.setSubscription("sub1");
-        ByteBuf clientCommand = Commands.newAddSubscriptionToTxn(89L, 1L, 12L,
-                List.of(sub));
-        channel.writeInbound(clientCommand);
-        CommandAddSubscriptionToTxnResponse response = (CommandAddSubscriptionToTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertEquals(response.getError().getValue(), 0);
-        assertEquals(response.getMessage(), "server error");
-
-        channel.finish();
-    }
-
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnResponse() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.serializeWithSize(Commands.newEndTxn(89L, 1L, 12L,
-                TxnAction.COMMIT));
-        channel.writeInbound(clientCommand);
-        CommandEndTxnResponse response = (CommandEndTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertFalse(response.hasError());
-        assertFalse(response.hasMessage());
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnResponseFailed() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("server error")));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        ByteBuf clientCommand = Commands.serializeWithSize(Commands.newEndTxn(89L, 1L, 12L,
-                TxnAction.COMMIT));
-        channel.writeInbound(clientCommand);
-        CommandEndTxnResponse response = (CommandEndTxnResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertEquals(response.getError().getValue(), 0);
-        assertEquals(response.getMessage(), "server error");
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnOnPartitionResponse() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        Topic topic = mock(Topic.class);
-        doReturn(CompletableFuture.completedFuture(null)).when(topic).endTxn(any(TxnID.class), anyInt(), anyLong());
-        doReturn(CompletableFuture.completedFuture(Optional.of(topic))).when(brokerService)
-                .getTopicIfExists(any(String.class));
-        ByteBuf clientCommand = Commands.newEndTxnOnPartition(89L, 1L, 12L,
-                successTopicName, TxnAction.COMMIT, 1L);
-        channel.writeInbound(clientCommand);
-        CommandEndTxnOnPartitionResponse response = (CommandEndTxnOnPartitionResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertFalse(response.hasError());
-        assertFalse(response.hasMessage());
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnOnPartitionResponseFailed() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        Topic topic = mock(Topic.class);
-        doReturn(CompletableFuture.failedFuture(new RuntimeException("server error"))).when(topic)
-                .endTxn(any(TxnID.class), anyInt(), anyLong());
-        doReturn(CompletableFuture.completedFuture(Optional.of(topic))).when(brokerService)
-                .getTopicIfExists(any(String.class));
-        ByteBuf clientCommand = Commands.newEndTxnOnPartition(89L, 1L, 12L,
-                successTopicName, TxnAction.COMMIT, 1L);
-        channel.writeInbound(clientCommand);
-        CommandEndTxnOnPartitionResponse response = (CommandEndTxnOnPartitionResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertEquals(response.getError().getValue(), 0);
-        assertEquals(response.getMessage(), "server error");
-
-        channel.finish();
-    }
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnOnSubscription() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        Topic topic = mock(Topic.class);
-        final org.apache.pulsar.broker.service.Subscription sub =
-                mock(org.apache.pulsar.broker.service.Subscription.class);
-        doReturn(sub).when(topic).getSubscription(any());
-        doReturn(CompletableFuture.completedFuture(null))
-                .when(sub).endTxn(anyLong(), anyLong(), anyInt(), anyLong());
-        doReturn(CompletableFuture.completedFuture(Optional.of(topic))).when(brokerService)
-                .getTopicIfExists(any(String.class));
-
-        ByteBuf clientCommand = Commands.newEndTxnOnSubscription(89L, 1L, 12L,
-                successTopicName, successSubName, TxnAction.COMMIT, 1L);
-        channel.writeInbound(clientCommand);
-        CommandEndTxnOnSubscriptionResponse response = (CommandEndTxnOnSubscriptionResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertFalse(response.hasError());
-        assertFalse(response.hasMessage());
-
-        channel.finish();
-    }
-
-
-    @Test(timeOut = 30000)
-    public void sendEndTxnOnSubscriptionFailed() throws Exception {
-        final TransactionMetadataStoreService txnStore = mock(TransactionMetadataStoreService.class);
-        when(txnStore.getTxnMeta(any())).thenReturn(CompletableFuture.completedFuture(mock(TxnMeta.class)));
-        when(txnStore.verifyTxnOwnership(any(), any())).thenReturn(CompletableFuture.completedFuture(true));
-        when(txnStore.endTransaction(any(TxnID.class), anyInt(), anyBoolean()))
-                .thenReturn(CompletableFuture.completedFuture(null));
-        when(pulsar.getTransactionMetadataStoreService()).thenReturn(txnStore);
-
-        svcConfig.setTransactionCoordinatorEnabled(true);
-        resetChannel();
-        setChannelConnected();
-        Topic topic = mock(Topic.class);
-
-        final org.apache.pulsar.broker.service.Subscription sub =
-                mock(org.apache.pulsar.broker.service.Subscription.class);
-        doReturn(sub).when(topic).getSubscription(any());
-        doReturn(CompletableFuture.failedFuture(new RuntimeException("server error")))
-                .when(sub).endTxn(anyLong(), anyLong(), anyInt(), anyLong());
-        doReturn(CompletableFuture.completedFuture(Optional.of(topic))).when(brokerService)
-                .getTopicIfExists(any(String.class));
-
-        ByteBuf clientCommand = Commands.newEndTxnOnSubscription(89L, 1L, 12L,
-                successTopicName, successSubName, TxnAction.COMMIT, 1L);
-        channel.writeInbound(clientCommand);
-        CommandEndTxnOnSubscriptionResponse response = (CommandEndTxnOnSubscriptionResponse) getResponse();
-
-        assertEquals(response.getRequestId(), 89L);
-        assertEquals(response.getTxnidLeastBits(), 1L);
-        assertEquals(response.getTxnidMostBits(), 12L);
-        assertEquals(response.getError().getValue(), 0);
-        assertEquals(response.getMessage(), "Handle end txn on subscription failed: server error");
 
         channel.finish();
     }

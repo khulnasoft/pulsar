@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,8 +19,6 @@
 package org.apache.pulsar.metadata.cache.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import java.io.IOException;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.metadata.api.MetadataSerde;
@@ -28,21 +26,19 @@ import org.apache.pulsar.metadata.api.Stat;
 
 public class JSONMetadataSerdeTypeRef<T> implements MetadataSerde<T> {
 
-    private final ObjectReader objectReader;
-    private final ObjectWriter objectWriter;
+    private final TypeReference<T> typeRef;
 
     public JSONMetadataSerdeTypeRef(TypeReference<T> typeRef) {
-        this.objectReader = ObjectMapperFactory.getMapper().reader().forType(typeRef);
-        this.objectWriter = ObjectMapperFactory.getMapper().writer().forType(typeRef);
+        this.typeRef = typeRef;
     }
 
     @Override
-    public byte[] serialize(String path, T value) throws IOException {
-        return objectWriter.writeValueAsBytes(value);
+    public byte[] serialize(String paht, T value) throws IOException {
+        return ObjectMapperFactory.getThreadLocal().writeValueAsBytes(value);
     }
 
     @Override
     public T deserialize(String path, byte[] content, Stat stat) throws IOException {
-        return objectReader.readValue(content);
+        return ObjectMapperFactory.getThreadLocal().readValue(content, typeRef);
     }
 }

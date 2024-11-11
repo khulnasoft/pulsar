@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,7 @@
  */
 package org.apache.pulsar.io.rabbitmq.sink;
 
-import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.rabbitmq.RabbitMQSinkConfig;
-import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
 import java.io.File;
@@ -73,45 +71,7 @@ public class RabbitMQSinkConfigTest {
         map.put("exchangeName", "test-exchange");
         map.put("exchangeType", "test-exchange-type");
 
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map, sinkContext);
-        assertNotNull(config);
-        assertEquals(config.getHost(), "localhost");
-        assertEquals(config.getPort(), Integer.parseInt("5673"));
-        assertEquals(config.getVirtualHost(), "/");
-        assertEquals(config.getUsername(), "guest");
-        assertEquals(config.getPassword(), "guest");
-        assertEquals(config.getConnectionName(), "test-connection");
-        assertEquals(config.getRequestedChannelMax(), Integer.parseInt("0"));
-        assertEquals(config.getRequestedFrameMax(), Integer.parseInt("0"));
-        assertEquals(config.getConnectionTimeout(), Integer.parseInt("60000"));
-        assertEquals(config.getHandshakeTimeout(), Integer.parseInt("10000"));
-        assertEquals(config.getRequestedHeartbeat(), Integer.parseInt("60"));
-        assertEquals(config.getExchangeName(), "test-exchange");
-        assertEquals(config.getExchangeType(), "test-exchange-type");
-    }
-
-    @Test
-    public final void loadFromMapCredentialsFromSecretTest() throws IOException {
-        Map<String, Object> map = new HashMap<>();
-        map.put("host", "localhost");
-        map.put("port", "5673");
-        map.put("virtualHost", "/");
-        map.put("connectionName", "test-connection");
-        map.put("requestedChannelMax", "0");
-        map.put("requestedFrameMax", "0");
-        map.put("connectionTimeout", "60000");
-        map.put("handshakeTimeout", "10000");
-        map.put("requestedHeartbeat", "60");
-        map.put("exchangeName", "test-exchange");
-        map.put("exchangeType", "test-exchange-type");
-
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        Mockito.when(sinkContext.getSecret("username"))
-                .thenReturn("guest");
-        Mockito.when(sinkContext.getSecret("password"))
-                .thenReturn("guest");
-        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map, sinkContext);
+        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map);
         assertNotNull(config);
         assertEquals(config.getHost(), "localhost");
         assertEquals(config.getPort(), Integer.parseInt("5673"));
@@ -145,13 +105,12 @@ public class RabbitMQSinkConfigTest {
         map.put("exchangeName", "test-exchange");
         map.put("exchangeType", "test-exchange-type");
 
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map, sinkContext);
+        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map);
         config.validate();
     }
 
-    @Test(expectedExceptions = IllegalArgumentException.class,
-        expectedExceptionsMessageRegExp = "exchangeName cannot be null")
+    @Test(expectedExceptions = NullPointerException.class,
+        expectedExceptionsMessageRegExp = "exchangeName property not set.")
     public final void missingExchangeValidateTest() throws IOException {
         Map<String, Object> map = new HashMap<>();
         map.put("host", "localhost");
@@ -167,8 +126,7 @@ public class RabbitMQSinkConfigTest {
         map.put("requestedHeartbeat", "60");
         map.put("exchangeType", "test-exchange-type");
 
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map, sinkContext);
+        RabbitMQSinkConfig config = RabbitMQSinkConfig.load(map);
         config.validate();
     }
 

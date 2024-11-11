@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -60,9 +60,8 @@ public class EndToEndMetadataTest extends BaseMetadataStoreTest {
         @Cleanup
         EmbeddedPulsarCluster epc = EmbeddedPulsarCluster.builder()
                 .numBrokers(1)
-                .numBookies(2)
+                .numBookies(1)
                 .metadataStoreUrl(urlSupplier.get())
-                .dataDir(tempDir.getAbsolutePath())
                 .clearOldData(true)
                 .build();
 

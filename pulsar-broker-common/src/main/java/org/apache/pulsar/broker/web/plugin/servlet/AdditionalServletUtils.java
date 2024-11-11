@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -60,7 +60,7 @@ public class AdditionalServletUtils {
 
     private AdditionalServletDefinition getAdditionalServletDefinition(NarClassLoader ncl) throws IOException {
         String configStr = ncl.getServiceDefinition(ADDITIONAL_SERVLET_FILE);
-        return ObjectMapperFactory.getYamlMapper().reader().readValue(
+        return ObjectMapperFactory.getThreadLocalYaml().readValue(
                 configStr, AdditionalServletDefinition.class
         );
     }
@@ -74,7 +74,7 @@ public class AdditionalServletUtils {
      */
     public AdditionalServletDefinitions searchForServlets(String additionalServletDirectory,
                                                           String narExtractionDirectory) throws IOException {
-        Path path = Paths.get(additionalServletDirectory).toAbsolutePath().normalize();
+        Path path = Paths.get(additionalServletDirectory).toAbsolutePath();
         log.info("Searching for additional servlets in {}", path);
 
         AdditionalServletDefinitions servletDefinitions = new AdditionalServletDefinitions();
@@ -119,7 +119,7 @@ public class AdditionalServletUtils {
     public AdditionalServletWithClassLoader load(
             AdditionalServletMetadata metadata, String narExtractionDirectory) throws IOException {
 
-        final File narFile = metadata.getArchivePath().toAbsolutePath().normalize().toFile();
+        final File narFile = metadata.getArchivePath().toAbsolutePath().toFile();
         NarClassLoader ncl = NarClassLoaderBuilder.builder()
                 .narFile(narFile)
                 .parentClassLoader(AdditionalServlet.class.getClassLoader())

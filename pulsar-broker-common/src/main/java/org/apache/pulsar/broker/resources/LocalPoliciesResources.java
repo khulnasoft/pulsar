@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -33,6 +33,8 @@ import org.apache.zookeeper.KeeperException;
 
 public class LocalPoliciesResources extends BaseResources<LocalPolicies> {
 
+    private static final String LOCAL_POLICIES_ROOT = "/admin/local-policies";
+
     public LocalPoliciesResources(MetadataStore localStore, int operationTimeoutSec) {
         super(localStore, LocalPolicies.class, operationTimeoutSec);
     }
@@ -66,7 +68,7 @@ public class LocalPoliciesResources extends BaseResources<LocalPolicies> {
     public CompletableFuture<Void> setLocalPoliciesWithVersion(NamespaceName ns, LocalPolicies policies,
                                                                Optional<Long> version) {
         try {
-            byte[] content = ObjectMapperFactory.getMapper().writer().writeValueAsBytes(policies);
+            byte[] content = ObjectMapperFactory.getThreadLocal().writeValueAsBytes(policies);
             return getStore().put(joinPath(LOCAL_POLICIES_ROOT, ns.toString()), content, version)
                     .thenApply(__ -> null);
         } catch (JsonProcessingException e) {
@@ -79,13 +81,13 @@ public class LocalPoliciesResources extends BaseResources<LocalPolicies> {
     }
 
     public CompletableFuture<Void> deleteLocalPoliciesAsync(NamespaceName ns) {
-        return deleteIfExistsAsync(joinPath(LOCAL_POLICIES_ROOT, ns.toString()));
+        return deleteAsync(joinPath(LOCAL_POLICIES_ROOT, ns.toString()));
     }
 
     public CompletableFuture<Void> deleteLocalPoliciesTenantAsync(String tenant) {
         final String localPoliciesPath = joinPath(LOCAL_POLICIES_ROOT, tenant);
         CompletableFuture<Void> future = new CompletableFuture<Void>();
-        deleteIfExistsAsync(localPoliciesPath).whenComplete((ignore, ex) -> {
+        deleteAsync(localPoliciesPath).whenComplete((ignore, ex) -> {
             if (ex != null && ex.getCause().getCause() instanceof KeeperException) {
                 future.complete(null);
             } else if (ex != null) {

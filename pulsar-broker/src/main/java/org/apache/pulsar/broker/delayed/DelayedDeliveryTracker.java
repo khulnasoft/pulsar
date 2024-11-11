@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,8 +20,7 @@ package org.apache.pulsar.broker.delayed;
 
 import com.google.common.annotations.Beta;
 import java.util.NavigableSet;
-import java.util.concurrent.CompletableFuture;
-import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 
 /**
  * Represent the tracker for the delayed delivery of messages for a particular subscription.
@@ -52,14 +51,9 @@ public interface DelayedDeliveryTracker extends AutoCloseable {
     long getNumberOfDelayedMessages();
 
     /**
-     * The amount of memory used to back the delayed message index.
-     */
-    long getBufferMemoryUsage();
-
-    /**
      * Get a set of position of messages that have already reached the delivery time.
      */
-    NavigableSet<Position> getScheduledMessages(int maxMessages);
+    NavigableSet<PositionImpl> getScheduledMessages(int maxMessages);
 
     /**
      * Tells whether the dispatcher should pause any message deliveries, until the DelayedDeliveryTracker has
@@ -76,60 +70,11 @@ public interface DelayedDeliveryTracker extends AutoCloseable {
 
     /**
      * Clear all delayed messages from the tracker.
-     *
-     * @return CompletableFuture<Void>
      */
-    CompletableFuture<Void> clear();
+    void clear();
 
     /**
      * Close the subscription tracker and release all resources.
      */
     void close();
-
-    DelayedDeliveryTracker DISABLE = new DelayedDeliveryTracker() {
-        @Override
-        public boolean addMessage(long ledgerId, long entryId, long deliveryAt) {
-            return false;
-        }
-
-        @Override
-        public boolean hasMessageAvailable() {
-            return false;
-        }
-
-        @Override
-        public long getNumberOfDelayedMessages() {
-            return 0;
-        }
-
-        @Override
-        public long getBufferMemoryUsage() {
-            return 0;
-        }
-
-        @Override
-        public NavigableSet<Position> getScheduledMessages(int maxMessages) {
-            return null;
-        }
-
-        @Override
-        public boolean shouldPauseAllDeliveries() {
-            return false;
-        }
-
-        @Override
-        public void resetTickTime(long tickTime) {
-
-        }
-
-        @Override
-        public CompletableFuture<Void> clear() {
-            return null;
-        }
-
-        @Override
-        public void close() {
-
-        }
-    };
 }

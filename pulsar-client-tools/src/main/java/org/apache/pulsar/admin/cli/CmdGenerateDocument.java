@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,42 +18,63 @@
  */
 package org.apache.pulsar.admin.cli;
 
-import static org.apache.pulsar.internal.CommandDescriptionUtil.getArgDescription;
-import static org.apache.pulsar.internal.CommandDescriptionUtil.getCommandDescription;
-import java.util.Arrays;
-import java.util.HashSet;
+import com.beust.jcommander.DefaultUsageFormatter;
+import com.beust.jcommander.IUsageFormatter;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterDescription;
+import com.beust.jcommander.Parameters;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.Properties;
 import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Model.ArgSpec;
-import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Model.OptionSpec;
-import picocli.CommandLine.Parameters;
-import picocli.CommandLine.Spec;
 
 @Getter
-@Command(description = "Generate documents automatically.")
+@Parameters(commandDescription = "Generate documents automatically.")
 @Slf4j
 public class CmdGenerateDocument extends CmdBase {
 
-    @Spec
-    private CommandSpec pulsarAdminCommandSpec;
+    private final JCommander baseJcommander;
+    private final IUsageFormatter usageFormatter;
+
+    private PulsarAdminTool tool;
 
     public CmdGenerateDocument(Supplier<PulsarAdmin> admin) {
         super("documents", admin);
-        addCommand("generate", new GenerateDocument());
+        baseJcommander = new JCommander();
+        usageFormatter = new DefaultUsageFormatter(baseJcommander);
+        try {
+            tool = new PulsarAdminTool(new Properties());
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            System.err.println();
+            baseJcommander.usage();
+            return;
+        }
+        for (Map.Entry<String, Class<?>> c : tool.commandMap.entrySet()) {
+            try {
+                if (!c.getKey().equals("documents") && c.getValue() != null) {
+                    baseJcommander.addCommand(
+                            c.getKey(), c.getValue().getConstructor(Supplier.class).newInstance(admin));
+                }
+            } catch (Exception e) {
+                System.err.println(e.getMessage());
+                System.err.println();
+                baseJcommander.usage();
+                return;
+            }
+        }
+        jcommander.addCommand("generate", new GenerateDocument());
     }
 
-    @Command(description = "Generate document for modules")
+    @Parameters(commandDescription = "Generate document for modules")
     private class GenerateDocument extends CliCommand {
 
-        @Parameters(description = "Please specify the module name, if not, documents will be generated for all modules."
+        @Parameter(description = "Please specify the module name, if not, documents will be generated for all modules."
                 + "Optional modules(clusters, tenants, brokers, broker-stats, namespaces, topics, schemas, bookies,"
                 + "functions, ns-isolation-policy, resource-quotas, functions, sources, sinks)")
         private java.util.List<String> modules;
@@ -62,75 +83,51 @@ public class CmdGenerateDocument extends CmdBase {
         void run() throws PulsarAdminException {
             StringBuilder sb = new StringBuilder();
             if (modules == null || modules.isEmpty()) {
-                pulsarAdminCommandSpec.parent().subcommands().forEach((k, v) ->
-                        this.generateDocument(sb, k, v)
+                baseJcommander.getCommands().forEach((k, v) ->
+                    this.generateDocument(sb, k, v)
                 );
             } else {
-                modules.forEach(module -> {
-                    CommandLine commandLine = pulsarAdminCommandSpec.parent().subcommands().get(module);
-                    if (commandLine == null) {
-                        return;
-                    }
-                    this.generateDocument(sb, module, commandLine);
-                });
+                String module = getOneArgument(modules);
+                JCommander obj = baseJcommander.getCommands().get(module);
+                this.generateDocument(sb, module, obj);
             }
         }
 
-        private boolean needsLangSupport(String module, String subK) {
-            String[] langSupport = {"localrun", "create", "update"};
-            return module.equals("functions") && Arrays.asList(langSupport).contains(subK);
-        }
-
-        private final Set<String> generatedModule = new HashSet<>();
-
-        private void generateDocument(StringBuilder sb, String module, CommandLine obj) {
-            // Filter the deprecated command
-            if (generatedModule.contains(module)) {
-                return;
-            }
-            String commandName = obj.getCommandName();
-            generatedModule.add(commandName);
-
+        private void generateDocument(StringBuilder sb, String module, JCommander obj) {
+            sb.append("------------\n\n");
             sb.append("# ").append(module).append("\n\n");
-            sb.append(getCommandDescription(obj)).append("\n");
-            sb.append("\n\n```shell\n")
+            sb.append("### Usage\n\n");
+            sb.append("`$").append(module).append("`\n\n");
+            sb.append("------------\n\n");
+            sb.append(usageFormatter.getCommandDescription(module)).append("\n");
+            sb.append("\n\n```bdocs-tab:example_shell\n")
                     .append("$ pulsar-admin ").append(module).append(" subcommand")
                     .append("\n```");
             sb.append("\n\n");
-            obj.getSubcommands().forEach((subK, subV) -> {
-                sb.append("\n\n## ").append(subK).append("\n\n");
-                sb.append(getCommandDescription(subV)).append("\n\n");
-                sb.append("**Command:**\n\n");
-                sb.append("```shell\n$ pulsar-admin ").append(module).append(" ")
+            CmdBase cmdObj = (CmdBase) obj.getObjects().get(0);
+            for (String s : cmdObj.jcommander.getCommands().keySet()) {
+                sb.append("* `").append(s).append("`\n");
+            }
+            cmdObj.jcommander.getCommands().forEach((subK, subV) -> {
+                sb.append("\n\n## <em>").append(subK).append("</em>\n\n");
+                sb.append(cmdObj.getUsageFormatter().getCommandDescription(subK)).append("\n\n");
+                sb.append("### Usage\n\n");
+                sb.append("------------\n\n\n");
+                sb.append("```bdocs-tab:example_shell\n$ pulsar-admin ").append(module).append(" ")
                         .append(subK).append(" options").append("\n```\n\n");
-                List<ArgSpec> options = obj.getCommandSpec().args();
+                List<ParameterDescription> options = cmdObj.jcommander.getCommands().get(subK).getParameters();
                 if (options.size() > 0) {
-                    sb.append("**Options:**\n\n");
-                    sb.append("|Flag|Description|Default|");
-                    if (needsLangSupport(module, subK)) {
-                        sb.append("Support|\n");
-                        sb.append("|---|---|---|---|\n");
-                    } else {
-                        sb.append("\n|---|---|---|\n");
-                    }
+                    sb.append("Options\n\n\n");
+                    sb.append("|Flag|Description|Default|\n");
+                    sb.append("|---|---|---|\n");
                 }
-                options.forEach(ele -> {
-                    if (ele.hidden() || !(ele instanceof OptionSpec)) {
-                        return;
-                    }
-
-                    String argDescription = getArgDescription(ele);
-                    String[] descriptions = argDescription.replace("\n", " ").split(" #");
-                    sb.append("| `").append(Arrays.toString(((OptionSpec) ele).names()))
-                            .append("` | ").append(descriptions[0])
-                            .append("|").append(ele.defaultValue()).append("|");
-                    if (needsLangSupport(module, subK) && descriptions.length > 1) {
-                        sb.append(descriptions[1]);
-                    }
-                    sb.append("|\n");
-                });
-                System.out.println(sb);
+                options.forEach((option) ->
+                    sb.append("| `").append(option.getNames())
+                            .append("` | ").append(option.getDescription().replace("\n", " "))
+                            .append("|").append(option.getDefault()).append("|\n")
+                );
             });
+            System.out.println(sb.toString());
         }
     }
 }

@@ -24,9 +24,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.apache.pulsar</groupId>
+        <groupId>com.khulnasoft.oss</groupId>
         <artifactId>pulsar-functions</artifactId>
-        <version>4.1.0-SNAPSHOT</version>
+        <version>2.10.6.3-SNAPSHOT</version>
+        <relativePath>..</relativePath>
     </parent>
 
     <artifactId>pulsar-functions-local-runner-original</artifactId>
@@ -42,7 +43,7 @@
         <!-- logging -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-slf4j2-impl</artifactId>
+            <artifactId>log4j-slf4j-impl</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
@@ -78,19 +79,6 @@
                 <executions>
                     <execution>
                         <id>check</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>checkstyle</id>
                         <phase>verify</phase>
                         <goals>
                             <goal>check</goal>

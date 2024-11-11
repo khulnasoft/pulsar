@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -407,7 +407,7 @@ public class SchemaCompatibilityCheckTest extends MockedPulsarServiceBaseTest {
         assertEquals(admin.namespaces().getSchemaCompatibilityStrategy(namespaceName.toString()),
                 SchemaCompatibilityStrategy.UNDEFINED);
         byte[] changeSchemaBytes = (new String(Schema.AVRO(Schemas.PersonOne.class)
-                .getSchemaInfo().getSchema(), UTF_8) + "\n   \n   \n").getBytes();
+                .getSchemaInfo().getSchema(), UTF_8) + "/n   /n   /n").getBytes();
         SchemaInfo schemaInfo = SchemaInfo.builder().type(SchemaType.AVRO).schema(changeSchemaBytes).build();
         admin.schemas().createSchema(fqtn, schemaInfo);
 
@@ -490,18 +490,16 @@ public class SchemaCompatibilityCheckTest extends MockedPulsarServiceBaseTest {
         // Update schema 100 times.
         for (int i = 0; i < 100; i++){
             Schema schema = Schema.JSON(SchemaDefinition.builder()
-                    .withJsonDef(String.format("""
-                            {
-                            	"type": "record",
-                            	"name": "Test_Pojo",
-                            	"namespace": "org.apache.pulsar.schema.compatibility",
-                            	"fields": [{
-                            		"name": "prop_%s",
-                            		"type": ["null", "string"],
-                            		"default": null
-                            	}]
-                            }
-                            """, i))
+                    .withJsonDef(String.format("{\n"
+                            + "    \"type\": \"record\",\n"
+                            + "    \"name\": \"Test_Pojo\",\n"
+                            + "    \"namespace\": \"org.apache.pulsar.schema.compatibility\",\n"
+                            + "    \"fields\": [{\n"
+                            + "        \"name\": \"prop_%s\",\n"
+                            + "        \"type\": [\"null\", \"string\"],\n"
+                            + "        \"default\": null\n"
+                            + "    }]\n"
+                            + "}", i))
                     .build());
             Producer producer = pulsarClient
                     .newProducer(schema)
@@ -510,7 +508,7 @@ public class SchemaCompatibilityCheckTest extends MockedPulsarServiceBaseTest {
             producer.close();
         }
         // The other ledgers are about 5.
-        Assert.assertTrue(pulsarTestContext.getMockBookKeeper().getLedgerMap().values().stream()
+        Assert.assertTrue(mockBookKeeper.getLedgerMap().values().stream()
                 .filter(ledger -> !ledger.isFenced())
                 .collect(Collectors.toList()).size() < 20);
         admin.topics().delete(topicName, true);

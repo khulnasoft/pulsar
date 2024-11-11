@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,15 @@
  */
 package org.apache.pulsar.broker.service;
 
+import com.google.common.collect.Lists;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
-import java.util.List;
 import java.util.Optional;
+import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.internal.PulsarAdminImpl;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
+import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -47,20 +49,17 @@ public class ReplicatorAdminTlsWithKeyStoreTest extends ReplicatorTestBase {
 
     @Test
     public void testReplicationAdmin() throws Exception {
-        for (BrokerService ns : List.of(ns1, ns2, ns3)) {
+        for (BrokerService ns : Lists.newArrayList(ns1, ns2, ns3)) {
             // load the admin
             ns.getClusterPulsarAdmin(cluster1, Optional.of(admin1.clusters().getCluster(cluster1)));
             ns.getClusterPulsarAdmin(cluster2, Optional.of(admin1.clusters().getCluster(cluster2)));
             ns.getClusterPulsarAdmin(cluster3, Optional.of(admin1.clusters().getCluster(cluster3)));
 
             // verify the admin
-            final var clusterAdmins = ns.getClusterAdmins();
+            ConcurrentOpenHashMap<String, PulsarAdmin> clusterAdmins = ns.getClusterAdmins();
             assertFalse(clusterAdmins.isEmpty());
             clusterAdmins.forEach((cluster, admin) -> {
                 ClientConfigurationData clientConfigData = ((PulsarAdminImpl) admin).getClientConfigData();
-                assertEquals(clientConfigData.getTlsKeyStorePath(), clientKeyStorePath);
-                assertEquals(clientConfigData.getTlsKeyStorePassword(), keyStorePassword);
-                assertEquals(clientConfigData.getTlsKeyStoreType(), keyStoreType);
                 assertEquals(clientConfigData.getTlsTrustStorePath(), clientTrustStorePath);
                 assertEquals(clientConfigData.getTlsTrustStorePassword(), keyStorePassword);
                 assertEquals(clientConfigData.getTlsTrustStoreType(), keyStoreType);
@@ -70,3 +69,4 @@ public class ReplicatorAdminTlsWithKeyStoreTest extends ReplicatorTestBase {
         }
     }
 }
+

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.instance;
 
 import java.io.File;
@@ -43,8 +44,7 @@ import java.util.List;
  *          - log4j-core
  *          - log4j-api
  *
- *      2. The Function instance classloader, a child of the root classloader,
- *      that loads all pulsar broker/worker dependencies
+ *      2. The Function instance classloader, a child of the root classloader, that loads all pulsar broker/worker dependencies
  *      3. The user code classloader, a child of the root classloader, that loads all user code dependencies
  *
  * This class should not use any other dependencies!
@@ -68,8 +68,7 @@ public class JavaInstanceMain {
         log4j2ShutdownMethod = shutdownMethod;
     }
 
-    public JavaInstanceMain() {
-    }
+    public JavaInstanceMain() { }
 
     public static void main(String[] args) throws Exception {
 
@@ -83,7 +82,7 @@ public class JavaInstanceMain {
         }
 
         List<File> files = new LinkedList<>();
-        for (String entry : functionInstanceClasspath.split(":")) {
+        for (String entry: functionInstanceClasspath.split(":")) {
             if (isBlank(entry)) {
                 continue;
             }
@@ -96,8 +95,7 @@ public class JavaInstanceMain {
                     files.add(new File(entry));
                 }
             } else {
-                System.out.println(
-                        String.format("[WARN] %s on functions instance classpath does not exist", f.getAbsolutePath()));
+                System.out.println(String.format("[WARN] %s on functions instance classpath does not exist", f.getAbsolutePath()));
             }
         }
 
@@ -165,7 +163,7 @@ public class JavaInstanceMain {
     public static boolean isBlank(String str) {
         int strLen;
         if (str != null && (strLen = str.length()) != 0) {
-            for (int i = 0; i < strLen; ++i) {
+            for(int i = 0; i < strLen; ++i) {
                 if (!Character.isWhitespace(str.charAt(i))) {
                     return false;
                 }

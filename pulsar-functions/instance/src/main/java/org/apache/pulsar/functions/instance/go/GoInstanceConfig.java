@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.pulsar.functions.instance.go;
 
-import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.pulsar.functions.proto.Function;
@@ -63,10 +62,6 @@ public class GoInstanceConfig {
     private boolean cleanupSubscription;
     private int subscriptionPosition = Function.SubscriptionPosition.LATEST.getNumber();
 
-    // value is the json string of ConsumerSpec
-    private Map<String, String> sourceInputSpecs;
-
-    // for backward compatibility
     private String sourceSpecsTopic = "";
     private String sourceSchemaType = "";
     private boolean isRegexPatternSubscription;
@@ -83,6 +78,4 @@ public class GoInstanceConfig {
     private String deadLetterTopic = "";
 
     private int metricsPort;
-
-    private String functionDetails = "";
 }

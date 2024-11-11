@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,11 @@
  */
 package org.apache.bookkeeper.mledger.offload.jcloud.impl;
 
-import com.google.common.collect.Range;
+import com.google.common.base.Predicate;
 import io.netty.buffer.ByteBuf;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
@@ -34,7 +32,6 @@ import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerMXBean;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionBound;
 import org.apache.bookkeeper.mledger.intercept.ManagedLedgerInterceptor;
 import org.apache.bookkeeper.mledger.proto.MLDataFormats.ManagedLedgerInfo.LedgerInfo;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
@@ -181,11 +178,6 @@ public class MockManagedLedger implements ManagedLedger {
     }
 
     @Override
-    public long getNumberOfEntries(Range<Position> range) {
-        return 0;
-    }
-
-    @Override
     public long getNumberOfActiveEntries() {
         return 0;
     }
@@ -282,7 +274,7 @@ public class MockManagedLedger implements ManagedLedger {
 
     @Override
     public ManagedLedgerConfig getConfig() {
-        return new ManagedLedgerConfig();
+        return null;
     }
 
     @Override
@@ -380,69 +372,12 @@ public class MockManagedLedger implements ManagedLedger {
     }
 
     @Override
-    public boolean checkInactiveLedgerAndRollOver() {
-        return false;
+    public void checkInactiveLedgerAndRollOver() {
+
     }
 
     @Override
     public void checkCursorsToCacheEntries() {
         // no-op
-    }
-
-    @Override
-    public void asyncReadEntry(Position position, AsyncCallbacks.ReadEntryCallback callback, Object ctx) {
-
-    }
-
-    @Override
-    public NavigableMap<Long, LedgerInfo> getLedgersInfo() {
-        return null;
-    }
-
-    @Override
-    public Position getNextValidPosition(Position position) {
-        return null;
-    }
-
-    @Override
-    public Position getPreviousPosition(Position position) {
-        return null;
-    }
-
-    @Override
-    public long getEstimatedBacklogSize(Position position) {
-        return 0;
-    }
-
-    @Override
-    public Position getPositionAfterN(Position startPosition, long n, PositionBound startRange) {
-        return null;
-    }
-
-    @Override
-    public int getPendingAddEntriesCount() {
-        return 0;
-    }
-
-    @Override
-    public long getCacheSize() {
-        return 0;
-    }
-
-    @Override
-    public Position getFirstPosition() {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<Position> asyncMigrate() {
-        // no-op
-        return null;
-    }
-
-    @Override
-    public boolean isMigrated() {
-        // no-op
-        return false;
     }
 }

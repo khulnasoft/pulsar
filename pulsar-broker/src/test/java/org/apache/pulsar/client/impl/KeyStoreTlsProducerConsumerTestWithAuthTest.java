@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,26 +19,18 @@
 package org.apache.pulsar.client.impl;
 
 import static org.mockito.Mockito.spy;
+
 import com.google.common.collect.Sets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
-
-import io.jsonwebtoken.SignatureAlgorithm;
-import lombok.Cleanup;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderTls;
-import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
-import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
@@ -47,24 +39,34 @@ import org.apache.pulsar.client.api.ProducerConsumerBase;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.auth.AuthenticationKeyStoreTls;
-import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
-
-import javax.crypto.SecretKey;
 
 // TLS authentication and authorization based on KeyStore type config.
 @Slf4j
 @Test(groups = "broker-impl")
 public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsumerBase {
-    private final SecretKey SECRET_KEY = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
-    private final String CLIENTUSER_TOKEN = AuthTokenUtils.createToken(SECRET_KEY, "clientuser", Optional.empty());
+
+    protected final String BROKER_KEYSTORE_FILE_PATH =
+            "./src/test/resources/authentication/keystoretls/broker.keystore.jks";
+    protected final String BROKER_TRUSTSTORE_FILE_PATH =
+            "./src/test/resources/authentication/keystoretls/broker.truststore.jks";
+    protected final String BROKER_KEYSTORE_PW = "111111";
+    protected final String BROKER_TRUSTSTORE_PW = "111111";
+
+    protected final String CLIENT_KEYSTORE_FILE_PATH =
+            "./src/test/resources/authentication/keystoretls/client.keystore.jks";
+    protected final String CLIENT_TRUSTSTORE_FILE_PATH =
+            "./src/test/resources/authentication/keystoretls/client.truststore.jks";
+    protected final String CLIENT_KEYSTORE_PW = "111111";
+    protected final String CLIENT_TRUSTSTORE_PW = "111111";
+
+    protected final String CLIENT_KEYSTORE_CN = "clientuser";
+    protected final String KEYSTORE_TYPE = "JKS";
 
     private final String clusterName = "use";
 
@@ -85,7 +87,6 @@ public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsume
         super.internalCleanup();
     }
 
-    @SneakyThrows
     protected void internalSetUpForBroker() {
         conf.setBrokerServicePortTls(Optional.of(0));
         conf.setWebServicePortTls(Optional.of(0));
@@ -108,34 +109,8 @@ public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsume
         conf.setAuthorizationEnabled(true);
         Set<String> providers = new HashSet<>();
         providers.add(AuthenticationProviderTls.class.getName());
-
-        Properties properties = new Properties();
-        properties.setProperty("tokenSecretKey", AuthTokenUtils.encodeKeyBase64(SECRET_KEY));
-        conf.setProperties(properties);
-
-        providers.add(AuthenticationProviderToken.class.getName());
-
         conf.setAuthenticationProviders(providers);
         conf.setNumExecutorThreadPoolSize(5);
-        Set<String> tlsProtocols = Sets.newConcurrentHashSet();
-        tlsProtocols.add("TLSv1.3");
-        tlsProtocols.add("TLSv1.2");
-        conf.setBrokerClientAuthenticationPlugin(AuthenticationKeyStoreTls.class.getName());
-        Map<String, String> authParams = new HashMap<>();
-        authParams.put(AuthenticationKeyStoreTls.KEYSTORE_TYPE, KEYSTORE_TYPE);
-        authParams.put(AuthenticationKeyStoreTls.KEYSTORE_PATH, CLIENT_KEYSTORE_FILE_PATH);
-        authParams.put(AuthenticationKeyStoreTls.KEYSTORE_PW, CLIENT_KEYSTORE_PW);
-        conf.setBrokerClientAuthenticationParameters(ObjectMapperFactory.getMapper()
-                .getObjectMapper().writeValueAsString(authParams));
-        conf.setBrokerClientTlsEnabled(true);
-        conf.setBrokerClientTlsEnabledWithKeyStore(true);
-        conf.setBrokerClientTlsTrustStore(BROKER_TRUSTSTORE_FILE_PATH);
-        conf.setBrokerClientTlsTrustStorePassword(BROKER_TRUSTSTORE_PW);
-        conf.setBrokerClientTlsKeyStore(CLIENT_KEYSTORE_FILE_PATH);
-        conf.setBrokerClientTlsKeyStoreType(KEYSTORE_TYPE);
-        conf.setBrokerClientTlsKeyStorePassword(CLIENT_KEYSTORE_PW);
-        conf.setBrokerClientTlsProtocols(tlsProtocols);
-
     }
 
     protected void internalSetUpForClient(boolean addCertificates, String lookupUrl) throws Exception {
@@ -170,7 +145,10 @@ public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsume
         authParams.put(AuthenticationKeyStoreTls.KEYSTORE_PATH, CLIENT_KEYSTORE_FILE_PATH);
         authParams.put(AuthenticationKeyStoreTls.KEYSTORE_PW, CLIENT_KEYSTORE_PW);
 
-        closeAdmin();
+        if (admin != null) {
+            admin.close();
+        }
+
         admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrlTls.toString())
                 .useKeyStoreTls(true)
                 .tlsTrustStorePath(BROKER_TRUSTSTORE_FILE_PATH)
@@ -184,7 +162,7 @@ public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsume
                 .brokerServiceUrlTls(pulsar.getBrokerServiceUrlTls())
                 .build());
         admin.tenants().createTenant("my-property",
-                new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet(clusterName)));
+                new TenantInfoImpl(Sets.newHashSet("appid1", "appid2"), Sets.newHashSet("use")));
         admin.namespaces().createNamespace("my-property/my-ns");
     }
 
@@ -294,46 +272,4 @@ public class KeyStoreTlsProducerConsumerTestWithAuthTest extends ProducerConsume
                 .subscribe();
     }
 
-    private final Authentication tlsAuth =
-            new AuthenticationKeyStoreTls(KEYSTORE_TYPE, CLIENT_KEYSTORE_FILE_PATH, CLIENT_KEYSTORE_PW);
-    private final Authentication tokenAuth = new AuthenticationToken(CLIENTUSER_TOKEN);
-
-    @DataProvider
-    public Object[][] keyStoreTlsTransportWithAuth() {
-        Supplier<String> webServiceAddressTls = () -> pulsar.getWebServiceAddressTls();
-        Supplier<String> brokerServiceUrlTls = () -> pulsar.getBrokerServiceUrlTls();
-
-        return new Object[][]{
-                // Verify JKS TLS transport encryption with TLS authentication
-                {webServiceAddressTls, tlsAuth},
-                {brokerServiceUrlTls, tlsAuth},
-                // Verify JKS TLS transport encryption with token authentication
-                {webServiceAddressTls, tokenAuth},
-                {brokerServiceUrlTls, tokenAuth},
-        };
-    }
-
-    @Test(dataProvider = "keyStoreTlsTransportWithAuth")
-    public void testKeyStoreTlsTransportWithAuth(Supplier<String> url, Authentication auth) throws Exception {
-        final String topicName = "persistent://my-property/my-ns/my-topic-1";
-
-        internalSetUpForNamespace();
-
-        @Cleanup
-        PulsarClient client = PulsarClient.builder().serviceUrl(url.get())
-                .useKeyStoreTls(true)
-                .tlsTrustStoreType(KEYSTORE_TYPE)
-                .tlsTrustStorePath(BROKER_TRUSTSTORE_FILE_PATH)
-                .tlsTrustStorePassword(BROKER_TRUSTSTORE_PW)
-                .tlsKeyStoreType(KEYSTORE_TYPE)
-                .tlsKeyStorePath(CLIENT_KEYSTORE_FILE_PATH)
-                .tlsKeyStorePassword(CLIENT_KEYSTORE_PW)
-                .authentication(auth)
-                .allowTlsInsecureConnection(false)
-                .enableTlsHostnameVerification(false)
-                .build();
-
-        @Cleanup
-        Producer<byte[]> ignored = client.newProducer().topic(topicName).create();
-    }
 }

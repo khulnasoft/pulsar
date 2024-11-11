@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,35 +21,33 @@ package org.apache.bookkeeper.mledger.impl;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.proto.MLDataFormats.PositionInfo;
 import org.testng.annotations.Test;
 
 public class PositionTest {
     @Test(expectedExceptions = NullPointerException.class)
     public void nullParam() {
-        PositionFactory.create(null);
+        new PositionImpl((PositionInfo) null);
     }
 
     @Test
     public void simpleTest() {
-        Position pos = PositionFactory.create(1, 2);
+        PositionImpl pos = new PositionImpl(1, 2);
         assertEquals(pos.getLedgerId(), 1);
         assertEquals(pos.getEntryId(), 2);
-        assertEquals(pos, PositionFactory.create(1, 2));
+        assertEquals(pos, new PositionImpl(1, 2));
 
-        assertNotEquals(PositionFactory.create(1, 3), pos);
-        assertNotEquals(PositionFactory.create(3, 2), pos);
+        assertNotEquals(new PositionImpl(1, 3), pos);
+        assertNotEquals(new PositionImpl(3, 2), pos);
         assertNotEquals(pos, "1:2");
     }
 
     @Test
     public void comparisons() {
-        Position pos1_1 = PositionFactory.create(1, 1);
-        Position pos2_5 = PositionFactory.create(2, 5);
-        Position pos10_0 = PositionFactory.create(10, 0);
-        Position pos10_1 = PositionFactory.create(10, 1);
+        PositionImpl pos1_1 = new PositionImpl(1, 1);
+        PositionImpl pos2_5 = new PositionImpl(2, 5);
+        PositionImpl pos10_0 = new PositionImpl(10, 0);
+        PositionImpl pos10_1 = new PositionImpl(10, 1);
 
         assertEquals(0, pos1_1.compareTo(pos1_1));
         assertEquals(-1, pos1_1.compareTo(pos2_5));
@@ -74,13 +72,10 @@ public class PositionTest {
 
     @Test
     public void hashes() throws Exception {
-        Position p1 = PositionFactory.create(5, 15);
-        PositionInfo positionInfo =
-                PositionInfo.newBuilder().setLedgerId(p1.getLedgerId()).setEntryId(p1.getEntryId()).build();
-        PositionInfo parsed = PositionInfo.parseFrom(positionInfo.toByteArray());
-        Position p2 = PositionFactory.create(parsed.getLedgerId(), parsed.getEntryId());
+        PositionImpl p1 = new PositionImpl(5, 15);
+        PositionImpl p2 = new PositionImpl(PositionInfo.parseFrom(p1.getPositionInfo().toByteArray()));
         assertEquals(p2.getLedgerId(), 5);
         assertEquals(p2.getEntryId(), 15);
-        assertEquals(PositionFactory.create(5, 15).hashCode(), p2.hashCode());
+        assertEquals(new PositionImpl(5, 15).hashCode(), p2.hashCode());
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.client.impl;
 import static org.apache.pulsar.common.protocol.Commands.DEFAULT_CONSUMER_EPOCH;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
-import java.util.BitSet;
 import java.util.List;
 import lombok.NonNull;
 import org.apache.pulsar.client.api.Message;
@@ -51,7 +50,7 @@ public class MessagePayloadContextImpl implements MessagePayloadContext {
     private MessageIdImpl messageId;
     private ConsumerImpl<?> consumer;
     private int redeliveryCount;
-    private BitSet ackSetInMessageId;
+    private BatchMessageAcker acker;
     private BitSetRecyclable ackBitSet;
     private long consumerEpoch;
 
@@ -74,7 +73,7 @@ public class MessagePayloadContextImpl implements MessagePayloadContext {
         context.messageId = messageId;
         context.consumer = consumer;
         context.redeliveryCount = redeliveryCount;
-        context.ackSetInMessageId = BatchMessageIdImpl.newAckSet(context.getNumMessages());
+        context.acker = BatchMessageAcker.newAcker(context.getNumMessages());
         context.ackBitSet = (ackSet != null && ackSet.size() > 0)
                 ? BitSetRecyclable.valueOf(SafeCollectionUtils.longListToArray(ackSet))
                 : null;
@@ -89,7 +88,7 @@ public class MessagePayloadContextImpl implements MessagePayloadContext {
         consumer = null;
         redeliveryCount = 0;
         consumerEpoch = DEFAULT_CONSUMER_EPOCH;
-        ackSetInMessageId = null;
+        acker = null;
         if (ackBitSet != null) {
             ackBitSet.recycle();
             ackBitSet = null;
@@ -135,7 +134,7 @@ public class MessagePayloadContextImpl implements MessagePayloadContext {
                     schema,
                     containMetadata,
                     ackBitSet,
-                    ackSetInMessageId,
+                    acker,
                     redeliveryCount,
                     consumerEpoch);
         } finally {

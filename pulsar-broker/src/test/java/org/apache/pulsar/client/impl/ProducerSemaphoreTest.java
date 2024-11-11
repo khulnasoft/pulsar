@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,11 +19,6 @@
 package org.apache.pulsar.client.impl;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import io.netty.buffer.ByteBufAllocator;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +29,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -72,14 +68,13 @@ public class ProducerSemaphoreTest extends ProducerConsumerBase {
                 .maxPendingMessages(pendingQueueSize)
                 .enableBatching(true)
                 .create();
+
         this.stopBroker();
         try {
-            ConnectionHandler connectionHandler = Mockito.spy(producer.getConnectionHandler());
-            Field field = producer.getClass().getDeclaredField("connectionHandler");
-            field.setAccessible(true);
-            field.set(producer, connectionHandler);
-            when(connectionHandler.getMaxMessageSize()).thenReturn(2);
-            producer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
+            try (MockedStatic<ClientCnx> mockedStatic = Mockito.mockStatic(ClientCnx.class)) {
+                mockedStatic.when(ClientCnx::getMaxMessageSize).thenReturn(2);
+                producer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
+            }
             throw new IllegalStateException("can not reach here");
         } catch (PulsarClientException.InvalidMessageException ex) {
             Assert.assertEquals(producer.getSemaphore().get().availablePermits(), pendingQueueSize);
@@ -87,7 +82,10 @@ public class ProducerSemaphoreTest extends ProducerConsumerBase {
 
         producer.conf.setBatchingEnabled(false);
         try {
-            producer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
+            try (MockedStatic<ClientCnx> mockedStatic = Mockito.mockStatic(ClientCnx.class)) {
+                mockedStatic.when(ClientCnx::getMaxMessageSize).thenReturn(2);
+                producer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
+            }
             throw new IllegalStateException("can not reach here");
         } catch (PulsarClientException.InvalidMessageException ex) {
             Assert.assertEquals(producer.getSemaphore().get().availablePermits(), pendingQueueSize);
@@ -253,68 +251,35 @@ public class ProducerSemaphoreTest extends ProducerConsumerBase {
         ProducerImpl<byte[]> producer =
                 (ProducerImpl<byte[]>) pulsarClient.newProducer()
                         .topic("testProducerSemaphoreRelease")
-                        .sendTimeout(5, TimeUnit.SECONDS)
+                        .sendTimeout(2, TimeUnit.SECONDS)
                         .maxPendingMessages(pendingQueueSize)
                         .enableBatching(true)
-                        .batchingMaxPublishDelay(500, TimeUnit.MILLISECONDS)
-                        .batchingMaxBytes(12)
+                        .batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
+                        .batchingMaxBytes(15)
                         .create();
         this.stopBroker();
         try {
             ProducerImpl<byte[]> spyProducer = Mockito.spy(producer);
-            Mockito.doThrow(new PulsarClientException.CryptoException("crypto error")).when(spyProducer)
-                    .encryptMessage(any(),any());
+            // Make the pendingMessages not empty
+            spyProducer.newMessage().value("semaphore-test".getBytes(StandardCharsets.UTF_8)).sendAsync();
+            spyProducer.newMessage().value("semaphore-test".getBytes(StandardCharsets.UTF_8)).sendAsync();
 
             Field batchMessageContainerField = ProducerImpl.class.getDeclaredField("batchMessageContainer");
             batchMessageContainerField.setAccessible(true);
-            BatchMessageContainerImpl batchMessageContainer = (BatchMessageContainerImpl) batchMessageContainerField.get(spyProducer);
+            BatchMessageContainerImpl batchMessageContainer =
+                    (BatchMessageContainerImpl) batchMessageContainerField.get(spyProducer);
             batchMessageContainer.setProducer(spyProducer);
-            spyProducer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
+            Mockito.doThrow(new PulsarClientException.CryptoException("crypto error")).when(spyProducer)
+                    .encryptMessage(any(), any());
+
+            try {
+                spyProducer.newMessage().value("memory-test".getBytes(StandardCharsets.UTF_8)).sendAsync().get();
+            } catch (Exception e) {
+                throw PulsarClientException.unwrap(e);
+            }
 
             throw new IllegalStateException("can not reach here");
         } catch (PulsarClientException.TimeoutException ex) {
-            Assert.assertEquals(producer.getSemaphore().get().availablePermits(), 10);
-        }
-    }
-
-    @Test(timeOut = 10_000)
-    public void testBatchMessageOOMProducerSemaphoreRelease() throws Exception {
-        final int pendingQueueSize = 10;
-        @Cleanup
-        ProducerImpl<byte[]> producer =
-                (ProducerImpl<byte[]>) pulsarClient.newProducer()
-                        .topic("testProducerSemaphoreRelease")
-                        .sendTimeout(5, TimeUnit.SECONDS)
-                        .maxPendingMessages(pendingQueueSize)
-                        .enableBatching(true)
-                        .batchingMaxPublishDelay(500, TimeUnit.MILLISECONDS)
-                        .batchingMaxBytes(12)
-                        .create();
-        this.stopBroker();
-
-        try {
-            ProducerImpl<byte[]> spyProducer = Mockito.spy(producer);
-            final ByteBufAllocator mockAllocator = mock(ByteBufAllocator.class);
-            doAnswer((ignore) -> {
-                throw new OutOfMemoryError("semaphore-test");
-            }).when(mockAllocator).buffer(anyInt());
-
-            final BatchMessageContainerImpl batchMessageContainer = new BatchMessageContainerImpl(mockAllocator);
-            Field batchMessageContainerField = ProducerImpl.class.getDeclaredField("batchMessageContainer");
-            batchMessageContainerField.setAccessible(true);
-            batchMessageContainerField.set(spyProducer, batchMessageContainer);
-            /* Without `batchMessageContainer.setProducer(producer);` it throws NPE since producer is null, and
-                eventually sendAsync() catches this NPE and releases the memory and semaphore.
-                } catch (Throwable t) {
-                    completeCallbackAndReleaseSemaphore(uncompressedSize, callback,
-                            new PulsarClientException(t, msg.getSequenceId()));
-                }
-            */
-            batchMessageContainer.setProducer(producer);
-
-            spyProducer.send("semaphore-test".getBytes(StandardCharsets.UTF_8));
-            Assert.fail("can not reach here");
-        } catch (PulsarClientException ex) {
             Assert.assertEquals(producer.getSemaphore().get().availablePermits(), pendingQueueSize);
         }
     }

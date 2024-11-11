@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,19 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import java.util.function.Supplier;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.policies.data.ResourceGroup;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
-@Command(description = "Operations about ResourceGroups")
+@Parameters(commandDescription = "Operations about ResourceGroups")
 public class CmdResourceGroups extends CmdBase {
-    @Command(description = "List the existing resourcegroups")
+    @Parameters(commandDescription = "List the existing resourcegroups")
     private class List extends CliCommand {
         @Override
         void run() throws PulsarAdminException {
@@ -36,107 +36,112 @@ public class CmdResourceGroups extends CmdBase {
         }
     }
 
-    @Command(description = "Gets the configuration of a resourcegroup")
+    @Parameters(commandDescription = "Gets the configuration of a resourcegroup")
     private class Get extends CliCommand {
-        @Parameters(description = "resourcegroup-name", arity = "1")
-        private String resourceGroupName;
+        @Parameter(description = "resourcegroup-name", required = true)
+        private java.util.List<String> params;
 
         @Override
         void run() throws PulsarAdminException {
-            print(getAdmin().resourcegroups().getResourceGroup(resourceGroupName));
+            String name = getOneArgument(params);
+            print(getAdmin().resourcegroups().getResourceGroup(name));
         }
     }
-
-    @Command(description = "Creates a new resourcegroup")
+    @Parameters(commandDescription = "Creates a new resourcegroup")
     private class Create extends CliCommand {
-        @Parameters(description = "resourcegroup-name", arity = "1")
-        private String resourceGroupName;
+        @Parameter(description = "resourcegroup-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = { "--msg-publish-rate",
+        @Parameter(names = { "--msg-publish-rate",
                 "-mp" }, description = "message-publish-rate "
                 + "(default -1 will be overwrite if not passed)", required = false)
         private Integer publishRateInMsgs;
 
-        @Option(names = { "--byte-publish-rate",
+        @Parameter(names = { "--byte-publish-rate",
                 "-bp" }, description = "byte-publish-rate "
                 + "(default -1 will be overwrite if not passed)", required = false)
         private Long publishRateInBytes;
 
 
-        @Option(names = { "--msg-dispatch-rate",
+        @Parameter(names = { "--msg-dispatch-rate",
                 "-md" }, description = "message-dispatch-rate "
                 + "(default -1 will be overwrite if not passed)", required = false)
         private Integer dispatchRateInMsgs;
 
-        @Option(names = { "--byte-dispatch-rate",
+        @Parameter(names = { "--byte-dispatch-rate",
                 "-bd" }, description = "byte-dispatch-rate "
                 + "(default -1 will be overwrite if not passed)", required = false)
         private Long dispatchRateInBytes;
 
         @Override
         void run() throws PulsarAdminException {
+            String name = getOneArgument(params);
+
             ResourceGroup resourcegroup = new ResourceGroup();
             resourcegroup.setDispatchRateInMsgs(dispatchRateInMsgs);
             resourcegroup.setDispatchRateInBytes(dispatchRateInBytes);
             resourcegroup.setPublishRateInMsgs(publishRateInMsgs);
             resourcegroup.setPublishRateInBytes(publishRateInBytes);
-            getAdmin().resourcegroups().createResourceGroup(resourceGroupName, resourcegroup);
+            getAdmin().resourcegroups().createResourceGroup(name, resourcegroup);
         }
     }
 
-    @Command(description = "Updates a resourcegroup")
+    @Parameters(commandDescription = "Updates a resourcegroup")
     private class Update extends CliCommand {
-        @Parameters(description = "resourcegroup-name", arity = "1")
-        private String resourceGroupName;
+        @Parameter(description = "resourcegroup-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = { "--msg-publish-rate",
+        @Parameter(names = { "--msg-publish-rate",
                 "-mp" }, description = "message-publish-rate ", required = false)
         private Integer publishRateInMsgs;
 
-        @Option(names = { "--byte-publish-rate",
+        @Parameter(names = { "--byte-publish-rate",
                 "-bp" }, description = "byte-publish-rate ", required = false)
         private Long publishRateInBytes;
 
 
-        @Option(names = { "--msg-dispatch-rate",
+        @Parameter(names = { "--msg-dispatch-rate",
                 "-md" }, description = "message-dispatch-rate ", required = false)
         private Integer dispatchRateInMsgs;
 
-        @Option(names = { "--byte-dispatch-rate",
+        @Parameter(names = { "--byte-dispatch-rate",
                 "-bd" }, description = "byte-dispatch-rate ", required = false)
         private Long dispatchRateInBytes;
 
         @Override
         void run() throws PulsarAdminException {
+            String name = getOneArgument(params);
+
             ResourceGroup resourcegroup = new ResourceGroup();
             resourcegroup.setDispatchRateInMsgs(dispatchRateInMsgs);
             resourcegroup.setDispatchRateInBytes(dispatchRateInBytes);
             resourcegroup.setPublishRateInMsgs(publishRateInMsgs);
             resourcegroup.setPublishRateInBytes(publishRateInBytes);
 
-            getAdmin().resourcegroups().updateResourceGroup(resourceGroupName, resourcegroup);
+            getAdmin().resourcegroups().updateResourceGroup(name, resourcegroup);
         }
     }
 
-    @Command(description = "Deletes an existing ResourceGroup")
+    @Parameters(commandDescription = "Deletes an existing ResourceGroup")
     private class Delete extends CliCommand {
-        @Parameters(description = "resourcegroup-name", arity = "1")
-        private String resourceGroupName;
+        @Parameter(description = "resourcegroup-name", required = true)
+        private java.util.List<String> params;
 
         @Override
         void run() throws PulsarAdminException {
-            getAdmin().resourcegroups().deleteResourceGroup(resourceGroupName);
+            String name = getOneArgument(params);
+            getAdmin().resourcegroups().deleteResourceGroup(name);
         }
     }
 
 
     public CmdResourceGroups(Supplier<PulsarAdmin> admin) {
         super("resourcegroups", admin);
-        addCommand("list", new CmdResourceGroups.List());
-        addCommand("get", new CmdResourceGroups.Get());
-        addCommand("create", new CmdResourceGroups.Create());
-        addCommand("update", new CmdResourceGroups.Update());
-        addCommand("delete", new CmdResourceGroups.Delete());
+        jcommander.addCommand("list", new CmdResourceGroups.List());
+        jcommander.addCommand("get", new CmdResourceGroups.Get());
+        jcommander.addCommand("create", new CmdResourceGroups.Create());
+        jcommander.addCommand("update", new CmdResourceGroups.Update());
+        jcommander.addCommand("delete", new CmdResourceGroups.Delete());
     }
 
 

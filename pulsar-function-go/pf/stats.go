@@ -35,8 +35,6 @@ var (
 	metricsLabelNames          = []string{"tenant", "namespace", "name", "instance_id", "cluster", "fqfn"}
 	exceptionLabelNames        = []string{"error"}
 	exceptionMetricsLabelNames = append(metricsLabelNames, exceptionLabelNames...)
-	userLabelNames             = []string{"metric"}
-	userMetricLabelNames       = append(metricsLabelNames, userLabelNames...)
 )
 
 const (
@@ -54,8 +52,6 @@ const (
 	TotalUserExceptions1min        = "user_exceptions_total_1min"
 	ProcessLatencyMs1min           = "process_latency_ms_1min"
 	TotalReceived1min              = "received_total_1min"
-
-	UserMetric = "user_metric"
 )
 
 // Declare Prometheus
@@ -126,18 +122,6 @@ var (
 		prometheus.GaugeOpts{
 			Name: PulsarFunctionMetricsPrefix + "system_exception",
 			Help: "Exception from system code."}, exceptionMetricsLabelNames)
-
-	userMetricSummary = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name: PulsarFunctionMetricsPrefix + UserMetric,
-			Help: "User defined metric.",
-			Objectives: map[float64]float64{
-				0.5:   0.01,
-				0.9:   0.01,
-				0.99:  0.01,
-				0.999: 0.01,
-			},
-		}, userMetricLabelNames)
 )
 
 type MetricsServicer struct {
@@ -162,7 +146,6 @@ func init() {
 	reg.MustRegister(statTotalReceived1min)
 	reg.MustRegister(userExceptions)
 	reg.MustRegister(systemExceptions)
-	reg.MustRegister(userMetricSummary)
 
 }
 
@@ -273,8 +256,8 @@ func (stat *StatWithLabelValues) incrTotalUserExceptions(err error) {
 func (stat *StatWithLabelValues) addUserException(err error) {
 	now := time.Now()
 	ts := now.UnixNano()
-	errorTS := LatestException{err, ts}
-	stat.latestUserException = append(stat.latestUserException, errorTS)
+	errorTs := LatestException{err, ts}
+	stat.latestUserException = append(stat.latestUserException, errorTs)
 	if len(stat.latestUserException) > 10 {
 		stat.latestUserException = stat.latestUserException[1:]
 	}
@@ -282,10 +265,10 @@ func (stat *StatWithLabelValues) addUserException(err error) {
 	stat.reportUserExceptionPrometheus(err)
 }
 
-// @limits(calls=5, period=60)
+//@limits(calls=5, period=60)
 func (stat *StatWithLabelValues) reportUserExceptionPrometheus(exception error) {
-	errorTS := []string{exception.Error()}
-	exceptionMetricLabels := append(stat.metricsLabels, errorTS...)
+	errorTs := []string{exception.Error()}
+	exceptionMetricLabels := append(stat.metricsLabels, errorTs...)
 	userExceptions.WithLabelValues(exceptionMetricLabels...).Set(1.0)
 }
 
@@ -303,8 +286,8 @@ func (stat *StatWithLabelValues) incrTotalSysExceptions(exception error) {
 func (stat *StatWithLabelValues) addSysException(exception error) {
 	now := time.Now()
 	ts := now.UnixNano()
-	errorTS := LatestException{exception, ts}
-	stat.latestSysException = append(stat.latestSysException, errorTS)
+	errorTs := LatestException{exception, ts}
+	stat.latestSysException = append(stat.latestSysException, errorTs)
 	if len(stat.latestSysException) > 10 {
 		stat.latestSysException = stat.latestSysException[1:]
 	}
@@ -312,10 +295,10 @@ func (stat *StatWithLabelValues) addSysException(exception error) {
 	stat.reportSystemExceptionPrometheus(exception)
 }
 
-// @limits(calls=5, period=60)
+//@limits(calls=5, period=60)
 func (stat *StatWithLabelValues) reportSystemExceptionPrometheus(exception error) {
-	errorTS := []string{exception.Error()}
-	exceptionMetricLabels := append(stat.metricsLabels, errorTS...)
+	errorTs := []string{exception.Error()}
+	exceptionMetricLabels := append(stat.metricsLabels, errorTs...)
 	systemExceptions.WithLabelValues(exceptionMetricLabels...).Set(1.0)
 }
 
@@ -356,9 +339,7 @@ func (s *MetricsServicer) serve() {
 		// create a listener on metrics port
 		log.Infof("Starting metrics server on port %d", s.goInstance.context.GetMetricsPort())
 		err := s.server.ListenAndServe()
-		switch err {
-		case nil, http.ErrServerClosed:
-		default:
+		if err != nil {
 			log.Fatalf("failed to start metrics server: %v", err)
 		}
 	}()

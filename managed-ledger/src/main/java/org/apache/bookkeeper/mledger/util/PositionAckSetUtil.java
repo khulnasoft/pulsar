@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,8 @@
  */
 package org.apache.bookkeeper.mledger.util;
 
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.impl.AckSetState;
-import org.apache.bookkeeper.mledger.impl.AckSetStateUtil;
+import com.google.common.collect.ComparisonChain;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.common.util.collections.BitSetRecyclable;
 
 public class PositionAckSetUtil {
@@ -43,13 +42,11 @@ public class PositionAckSetUtil {
     }
 
     //This method is do `and` operation for position's ack set
-    public static void andAckSet(Position currentPosition, Position otherPosition) {
+    public static void andAckSet(PositionImpl currentPosition, PositionImpl otherPosition) {
         if (currentPosition == null || otherPosition == null) {
             return;
         }
-        AckSetState currentAckSetState = AckSetStateUtil.getAckSetState(currentPosition);
-        AckSetState otherAckSetState = AckSetStateUtil.getAckSetState(otherPosition);
-        currentAckSetState.setAckSet(andAckSet(currentAckSetState.getAckSet(), otherAckSetState.getAckSet()));
+        currentPosition.setAckSet(andAckSet(currentPosition.getAckSet(), otherPosition.getAckSet()));
     }
 
     //This method is do `and` operation for ack set
@@ -73,28 +70,28 @@ public class PositionAckSetUtil {
     //This method is compare two position which position is bigger than another one.
     //When the ledgerId and entryId in this position is same to another one and two position all have ack set, it will
     //compare the ack set next bit index is bigger than another one.
-    public static int compareToWithAckSet(Position currentPosition, Position otherPosition) {
+    public static int compareToWithAckSet(PositionImpl currentPosition, PositionImpl otherPosition) {
         if (currentPosition == null || otherPosition == null) {
             throw new IllegalArgumentException("Two positions can't be null! "
                     + "current position : [" + currentPosition + "] other position : [" + otherPosition + "]");
         }
-        int result = currentPosition.compareTo(otherPosition);
+        int result = ComparisonChain.start().compare(currentPosition.getLedgerId(),
+                otherPosition.getLedgerId()).compare(currentPosition.getEntryId(), otherPosition.getEntryId())
+                .result();
         if (result == 0) {
             BitSetRecyclable otherAckSet;
             BitSetRecyclable currentAckSet;
 
-            long[] otherAckSetArr = AckSetStateUtil.getAckSetArrayOrNull(otherPosition);
-            if (otherAckSetArr == null) {
+            if (otherPosition.getAckSet() == null) {
                 otherAckSet = BitSetRecyclable.create();
             } else {
-                otherAckSet = BitSetRecyclable.valueOf(otherAckSetArr);
+                otherAckSet = BitSetRecyclable.valueOf(otherPosition.getAckSet());
             }
 
-            long[] currentAckSetArr = AckSetStateUtil.getAckSetArrayOrNull(currentPosition);
-            if (currentAckSetArr == null) {
+            if (currentPosition.getAckSet() == null) {
                 currentAckSet = BitSetRecyclable.create();
             } else {
-                currentAckSet = BitSetRecyclable.valueOf(currentAckSetArr);
+                currentAckSet = BitSetRecyclable.valueOf(currentPosition.getAckSet());
             }
 
             if (currentAckSet.isEmpty() || otherAckSet.isEmpty()) {

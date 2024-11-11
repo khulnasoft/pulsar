@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,16 +18,18 @@
  */
 package org.apache.pulsar.client.impl;
 
-import java.util.BitSet;
-import org.apache.pulsar.client.api.MessageIdAdv;
+import org.apache.pulsar.client.api.MessageId;
 
+/**
+ */
 public class BatchMessageIdImpl extends MessageIdImpl {
 
     private static final long serialVersionUID = 1L;
+    static final int NO_BATCH = -1;
     private final int batchIndex;
     private final int batchSize;
 
-    private final BitSet ackSet;
+    private final transient BatchMessageAcker acker;
 
     // Private constructor used only for json deserialization
     @SuppressWarnings("unused")
@@ -36,40 +38,82 @@ public class BatchMessageIdImpl extends MessageIdImpl {
     }
 
     public BatchMessageIdImpl(long ledgerId, long entryId, int partitionIndex, int batchIndex) {
-        this(ledgerId, entryId, partitionIndex, batchIndex, 0, null);
+        this(ledgerId, entryId, partitionIndex, batchIndex, 0, BatchMessageAckerDisabled.INSTANCE);
     }
 
     public BatchMessageIdImpl(long ledgerId, long entryId, int partitionIndex, int batchIndex, int batchSize,
-                              BitSet ackSet) {
+                              BatchMessageAcker acker) {
         super(ledgerId, entryId, partitionIndex);
         this.batchIndex = batchIndex;
         this.batchSize = batchSize;
-        this.ackSet = ackSet;
+        this.acker = acker;
     }
 
-    public BatchMessageIdImpl(MessageIdAdv other) {
-        this(other.getLedgerId(), other.getEntryId(), other.getPartitionIndex(),
-                other.getBatchIndex(), other.getBatchSize(), other.getAckSet());
+    public BatchMessageIdImpl(MessageIdImpl other) {
+        super(other.ledgerId, other.entryId, other.partitionIndex);
+        if (other instanceof BatchMessageIdImpl) {
+            BatchMessageIdImpl otherId = (BatchMessageIdImpl) other;
+            this.batchIndex = otherId.batchIndex;
+            this.batchSize = otherId.batchSize;
+            this.acker = otherId.acker;
+        } else {
+            this.batchIndex = NO_BATCH;
+            this.batchSize = 0;
+            this.acker = BatchMessageAckerDisabled.INSTANCE;
+        }
     }
 
-    @Override
     public int getBatchIndex() {
         return batchIndex;
     }
 
     @Override
+    public int compareTo(MessageId o) {
+        if (o instanceof MessageIdImpl) {
+            MessageIdImpl other = (MessageIdImpl) o;
+            int batchIndex = (o instanceof BatchMessageIdImpl) ? ((BatchMessageIdImpl) o).batchIndex : NO_BATCH;
+            return messageIdCompare(
+                this.ledgerId, this.entryId, this.partitionIndex, this.batchIndex,
+                other.ledgerId, other.entryId, other.partitionIndex, batchIndex
+            );
+        } else if (o instanceof TopicMessageIdImpl) {
+            return compareTo(((TopicMessageIdImpl) o).getInnerMessageId());
+        } else {
+            throw new UnsupportedOperationException("Unknown MessageId type: " + o.getClass().getName());
+        }
+    }
+
+    @Override
     public int hashCode() {
-        return MessageIdAdvUtils.hashCode(this);
+        return messageIdHashCode(ledgerId, entryId, partitionIndex, batchIndex);
     }
 
     @Override
     public boolean equals(Object o) {
-        return MessageIdAdvUtils.equals(this, o);
+        if (o instanceof MessageIdImpl) {
+            MessageIdImpl other = (MessageIdImpl) o;
+            int batchIndex = (o instanceof BatchMessageIdImpl) ? ((BatchMessageIdImpl) o).batchIndex : NO_BATCH;
+            return messageIdEquals(
+                this.ledgerId, this.entryId, this.partitionIndex, this.batchIndex,
+                other.ledgerId, other.entryId, other.partitionIndex, batchIndex
+            );
+        } else if (o instanceof TopicMessageIdImpl) {
+            return equals(((TopicMessageIdImpl) o).getInnerMessageId());
+        }
+        return false;
     }
 
     @Override
     public String toString() {
-        return ledgerId + ":" + entryId + ":" + partitionIndex + ":" + batchIndex;
+        return new StringBuilder()
+          .append(ledgerId)
+          .append(':')
+          .append(entryId)
+          .append(':')
+          .append(partitionIndex)
+          .append(':')
+          .append(batchIndex)
+          .toString();
     }
 
     // Serialization
@@ -78,51 +122,39 @@ public class BatchMessageIdImpl extends MessageIdImpl {
         return toByteArray(batchIndex, batchSize);
     }
 
-    @Deprecated
     public boolean ackIndividual() {
-        return MessageIdAdvUtils.acknowledge(this, true);
+        return acker.ackIndividual(batchIndex);
     }
 
-    @Deprecated
     public boolean ackCumulative() {
-        return MessageIdAdvUtils.acknowledge(this, false);
+        return acker.ackCumulative(batchIndex);
     }
 
-    @Deprecated
     public int getOutstandingAcksInSameBatch() {
-        return 0;
+        return acker.getOutstandingAcks();
     }
 
-    @Override
     public int getBatchSize() {
-        return batchSize;
+        return acker.getBatchSize();
     }
 
-    @Deprecated
     public int getOriginalBatchSize() {
         return this.batchSize;
     }
 
-    @Deprecated
     public MessageIdImpl prevBatchMessageId() {
-        return (MessageIdImpl) MessageIdAdvUtils.prevMessageId(this);
+        return new MessageIdImpl(
+            ledgerId, entryId - 1, partitionIndex);
     }
 
     // MessageIdImpl is widely used as the key of a hash map, in this case, we should convert the batch message id to
     // have the correct hash code.
-    @Deprecated
     public MessageIdImpl toMessageIdImpl() {
-        return (MessageIdImpl) MessageIdAdvUtils.discardBatch(this);
+        return new MessageIdImpl(ledgerId, entryId, partitionIndex);
     }
 
-    @Override
-    public BitSet getAckSet() {
-        return ackSet;
+    public BatchMessageAcker getAcker() {
+        return acker;
     }
 
-    static BitSet newAckSet(int batchSize) {
-        final BitSet ackSet = new BitSet(batchSize);
-        ackSet.set(0, batchSize);
-        return ackSet;
-    }
 }

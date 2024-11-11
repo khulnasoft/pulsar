@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.pulsar.policies.data.loadbalancer;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,7 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Contains all the data that is maintained locally on each broker.
  */
-@JsonIgnoreProperties(value = {"bundleStats"})
 @JsonDeserialize(as = LocalBrokerData.class)
 public class LocalBrokerData implements LoadManagerReport {
 
@@ -66,7 +64,7 @@ public class LocalBrokerData implements LoadManagerReport {
     // The stats given in the most recent invocation of update.
     private Map<String, NamespaceBundleStats> lastStats;
 
-    private long numTopics;
+    private int numTopics;
     private int numBundles;
     private int numConsumers;
     private int numProducers;
@@ -91,9 +89,6 @@ public class LocalBrokerData implements LoadManagerReport {
     //
     private Map<String, AdvertisedListener> advertisedListeners;
 
-    private String loadManagerClassName;
-    private long startTimestamp;
-
     // For JSON only.
     public LocalBrokerData() {
         this(null, null, null, null);
@@ -116,7 +111,6 @@ public class LocalBrokerData implements LoadManagerReport {
         this.pulsarServiceUrlTls = pulsarServiceUrlTls;
         lastStats = new ConcurrentHashMap<>();
         lastUpdate = System.currentTimeMillis();
-        startTimestamp = System.currentTimeMillis();
         cpu = new ResourceUsage();
         memory = new ResourceUsage();
         directMemory = new ResourceUsage();
@@ -202,7 +196,7 @@ public class LocalBrokerData implements LoadManagerReport {
         msgRateOut = 0;
         msgThroughputIn = 0;
         msgThroughputOut = 0;
-        long totalNumTopics = 0;
+        int totalNumTopics = 0;
         int totalNumBundles = 0;
         int totalNumConsumers = 0;
         int totalNumProducers = 0;
@@ -254,15 +248,25 @@ public class LocalBrokerData implements LoadManagerReport {
                 bandwidthOut.percentUsage());
     }
 
-    public double getMaxResourceUsageWithWeight(final double cpuWeight,
+    public double getMaxResourceUsageWithWeight(final double cpuWeight, final double memoryWeight,
                                                 final double directMemoryWeight, final double bandwidthInWeight,
                                                 final double bandwidthOutWeight) {
-        return max(cpu.percentUsage() * cpuWeight,
+        return max(cpu.percentUsage() * cpuWeight, memory.percentUsage() * memoryWeight,
                 directMemory.percentUsage() * directMemoryWeight, bandwidthIn.percentUsage() * bandwidthInWeight,
                 bandwidthOut.percentUsage() * bandwidthOutWeight) / 100;
     }
 
-    public static double max(double... args) {
+    public double getMaxResourceUsageWithWeightWithinLimit(final double cpuWeight, final double memoryWeight,
+                                                           final double directMemoryWeight,
+                                                           final double bandwidthInWeight,
+                                                           final double bandwidthOutWeight) {
+        return maxWithinLimit(100.0d,
+                cpu.percentUsage() * cpuWeight, memory.percentUsage() * memoryWeight,
+                directMemory.percentUsage() * directMemoryWeight, bandwidthIn.percentUsage() * bandwidthInWeight,
+                bandwidthOut.percentUsage() * bandwidthOutWeight) / 100;
+    }
+
+    private static double max(double... args) {
         double max = Double.NEGATIVE_INFINITY;
 
         for (double d : args) {
@@ -283,6 +287,16 @@ public class LocalBrokerData implements LoadManagerReport {
             }
         }
 
+        return max;
+    }
+
+    private static double maxWithinLimit(double limit, double...args) {
+        double max = 0.0;
+        for (double d : args) {
+            if (d > max && d <= limit) {
+                max = d;
+            }
+        }
         return max;
     }
 
@@ -382,7 +396,7 @@ public class LocalBrokerData implements LoadManagerReport {
     }
 
     @Override
-    public long getNumTopics() {
+    public int getNumTopics() {
         return numTopics;
     }
 
@@ -525,17 +539,5 @@ public class LocalBrokerData implements LoadManagerReport {
 
     public void setAdvertisedListeners(Map<String, AdvertisedListener> advertisedListeners) {
         this.advertisedListeners = advertisedListeners;
-    }
-
-    public String getLoadManagerClassName() {
-        return this.loadManagerClassName;
-    }
-
-    public void setLoadManagerClassName(String loadManagerClassName) {
-        this.loadManagerClassName = loadManagerClassName;
-    }
-
-    public long getStartTimestamp() {
-        return this.startTimestamp;
     }
 }

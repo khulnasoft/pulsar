@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,9 +20,6 @@ package org.apache.pulsar.io.kafka.connect;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import io.confluent.connect.avro.AvroConverter;
-import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
-import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -46,10 +43,14 @@ import org.apache.kafka.connect.storage.OffsetBackingStore;
 import org.apache.kafka.connect.storage.OffsetStorageReader;
 import org.apache.kafka.connect.storage.OffsetStorageReaderImpl;
 import org.apache.kafka.connect.storage.OffsetStorageWriter;
+import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.io.core.Source;
 import org.apache.pulsar.io.core.SourceContext;
 import org.apache.pulsar.io.kafka.connect.schema.KafkaSchemaWrappedSchema;
+import org.apache.pulsar.kafka.shade.io.confluent.connect.avro.AvroConverter;
+import org.apache.pulsar.kafka.shade.io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
+import org.apache.pulsar.kafka.shade.io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
 
 /**
  * A pulsar source that runs.
@@ -246,6 +247,11 @@ public abstract class AbstractKafkaConnectSource<T> implements Source<T> {
         AbstractKafkaSourceRecord(SourceRecord srcRecord) {
             this.destinationTopic = Optional.of("persistent://" + topicNamespace + "/" + srcRecord.topic());
             this.partitionIndex = Optional.ofNullable(srcRecord.kafkaPartition());
+        }
+
+        @Override
+        public Schema getSchema() {
+            return null;
         }
 
         @Override

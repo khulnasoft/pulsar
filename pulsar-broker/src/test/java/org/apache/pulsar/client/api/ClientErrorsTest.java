@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -270,7 +270,7 @@ public class ClientErrorsTest {
             if (subscribeCount == 1) {
                 ctx.writeAndFlush(Commands.newSuccess(subscribe.getRequestId()));
                 // Trigger reconnect
-                ctx.writeAndFlush(Commands.newCloseConsumer(subscribe.getConsumerId(), -1, null, null));
+                ctx.writeAndFlush(Commands.newCloseConsumer(subscribe.getConsumerId(), -1));
             } else if (subscribeCount != 2) {
                 // Respond to subsequent requests to prevent timeouts
                 ctx.writeAndFlush(Commands.newSuccess(subscribe.getRequestId()));
@@ -763,7 +763,7 @@ public class ClientErrorsTest {
         AtomicBoolean msgSent = new AtomicBoolean();
         mockBrokerService.setHandleConnect((ctx, connect) -> {
             channelCtx.set(ctx);
-            ctx.writeAndFlush(Commands.newConnected(connect.getProtocolVersion(), false));
+            ctx.writeAndFlush(Commands.newConnected(connect.getProtocolVersion()));
             if (numOfConnections.incrementAndGet() == 2) {
                 // close the cnx immediately when trying to connect the 2nd time
                 ctx.channel().close();
@@ -803,7 +803,7 @@ public class ClientErrorsTest {
         CountDownLatch latch = new CountDownLatch(1);
         mockBrokerService.setHandleConnect((ctx, connect) -> {
             channelCtx.set(ctx);
-            ctx.writeAndFlush(Commands.newConnected(connect.getProtocolVersion(), false));
+            ctx.writeAndFlush(Commands.newConnected(connect.getProtocolVersion()));
             if (numOfConnections.incrementAndGet() == 2) {
                 // close the cnx immediately when trying to connect the 2nd time
                 ctx.channel().close();

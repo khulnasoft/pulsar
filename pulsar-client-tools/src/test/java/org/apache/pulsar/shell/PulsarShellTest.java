@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,7 +20,6 @@ package org.apache.pulsar.shell;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -37,8 +36,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.SneakyThrows;
+import org.apache.pulsar.admin.cli.PulsarAdminSupplier;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminBuilder;
 import org.apache.pulsar.client.admin.Topics;
 import org.apache.pulsar.client.cli.CmdProduce;
 import org.jline.reader.EndOfFileException;
@@ -46,6 +45,7 @@ import org.jline.reader.UserInterruptException;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
+import org.powermock.reflect.Whitebox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.BeforeMethod;
@@ -77,7 +77,6 @@ public class PulsarShellTest {
             final String cmd = commandsQueue.take();
             log.info("writing command: {}", cmd);
             return cmd;
-
         }
 
         @Override
@@ -100,18 +99,18 @@ public class PulsarShellTest {
         @Override
         protected AdminShell createAdminShell(Properties properties) throws Exception {
             final AdminShell adminShell = new AdminShell(properties);
-            PulsarAdminBuilder builder = mock(PulsarAdminBuilder.class);
-            doReturn(pulsarAdmin).when(builder).build();
-            adminShell.getPulsarAdminSupplier().setAdminBuilder(builder);
+            final PulsarAdminSupplier supplier = mock(PulsarAdminSupplier.class);
+            when(supplier.get()).thenReturn(pulsarAdmin);
+            adminShell.setPulsarAdminSupplier(supplier);
             return adminShell;
         }
 
         @Override
         protected ClientShell createClientShell(Properties properties) {
+            final ClientShell clientShell = new ClientShell(properties);
             final CmdProduce cmdProduce = mock(CmdProduce.class);
             cmdProduceHolder.set(cmdProduce);
-            ClientShell clientShell = new ClientShell(properties);
-            clientShell.replaceProducerCommand(cmdProduce);
+            Whitebox.setInternalState(clientShell, "produceCommand", cmdProduceHolder.get());
             return clientShell;
         }
 
@@ -125,7 +124,7 @@ public class PulsarShellTest {
     }
 
     private static class SystemExitCalledException extends RuntimeException {
-        private final int code;
+        private int code;
 
         public SystemExitCalledException(int code) {
             this.code = code;
@@ -141,7 +140,7 @@ public class PulsarShellTest {
 
 
     @Test
-    public void testInteractiveMode() throws Exception {
+    public void testInteractiveMode() throws Exception{
         Terminal terminal = TerminalBuilder.builder().build();
         final MockLineReader linereader = new MockLineReader(terminal);
 
@@ -151,15 +150,15 @@ public class PulsarShellTest {
         linereader.addCmd("client produce -m msg my-topic");
         linereader.addCmd("quit");
         final TestPulsarShell testPulsarShell = new TestPulsarShell(new String[]{}, props, pulsarAdmin);
-        testPulsarShell.run((a) -> linereader, () -> terminal);
+        testPulsarShell.run((a) -> linereader, (a) -> terminal);
         verify(topics).createNonPartitionedTopic(eq("persistent://public/default/my-topic"), any(Map.class));
-        verify(testPulsarShell.cmdProduceHolder.get()).call();
+        verify(testPulsarShell.cmdProduceHolder.get()).run();
         assertEquals((int) testPulsarShell.exitCode, 0);
 
     }
 
     @Test
-    public void testFileMode() throws Exception {
+    public void testFileMode() throws Exception{
         Terminal terminal = TerminalBuilder.builder().build();
         final MockLineReader linereader = new MockLineReader(terminal);
         final Properties props = new Properties();
@@ -170,9 +169,9 @@ public class PulsarShellTest {
 
         final TestPulsarShell testPulsarShell = new TestPulsarShell(new String[]{"-f", shellFile},
                 props, pulsarAdmin);
-        testPulsarShell.run((a) -> linereader, () -> terminal);
+        testPulsarShell.run((a) -> linereader, (a) -> terminal);
         verify(topics).createNonPartitionedTopic(eq("persistent://public/default/my-topic"), any(Map.class));
-        verify(testPulsarShell.cmdProduceHolder.get()).call();
+        verify(testPulsarShell.cmdProduceHolder.get()).run();
     }
 
     @Test
@@ -188,9 +187,9 @@ public class PulsarShellTest {
         final TestPulsarShell testPulsarShell = new TestPulsarShell(new String[]{"-f", shellFile, "--fail-on-error"},
                 props, pulsarAdmin);
         try {
-            testPulsarShell.run((a) -> linereader, () -> terminal);
+            testPulsarShell.run((a) -> linereader, (a) -> terminal);
             fail();
-        } catch (SystemExitCalledException ex) {
+        }  catch (SystemExitCalledException ex) {
             assertEquals(ex.code, 1);
         }
 

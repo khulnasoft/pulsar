@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -145,23 +145,27 @@ public class SinksBase extends AdminResource {
                                              value = {
                                                  @ExampleProperty(
                                                      mediaType = MediaType.TEXT_PLAIN,
-                                                     value = """
-                                                             Example
-                                                             1. Create a JSON object.
-                                                              {
-                                                               "classname": "org.example.MySinkTest",
-                                                               "inputs": ["persistent://public/default/sink-input"],
-                                                               "processingGuarantees": "EFFECTIVELY_ONCE",
-                                                               "parallelism": "10"
-                                                              }
-                                                             2. Encapsulate the JSON object to a multipart object \
-                                                             (in Python).
-                                                             from requests_toolbelt.multipart.encoder import \
-                                                             MultipartEncoder
-                                                             mp_encoder = MultipartEncoder(\
-                                                              [('sinkConfig',\
-                                                             (None, json.dumps(config), 'application/json'))])
-                                                             """
+                                                     value = "Example \n"
+                                                             + "\n"
+                                                             + " 1. Create a JSON object. \n"
+                                                             + "\n"
+                                                             + "{\n"
+                                                             + "\t\"classname\": \"org.example.MySinkTest\",\n"
+                                                             + "\t\"inputs\": ["
+                                                             + "\"persistent://public/default/sink-input\"],\n"
+                                                             + "\t\"processingGuarantees\": \"EFFECTIVELY_ONCE\",\n"
+                                                             + "\t\"parallelism\": \"10\"\n"
+                                                             + "}\n"
+                                                             + "\n"
+                                                             + "\n"
+                                                             + "2. Encapsulate the JSON object to a multipart object "
+                                                             + "(in Python).\n"
+                                                             + "\n"
+                                                             + "from requests_toolbelt.multipart.encoder import "
+                                                             + "MultipartEncoder \n"
+                                                             + "mp_encoder = MultipartEncoder( \n"
+                                                             + "\t[('sinkConfig', "
+                                                             + "(None, json.dumps(config), 'application/json'))])\n"
                                                   )
                                             }
                                     )
@@ -256,14 +260,13 @@ public class SinksBase extends AdminResource {
                                    examples = @Example(
                                            value = @ExampleProperty(
                                                    mediaType = MediaType.APPLICATION_JSON,
-                                                   value = """
-                                                           {
-                                                           "classname": "org.example.SinkStressTest",
-                                                           "inputs": ["persistent://public/default/sink-input"],
-                                                           "processingGuarantees": "EFFECTIVELY_ONCE",
-                                                           "parallelism": 5
-                                                           }
-                                                           """
+                                                   value = "{\n"
+                                                           + "\t\"classname\": \"org.example.SinkStressTest\",\n"
+                                                           + "\t\"inputs\": ["
+                                                           + "\"persistent://public/default/sink-input\"],\n"
+                                                           + "\t\"processingGuarantees\": \"EFFECTIVELY_ONCE\",\n"
+                                                           + "\t\"parallelism\": 5\n"
+                                                           + "}"
                                            )
                                )
                            )
@@ -389,9 +392,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart an instance of a Pulsar Sink")
+    @ApiOperation(value = "Restart an instance of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 307, message = "Current broker doesn't serve the namespace of this sink"),
             @ApiResponse(code = 400, message = "Invalid restart request"),
             @ApiResponse(code = 401, message = "The client is not authorized to perform this operation"),
@@ -416,9 +418,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart all instances of a Pulsar Sink")
+    @ApiOperation(value = "Restart all instances of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid restart request"),
             @ApiResponse(code = 401, message = "The client is not authorized to perform this operation"),
             @ApiResponse(code = 404, message = "The Pulsar Sink does not exist"),
@@ -438,9 +439,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop an instance of a Pulsar Sink")
+    @ApiOperation(value = "Stop an instance of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid stop request"),
             @ApiResponse(code = 404, message = "The Pulsar Sink instance does not exist"),
             @ApiResponse(code = 500, message =
@@ -463,9 +463,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop all instances of a Pulsar Sink")
+    @ApiOperation(value = "Stop all instances of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid stop request"),
             @ApiResponse(code = 404, message = "The Pulsar Sink does not exist"),
             @ApiResponse(code = 500, message =
@@ -485,9 +484,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start an instance of a Pulsar Sink")
+    @ApiOperation(value = "Start an instance of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid start request"),
             @ApiResponse(code = 404, message = "The Pulsar Sink does not exist"),
             @ApiResponse(code = 500, message =
@@ -510,9 +508,8 @@ public class SinksBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start all instances of a Pulsar Sink")
+    @ApiOperation(value = "Start all instances of a Pulsar Sink", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid start request"),
             @ApiResponse(code = 404, message = "The Pulsar Sink does not exist"),
             @ApiResponse(code = 500, message =

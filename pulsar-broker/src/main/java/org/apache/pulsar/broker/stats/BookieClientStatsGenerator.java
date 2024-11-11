@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,8 @@
  */
 package org.apache.pulsar.broker.stats;
 
-import java.util.HashMap;
+import com.google.common.collect.Maps;
 import java.util.Map;
-import java.util.TreeMap;
 import org.apache.bookkeeper.mledger.proto.PendingBookieOpsStats;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -36,7 +35,7 @@ public class BookieClientStatsGenerator {
 
     public BookieClientStatsGenerator(PulsarService pulsar) {
         this.pulsar = pulsar;
-        this.nsBookieClientStatsMap = new TreeMap<>();
+        this.nsBookieClientStatsMap = Maps.newTreeMap();
     }
 
     public static Map<String, Map<String, PendingBookieOpsStats>> generate(PulsarService pulsar) throws Exception {
@@ -61,7 +60,7 @@ public class BookieClientStatsGenerator {
     private void put(TopicName topicName, PendingBookieOpsStats bookieOpsStats) {
         String namespace = topicName.getNamespace();
         if (!nsBookieClientStatsMap.containsKey(namespace)) {
-            Map<String, PendingBookieOpsStats> destBookieClientStatsMap = new HashMap<>();
+            Map<String, PendingBookieOpsStats> destBookieClientStatsMap = Maps.newTreeMap();
             destBookieClientStatsMap.put(topicName.toString(), bookieOpsStats);
             nsBookieClientStatsMap.put(namespace, destBookieClientStatsMap);
         } else {

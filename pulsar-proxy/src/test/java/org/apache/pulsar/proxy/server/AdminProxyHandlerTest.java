@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,7 +32,6 @@ import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import org.apache.pulsar.client.api.Authentication;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.Request;
 import org.testng.Assert;
@@ -43,11 +42,11 @@ public class AdminProxyHandlerTest {
     private AdminProxyHandler adminProxyHandler;
 
     @BeforeClass
-    public void setupMocks() throws Exception {
+    public void setupMocks() throws ServletException {
         // given
         HttpClient httpClient = mock(HttpClient.class);
         adminProxyHandler = new AdminProxyHandler(mock(ProxyConfiguration.class),
-                mock(BrokerDiscoveryProvider.class), mock(Authentication.class)) {
+                mock(BrokerDiscoveryProvider.class)) {
             @Override
             protected HttpClient createHttpClient() throws ServletException {
                 return httpClient;

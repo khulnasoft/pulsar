@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,13 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.utils;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.pulsar.functions.utils.FunctionCommon.convertProcessingGuarantee;
 import static org.apache.pulsar.functions.utils.FunctionCommon.getSourceType;
-import static org.apache.pulsar.functions.utils.FunctionConfigUtils.convertProducerConfigToProducerSpec;
-import static org.apache.pulsar.functions.utils.FunctionConfigUtils.convertProducerSpecToProducerConfig;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -39,6 +38,7 @@ import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.pool.TypePool;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.pulsar.common.functions.ProducerConfig;
 import org.apache.pulsar.common.functions.Resources;
 import org.apache.pulsar.common.io.BatchSourceConfig;
 import org.apache.pulsar.common.io.ConnectorDefinition;
@@ -68,8 +68,7 @@ public class SourceConfigUtils {
             throws IllegalArgumentException {
         FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder();
 
-        boolean isBuiltin = !StringUtils.isEmpty(sourceConfig.getArchive()) && sourceConfig.getArchive()
-                .startsWith(org.apache.pulsar.common.functions.Utils.BUILTIN);
+        boolean isBuiltin = !StringUtils.isEmpty(sourceConfig.getArchive()) && sourceConfig.getArchive().startsWith(org.apache.pulsar.common.functions.Utils.BUILTIN);
 
         if (sourceConfig.getTenant() != null) {
             functionDetailsBuilder.setTenant(sourceConfig.getTenant());
@@ -79,9 +78,6 @@ public class SourceConfigUtils {
         }
         if (sourceConfig.getName() != null) {
             functionDetailsBuilder.setName(sourceConfig.getName());
-        }
-        if (sourceConfig.getLogTopic() != null) {
-            functionDetailsBuilder.setLogTopic(sourceConfig.getLogTopic());
         }
         functionDetailsBuilder.setRuntime(FunctionDetails.Runtime.JAVA);
         if (sourceConfig.getParallelism() != null) {
@@ -114,8 +110,7 @@ public class SourceConfigUtils {
 
         // Batch source handling
         if (sourceConfig.getBatchSourceConfig() != null) {
-            configs.put(BatchSourceConfig.BATCHSOURCE_CONFIG_KEY,
-                    new Gson().toJson(sourceConfig.getBatchSourceConfig()));
+            configs.put(BatchSourceConfig.BATCHSOURCE_CONFIG_KEY, new Gson().toJson(sourceConfig.getBatchSourceConfig()));
             configs.put(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY, sourceSpecBuilder.getClassName());
             sourceSpecBuilder.setClassName("org.apache.pulsar.functions.source.batch.BatchSourceExecutor");
         }
@@ -142,16 +137,31 @@ public class SourceConfigUtils {
             sinkSpecBuilder.setSerDeClassName(sourceConfig.getSerdeClassName());
         }
 
-        if (!isEmpty(sourceConfig.getTopicName())) {
-            sinkSpecBuilder.setTopic(sourceConfig.getTopicName());
-        }
+        sinkSpecBuilder.setTopic(sourceConfig.getTopicName());
 
         if (sourceDetails.getTypeArg() != null) {
             sinkSpecBuilder.setTypeClassName(sourceDetails.getTypeArg());
         }
 
         if (sourceConfig.getProducerConfig() != null) {
-            sinkSpecBuilder.setProducerSpec(convertProducerConfigToProducerSpec(sourceConfig.getProducerConfig()));
+            ProducerConfig conf = sourceConfig.getProducerConfig();
+            Function.ProducerSpec.Builder pbldr = Function.ProducerSpec.newBuilder();
+            if (conf.getMaxPendingMessages() != null) {
+                pbldr.setMaxPendingMessages(conf.getMaxPendingMessages());
+            }
+            if (conf.getMaxPendingMessagesAcrossPartitions() != null) {
+                pbldr.setMaxPendingMessagesAcrossPartitions(conf.getMaxPendingMessagesAcrossPartitions());
+            }
+            if (conf.getUseThreadLocalProducers() != null) {
+                pbldr.setUseThreadLocalProducers(conf.getUseThreadLocalProducers());
+            }
+            if (conf.getCryptoConfig() != null) {
+                pbldr.setCryptoSpec(CryptoUtils.convert(conf.getCryptoConfig()));
+            }
+            if (conf.getBatchBuilder() != null) {
+                pbldr.setBatchBuilder(conf.getBatchBuilder());
+            }
+            sinkSpecBuilder.setProducerSpec(pbldr.build());
         }
 
         if (sourceConfig.getBatchBuilder() != null) {
@@ -184,7 +194,7 @@ public class SourceConfigUtils {
             functionDetailsBuilder.setCustomRuntimeOptions(sourceConfig.getCustomRuntimeOptions());
         }
 
-        return FunctionConfigUtils.validateFunctionDetails(functionDetailsBuilder.build());
+        return functionDetailsBuilder.build();
     }
 
     public static SourceConfig convertFromDetails(FunctionDetails functionDetails) {
@@ -193,8 +203,7 @@ public class SourceConfigUtils {
         sourceConfig.setNamespace(functionDetails.getNamespace());
         sourceConfig.setName(functionDetails.getName());
         sourceConfig.setParallelism(functionDetails.getParallelism());
-        sourceConfig.setProcessingGuarantees(
-                FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
+        sourceConfig.setProcessingGuarantees(FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
         Function.SourceSpec sourceSpec = functionDetails.getSource();
         if (!StringUtils.isEmpty(sourceSpec.getClassName())) {
             sourceConfig.setClassName(sourceSpec.getClassName());
@@ -202,15 +211,14 @@ public class SourceConfigUtils {
         if (!StringUtils.isEmpty(sourceSpec.getBuiltin())) {
             sourceConfig.setArchive("builtin://" + sourceSpec.getBuiltin());
         }
-        Map<String, Object> configMap =
-                extractSourceConfig(sourceSpec, FunctionCommon.getFullyQualifiedName(functionDetails));
+        Map<String, Object> configMap = extractSourceConfig(sourceSpec, FunctionCommon.getFullyQualifiedName(functionDetails));
         if (configMap != null) {
             BatchSourceConfig batchSourceConfig = extractBatchSourceConfig(configMap);
             if (batchSourceConfig != null) {
                 sourceConfig.setBatchSourceConfig(batchSourceConfig);
                 if (configMap.containsKey(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY)) {
-                    if (!StringUtils.isEmpty((String) configMap.get(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY))) {
-                        sourceConfig.setClassName((String) configMap.get(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY));
+                    if (!StringUtils.isEmpty((String)configMap.get(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY))) {
+                        sourceConfig.setClassName((String)configMap.get(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY));
                     } else {
                         sourceConfig.setClassName(null);
                     }
@@ -222,8 +230,7 @@ public class SourceConfigUtils {
             sourceConfig.setConfigs(configMap);
         }
         if (!isEmpty(functionDetails.getSecretsMap())) {
-            Type type = new TypeToken<Map<String, Object>>() {
-            }.getType();
+            Type type = new TypeToken<Map<String, Object>>() {}.getType();
             Map<String, Object> secretsMap = new Gson().fromJson(functionDetails.getSecretsMap(), type);
             sourceConfig.setSecrets(secretsMap);
         }
@@ -236,10 +243,22 @@ public class SourceConfigUtils {
             sourceConfig.setSerdeClassName(sinkSpec.getSerDeClassName());
         }
         if (sinkSpec.getProducerSpec() != null) {
-            sourceConfig.setProducerConfig(convertProducerSpecToProducerConfig(sinkSpec.getProducerSpec()));
-        }
-        if (!isEmpty(functionDetails.getLogTopic())) {
-            sourceConfig.setLogTopic(functionDetails.getLogTopic());
+            Function.ProducerSpec spec = sinkSpec.getProducerSpec();
+            ProducerConfig producerConfig = new ProducerConfig();
+            if (spec.getMaxPendingMessages() != 0) {
+                producerConfig.setMaxPendingMessages(spec.getMaxPendingMessages());
+            }
+            if (spec.getMaxPendingMessagesAcrossPartitions() != 0) {
+                producerConfig.setMaxPendingMessagesAcrossPartitions(spec.getMaxPendingMessagesAcrossPartitions());
+            }
+            if (spec.hasCryptoSpec()) {
+                producerConfig.setCryptoConfig(CryptoUtils.convertFromSpec(spec.getCryptoSpec()));
+            }
+            if (spec.getBatchBuilder() != null) {
+                producerConfig.setBatchBuilder(spec.getBatchBuilder());
+            }
+            producerConfig.setUseThreadLocalProducers(spec.getUseThreadLocalProducers());
+            sourceConfig.setProducerConfig(producerConfig);
         }
         if (functionDetails.hasResources()) {
             Resources resources = new Resources();
@@ -272,14 +291,11 @@ public class SourceConfigUtils {
         if (isEmpty(sourceConfig.getName())) {
             throw new IllegalArgumentException("Source name cannot be null");
         }
-        if (!isEmpty(sourceConfig.getTopicName()) && !TopicName.isValid(sourceConfig.getTopicName())) {
-            throw new IllegalArgumentException("Topic name is invalid");
+        if (isEmpty(sourceConfig.getTopicName())) {
+            throw new IllegalArgumentException("Topic name cannot be null");
         }
-        if (!isEmpty(sourceConfig.getLogTopic())) {
-            if (!TopicName.isValid(sourceConfig.getLogTopic())) {
-                throw new IllegalArgumentException(
-                        String.format("LogTopic topic %s is invalid", sourceConfig.getLogTopic()));
-            }
+        if (!TopicName.isValid(sourceConfig.getTopicName())) {
+            throw new IllegalArgumentException("Topic name is invalid");
         }
         if (sourceConfig.getParallelism() != null && sourceConfig.getParallelism() <= 0) {
             throw new IllegalArgumentException("Source parallelism must be a positive number");
@@ -340,8 +356,7 @@ public class SourceConfigUtils {
         }
 
         // Only one of serdeClassName or schemaType should be set
-        if (!StringUtils.isEmpty(sourceConfig.getSerdeClassName()) && !StringUtils
-                .isEmpty(sourceConfig.getSchemaType())) {
+        if (!StringUtils.isEmpty(sourceConfig.getSerdeClassName()) && !StringUtils.isEmpty(sourceConfig.getSchemaType())) {
             throw new IllegalArgumentException("Only one of serdeClassName or schemaType should be set");
         }
 
@@ -374,8 +389,8 @@ public class SourceConfigUtils {
 
     @SneakyThrows
     public static SourceConfig clone(SourceConfig sourceConfig) {
-        return ObjectMapperFactory.getMapper().reader().readValue(
-                ObjectMapperFactory.getMapper().writer().writeValueAsBytes(sourceConfig), SourceConfig.class);
+        return ObjectMapperFactory.getThreadLocal().readValue(
+                ObjectMapperFactory.getThreadLocal().writeValueAsBytes(sourceConfig), SourceConfig.class);
     }
 
     public static SourceConfig validateUpdate(SourceConfig existingConfig, SourceConfig newConfig) {
@@ -407,19 +422,14 @@ public class SourceConfigUtils {
         if (newConfig.getSecrets() != null) {
             mergedConfig.setSecrets(newConfig.getSecrets());
         }
-        if (!StringUtils.isEmpty(newConfig.getLogTopic())) {
-            mergedConfig.setLogTopic(newConfig.getLogTopic());
-        }
-        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees()
-                .equals(existingConfig.getProcessingGuarantees())) {
+        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees().equals(existingConfig.getProcessingGuarantees())) {
             throw new IllegalArgumentException("Processing Guarantees cannot be altered");
         }
         if (newConfig.getParallelism() != null) {
             mergedConfig.setParallelism(newConfig.getParallelism());
         }
         if (newConfig.getResources() != null) {
-            mergedConfig
-                    .setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
+            mergedConfig.setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
         }
         if (!StringUtils.isEmpty(newConfig.getArchive())) {
             mergedConfig.setArchive(newConfig.getArchive());
@@ -437,9 +447,6 @@ public class SourceConfigUtils {
             validateBatchSourceConfigUpdate(existingConfig.getBatchSourceConfig(), newConfig.getBatchSourceConfig());
             mergedConfig.setBatchSourceConfig(newConfig.getBatchSourceConfig());
         }
-        if (newConfig.getProducerConfig() != null) {
-            mergedConfig.setProducerConfig(newConfig.getProducerConfig());
-        }
         return mergedConfig;
     }
 
@@ -452,11 +459,11 @@ public class SourceConfigUtils {
 
     public static Map<String, Object> extractSourceConfig(Function.SourceSpec sourceSpec, String fqfn) {
         if (!StringUtils.isEmpty(sourceSpec.getConfigs())) {
-            TypeReference<HashMap<String, Object>> typeRef =
-                    new TypeReference<HashMap<String, Object>>() {
+            TypeReference<HashMap<String, Object>> typeRef
+                    = new TypeReference<HashMap<String, Object>>() {
             };
             try {
-                return ObjectMapperFactory.getMapper().reader().forType(typeRef).readValue(sourceSpec.getConfigs());
+                return ObjectMapperFactory.getThreadLocal().readValue(sourceSpec.getConfigs(), typeRef);
             } catch (IOException e) {
                 log.error("Failed to read configs for source {}", fqfn, e);
                 throw new RuntimeException(e);
@@ -529,9 +536,7 @@ public class SourceConfigUtils {
 
     public static void validateSourceConfig(SourceConfig sourceConfig, Class configClass) {
         try {
-            Object configObject =
-                    ObjectMapperFactory.getMapper().getObjectMapper()
-                            .convertValue(sourceConfig.getConfigs(), configClass);
+            Object configObject = ObjectMapperFactory.getThreadLocal().convertValue(sourceConfig.getConfigs(), configClass);
             if (configObject != null) {
                 ConfigValidation.validateConfig(configObject);
             }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,8 +27,6 @@ import org.apache.pulsar.broker.authentication.metrics.AuthenticationMetrics;
 
 public class AuthenticationProviderTls implements AuthenticationProvider {
 
-    private AuthenticationMetrics authenticationMetrics;
-
     private enum ErrorCode {
         UNKNOWN,
         INVALID_CERTS,
@@ -42,23 +40,12 @@ public class AuthenticationProviderTls implements AuthenticationProvider {
 
     @Override
     public void initialize(ServiceConfiguration config) throws IOException {
-        initialize(Context.builder().config(config).build());
-    }
-
-    @Override
-    public void initialize(Context context) throws IOException {
-        authenticationMetrics = new AuthenticationMetrics(context.getOpenTelemetry(),
-                getClass().getSimpleName(), getAuthMethodName());
+        // noop
     }
 
     @Override
     public String getAuthMethodName() {
         return "tls";
-    }
-
-    @Override
-    public void incrementFailureMetric(Enum<?> errorCode) {
-        authenticationMetrics.recordFailure(errorCode);
     }
 
     @Override
@@ -109,7 +96,7 @@ public class AuthenticationProviderTls implements AuthenticationProvider {
                 errorCode = ErrorCode.INVALID_CN;
                 throw new AuthenticationException("Client unable to authenticate with TLS certificate");
             }
-            authenticationMetrics.recordSuccess();
+            AuthenticationMetrics.authenticateSuccess(getClass().getSimpleName(), getAuthMethodName());
         } catch (AuthenticationException exception) {
             incrementFailureMetric(errorCode);
             throw exception;

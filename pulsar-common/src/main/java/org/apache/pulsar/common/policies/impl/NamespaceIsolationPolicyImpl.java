@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,7 +29,6 @@ import org.apache.pulsar.common.policies.AutoFailoverPolicy;
 import org.apache.pulsar.common.policies.NamespaceIsolationPolicy;
 import org.apache.pulsar.common.policies.data.BrokerStatus;
 import org.apache.pulsar.common.policies.data.NamespaceIsolationData;
-import org.apache.pulsar.common.policies.data.NamespaceIsolationPolicyUnloadScope;
 
 /**
  * Implementation of the namespace isolation policy.
@@ -40,7 +39,6 @@ public class NamespaceIsolationPolicyImpl implements NamespaceIsolationPolicy {
     private List<String> primary;
     private List<String> secondary;
     private AutoFailoverPolicy autoFailoverPolicy;
-    private NamespaceIsolationPolicyUnloadScope unloadScope;
 
     private boolean matchNamespaces(String fqnn) {
         for (String nsRegex : namespaces) {
@@ -66,7 +64,6 @@ public class NamespaceIsolationPolicyImpl implements NamespaceIsolationPolicy {
         this.primary = policyData.getPrimary();
         this.secondary = policyData.getSecondary();
         this.autoFailoverPolicy = AutoFailoverPolicyFactory.create(policyData.getAutoFailoverPolicy());
-        this.unloadScope = policyData.getUnloadScope();
     }
 
     @Override
@@ -77,11 +74,6 @@ public class NamespaceIsolationPolicyImpl implements NamespaceIsolationPolicy {
     @Override
     public List<String> getSecondaryBrokers() {
         return this.secondary;
-    }
-
-    @Override
-    public NamespaceIsolationPolicyUnloadScope getUnloadScope() {
-        return this.unloadScope;
     }
 
     @Override

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime.process;
 
 import static org.apache.pulsar.functions.runtime.RuntimeUtils.FUNCTIONS_INSTANCE_CLASSPATH;
@@ -36,6 +37,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import io.kubernetes.client.openapi.apis.AppsV1Api;
+import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1PodSpec;
 import org.apache.commons.lang3.JavaVersion;
 import org.apache.commons.lang3.SystemUtils;
@@ -67,6 +70,11 @@ public class ProcessRuntimeTest {
     class TestSecretsProviderConfigurator implements SecretsProviderConfigurator {
 
         @Override
+        public void init(Map<String, String> config) {
+
+        }
+
+        @Override
         public String getSecretsProviderClassName(FunctionDetails functionDetails) {
             if (functionDetails.getRuntime() == FunctionDetails.Runtime.JAVA) {
                 return ClearTextSecretsProvider.class.getName();
@@ -95,6 +103,10 @@ public class ProcessRuntimeTest {
             return TypeToken.get(String.class).getType();
         }
 
+        @Override
+        public void doAdmissionChecks(AppsV1Api appsV1Api, CoreV1Api coreV1Api, String jobNamespace, String jobName, FunctionDetails functionDetails) {
+
+        }
     }
 
     private static final String TEST_TENANT = "test-function-tenant";
@@ -103,8 +115,8 @@ public class ProcessRuntimeTest {
     private static final Map<String, String> topicsToSerDeClassName = new HashMap<>();
     private static final Map<String, ConsumerSpec> topicsToSchema = new HashMap<>();
     static {
-        topicsToSerDeClassName.put("test_src", "");
-        topicsToSchema.put("test_src",
+        topicsToSerDeClassName.put("persistent://sample/standalone/ns1/test_src", "");
+        topicsToSchema.put("persistent://sample/standalone/ns1/test_src",
                 ConsumerSpec.newBuilder().setSerdeClassName("").setIsRegexPattern(false).build());
     }
 
@@ -163,7 +175,7 @@ public class ProcessRuntimeTest {
 
         workerConfig.setFunctionRuntimeFactoryClassName(ProcessRuntimeFactory.class.getName());
         workerConfig.setFunctionRuntimeFactoryConfigs(
-                ObjectMapperFactory.getMapper().getObjectMapper().convertValue(processRuntimeFactoryConfig, Map.class));
+                ObjectMapperFactory.getThreadLocal().convertValue(processRuntimeFactoryConfig, Map.class));
         processRuntimeFactory.initialize(workerConfig, null, new TestSecretsProviderConfigurator(),
                 Mockito.mock(ConnectorsManager.class), Mockito.mock(FunctionsManager.class), Optional.empty(),
                 Optional.empty());
@@ -297,21 +309,21 @@ public class ProcessRuntimeTest {
         String extraDepsEnv;
         int portArg;
         int metricsPortArg;
-        int totalArgCount = 54;
+        int totalArgCount = 48;
         if (webServiceUrl != null && config.isExposePulsarAdminClientEnabled()) {
             totalArgCount += 3;
         }
         if (null != depsDir) {
             assertEquals(args.size(), totalArgCount);
-            extraDepsEnv = " -Dpulsar.functions.extra.dependencies.dir=" + depsDir;
+            extraDepsEnv = " -Dpulsar.functions.extra.dependencies.dir=" + depsDir.toString();
             classpath = classpath + ":" + depsDir + "/*";
-            portArg = 37;
-            metricsPortArg = 39;
+            portArg = 31;
+            metricsPortArg = 33;
         } else {
             assertEquals(args.size(), totalArgCount-1);
             extraDepsEnv = "";
-            portArg = 36;
-            metricsPortArg = 38;
+            portArg = 30;
+            metricsPortArg = 32;
         }
         if (webServiceUrl != null && config.isExposePulsarAdminClientEnabled()) {
             portArg += 3;
@@ -328,11 +340,7 @@ public class ProcessRuntimeTest {
                 + "-Dpulsar.function.log.dir=" + logDirectory + "/functions/" + FunctionCommon.getFullyQualifiedName(config.getFunctionDetails())
                 + " -Dpulsar.function.log.file=" + config.getFunctionDetails().getName() + "-" + config.getInstanceId()
                 + " -Dio.netty.tryReflectionSetAccessible=true"
-                + " -Dorg.apache.pulsar.shade.io.netty.tryReflectionSetAccessible=true"
-                + " -Dio.grpc.netty.shaded.io.netty.tryReflectionSetAccessible=true"
-                + " --add-opens java.base/java.nio=ALL-UNNAMED"
-                + " --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
-                + " --add-opens java.base/java.util.zip=ALL-UNNAMED"
+                + " --add-opens java.base/sun.net=ALL-UNNAMED"
                 + " org.apache.pulsar.functions.instance.JavaInstanceMain"
                 + " --jar " + userJarFile
                 + " --transform_function_jar " + userJarFile
@@ -384,7 +392,7 @@ public class ProcessRuntimeTest {
         int configArg = 9;
 
         assertEquals(args.size(), totalArgs);
-        String expectedArgs = pythonPath + "python3 " + pythonInstanceFile
+        String expectedArgs = pythonPath + "python " + pythonInstanceFile
                 + " --py " + userJarFile + " --logging_directory "
                 + logDirectory + "/functions" + " --logging_file " + config.getFunctionDetails().getName()
                 + " --logging_config_file " + args.get(configArg) + " --instance_id "

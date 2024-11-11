@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,8 @@
  */
 package org.apache.pulsar;
 
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -31,62 +33,43 @@ import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl;
 import org.apache.pulsar.broker.service.schema.SchemaStorageFormat.SchemaLocator;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.util.CmdGenerateDocs;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.docs.tools.CmdGenerateDocs;
 import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.MetadataStoreFactory;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
-import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.ScopeType;
 
 /**
  * Teardown the metadata for a existed Pulsar cluster.
  */
 public class PulsarClusterMetadataTeardown {
 
-    @Command(name = "delete-cluster-metadata", showDefaultValues = true, scope = ScopeType.INHERIT)
     private static class Arguments {
-        @Option(names = { "-zk",
-                "--zookeeper"}, description = "Local ZooKeeper quorum connection string")
+        @Parameter(names = { "-zk",
+                "--zookeeper"}, description = "Local ZooKeeper quorum connection string", required = true)
         private String zookeeper;
 
-        @Option(names = {"-md",
-                "--metadata-store"}, description = "Metadata Store service url. eg: zk:my-zk:2181")
-        private String metadataStoreUrl;
-
-        @Option(names = {"-mscp",
-                "--metadata-store-config-path"}, description = "Metadata Store config path")
-        private String metadataStoreConfigPath;
-
-        @Option(names = {
+        @Parameter(names = {
                 "--zookeeper-session-timeout-ms"
         }, description = "Local zookeeper session timeout ms")
         private int zkSessionTimeoutMillis = 30000;
 
-        @Option(names = { "-c", "-cluster", "--cluster" }, description = "Cluster name")
+        @Parameter(names = { "-c", "-cluster", "--cluster" }, description = "Cluster name")
         private String cluster;
 
-        @Option(names = { "-cs", "--configuration-store" }, description = "Configuration Store connection string")
+        @Parameter(names = { "-cs", "--configuration-store" }, description = "Configuration Store connection string")
         private String configurationStore;
 
-        @Option(names = {"-cmscp",
-                "--configuration-metadata-store-config-path"}, description = "Configuration Metadata Store config path",
-                hidden = false)
-        private String configurationStoreConfigPath;
-
-        @Option(names = { "--bookkeeper-metadata-service-uri" }, description = "Metadata service uri of BookKeeper")
+        @Parameter(names = { "--bookkeeper-metadata-service-uri" }, description = "Metadata service uri of BookKeeper")
         private String bkMetadataServiceUri;
 
-        @Option(names = { "-h", "--help" }, description = "Show this help message")
+        @Parameter(names = { "-h", "--help" }, description = "Show this help message")
         private boolean help = false;
 
-        @Option(names = {"-g", "--generate-docs"}, description = "Generate docs")
+        @Parameter(names = {"-g", "--generate-docs"}, description = "Generate docs")
         private boolean generateDocs = false;
     }
 
@@ -95,40 +78,28 @@ public class PulsarClusterMetadataTeardown {
 
     public static void main(String[] args) throws Exception {
         Arguments arguments = new Arguments();
-        CommandLine commander = new CommandLine(arguments);
+        JCommander jcommander = new JCommander();
         try {
-            commander.parseArgs(args);
+            jcommander.addObject(arguments);
+            jcommander.parse(args);
             if (arguments.help) {
-                commander.usage(commander.getOut());
+                jcommander.usage();
                 return;
             }
             if (arguments.generateDocs) {
                 CmdGenerateDocs cmd = new CmdGenerateDocs("pulsar");
-                cmd.addCommand("delete-cluster-metadata", commander);
+                cmd.addCommand("delete-cluster-metadata", arguments);
                 cmd.run(null);
                 return;
             }
         } catch (Exception e) {
-            commander.getErr().println(e);
+            jcommander.usage();
             throw e;
         }
 
-        if (arguments.metadataStoreUrl == null && arguments.zookeeper == null) {
-            commander.usage(commander.getOut());
-            throw new IllegalArgumentException("Metadata store address argument is required (--metadata-store)");
-        }
-
-        if (arguments.metadataStoreUrl == null) {
-            arguments.metadataStoreUrl = ZKMetadataStore.ZK_SCHEME_IDENTIFIER + arguments.zookeeper;
-        }
-
         @Cleanup
-        MetadataStoreExtended metadataStore = MetadataStoreExtended.create(arguments.metadataStoreUrl,
-                MetadataStoreConfig.builder()
-                        .sessionTimeoutMillis(arguments.zkSessionTimeoutMillis)
-                        .metadataStoreName(MetadataStoreConfig.METADATA_STORE)
-                        .configFilePath(arguments.metadataStoreConfigPath)
-                        .build());
+        MetadataStoreExtended metadataStore = MetadataStoreExtended.create(arguments.zookeeper,
+                MetadataStoreConfig.builder().sessionTimeoutMillis(arguments.zkSessionTimeoutMillis).build());
 
         if (arguments.bkMetadataServiceUri != null) {
             @Cleanup
@@ -150,9 +121,7 @@ public class PulsarClusterMetadataTeardown {
             // Should it be done by REST API before broker is down?
             @Cleanup
             MetadataStore configMetadataStore = MetadataStoreFactory.create(arguments.configurationStore,
-                    MetadataStoreConfig.builder().sessionTimeoutMillis(arguments.zkSessionTimeoutMillis)
-                            .configFilePath(arguments.configurationStoreConfigPath)
-                            .metadataStoreName(MetadataStoreConfig.CONFIGURATION_METADATA_STORE).build());
+                    MetadataStoreConfig.builder().sessionTimeoutMillis(arguments.zkSessionTimeoutMillis).build());
             deleteRecursively(configMetadataStore, "/admin/clusters/" + arguments.cluster).join();
         }
 

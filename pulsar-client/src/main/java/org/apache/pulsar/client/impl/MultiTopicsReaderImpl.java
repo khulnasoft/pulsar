@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,7 @@
  */
 package org.apache.pulsar.client.impl;
 
-
 import java.io.IOException;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -39,7 +37,6 @@ import org.apache.pulsar.client.api.ReaderListener;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionMode;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.client.api.TopicMessageId;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
 import org.apache.pulsar.client.impl.conf.ReaderConfigurationData;
 import org.apache.pulsar.client.util.ExecutorProvider;
@@ -70,13 +67,6 @@ public class MultiTopicsReaderImpl<T> implements Reader<T> {
         consumerConfiguration.setReceiverQueueSize(readerConfiguration.getReceiverQueueSize());
         consumerConfiguration.setReadCompacted(readerConfiguration.isReadCompacted());
         consumerConfiguration.setPoolMessages(readerConfiguration.isPoolMessages());
-
-        // chunking configuration
-        consumerConfiguration.setMaxPendingChunkedMessage(readerConfiguration.getMaxPendingChunkedMessage());
-        consumerConfiguration.setAutoAckOldestChunkedMessageOnQueueFull(
-                readerConfiguration.isAutoAckOldestChunkedMessageOnQueueFull());
-        consumerConfiguration.setExpireTimeOfIncompleteChunkedMessageMillis(
-                readerConfiguration.getExpireTimeOfIncompleteChunkedMessageMillis());
 
         if (readerConfiguration.getReaderListener() != null) {
             ReaderListener<T> readerListener = readerConfiguration.getReaderListener();
@@ -111,10 +101,6 @@ public class MultiTopicsReaderImpl<T> implements Reader<T> {
         if (readerConfiguration.getCryptoKeyReader() != null) {
             consumerConfiguration.setCryptoKeyReader(readerConfiguration.getCryptoKeyReader());
         }
-
-        if (readerConfiguration.getMessageCrypto() != null) {
-            consumerConfiguration.setMessageCrypto(readerConfiguration.getMessageCrypto());
-        }
         if (readerConfiguration.getKeyHashRanges() != null) {
             consumerConfiguration.setKeySharedPolicy(
                     KeySharedPolicy
@@ -122,17 +108,8 @@ public class MultiTopicsReaderImpl<T> implements Reader<T> {
                             .ranges(readerConfiguration.getKeyHashRanges())
             );
         }
-        if (readerConfiguration.isAutoUpdatePartitions()) {
-            consumerConfiguration.setAutoUpdatePartitionsIntervalSeconds(
-                    readerConfiguration.getAutoUpdatePartitionsIntervalSeconds()
-            );
-        }
-
-        ConsumerInterceptors<T> consumerInterceptors =
-                ReaderInterceptorUtil.convertToConsumerInterceptors(
-                        this, readerConfiguration.getReaderInterceptorList());
         multiTopicsConsumer = new MultiTopicsConsumerImpl<>(client, consumerConfiguration, executorProvider,
-                consumerFuture, schema, consumerInterceptors, true,
+                consumerFuture, schema,  null, true,
                 readerConfiguration.getStartMessageId(),
                 readerConfiguration.getStartMessageFromRollbackDurationInSec());
     }
@@ -236,15 +213,5 @@ public class MultiTopicsReaderImpl<T> implements Reader<T> {
 
     public MultiTopicsConsumerImpl<T> getMultiTopicsConsumer() {
         return multiTopicsConsumer;
-    }
-
-    @Override
-    public List<TopicMessageId> getLastMessageIds() throws PulsarClientException {
-        return multiTopicsConsumer.getLastMessageIds();
-    }
-
-    @Override
-    public CompletableFuture<List<TopicMessageId>> getLastMessageIdsAsync() {
-        return multiTopicsConsumer.getLastMessageIdsAsync();
     }
 }

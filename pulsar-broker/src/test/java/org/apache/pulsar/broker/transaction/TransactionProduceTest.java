@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,13 +19,11 @@
 package org.apache.pulsar.broker.transaction;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.testng.Assert.assertTrue;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -36,14 +34,11 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.ReadOnlyCursor;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.MutablePair;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
@@ -62,8 +57,8 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.transaction.coordinator.exceptions.CoordinatorException;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 /**
@@ -79,7 +74,7 @@ public class TransactionProduceTest extends TransactionTestBase {
     private static final String ACK_COMMIT_TOPIC = NAMESPACE1 + "/ack-commit";
     private static final String ACK_ABORT_TOPIC = NAMESPACE1 + "/ack-abort";
     private static final int NUM_PARTITIONS = 16;
-    @BeforeClass
+    @BeforeMethod
     protected void setup() throws Exception {
         setUpBase(1, NUM_PARTITIONS, PRODUCE_COMMIT_TOPIC, TOPIC_PARTITION);
         admin.topics().createPartitionedTopic(PRODUCE_ABORT_TOPIC, TOPIC_PARTITION);
@@ -87,7 +82,7 @@ public class TransactionProduceTest extends TransactionTestBase {
         admin.topics().createPartitionedTopic(ACK_ABORT_TOPIC, TOPIC_PARTITION);
     }
 
-    @AfterClass(alwaysRun = true)
+    @AfterMethod(alwaysRun = true)
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
@@ -185,37 +180,6 @@ public class TransactionProduceTest extends TransactionTestBase {
         log.info("produce and {} test finished.", endAction ? "commit" : "abort");
     }
 
-    @Test
-    public void testUpdateLastMaxReadPositionMovedForwardTimestampForTransactionalPublish() throws Exception {
-        final String topic = NAMESPACE1 + "/testUpdateLastMaxReadPositionMovedForwardTimestampForTransactionalPublish";
-        PulsarClient pulsarClient = this.pulsarClient;
-        Transaction txn = pulsarClient.newTransaction()
-                .withTransactionTimeout(5, TimeUnit.SECONDS)
-                .build().get();
-        @Cleanup
-        Producer<byte[]> producer = pulsarClient
-                .newProducer()
-                .topic(topic)
-                .sendTimeout(0, TimeUnit.SECONDS)
-                .create();
-        PersistentTopic persistentTopic = getTopic(topic);
-        long lastMaxReadPositionMovedForwardTimestamp = persistentTopic.getLastMaxReadPositionMovedForwardTimestamp();
-
-        // transactional publish will not update lastMaxReadPositionMovedForwardTimestamp
-        producer.newMessage(txn).value("hello world".getBytes()).send();
-        assertTrue(persistentTopic.getLastMaxReadPositionMovedForwardTimestamp() == lastMaxReadPositionMovedForwardTimestamp);
-
-        // commit transaction will update lastMaxReadPositionMovedForwardTimestamp
-        txn.commit().get();
-        assertTrue(persistentTopic.getLastMaxReadPositionMovedForwardTimestamp() > lastMaxReadPositionMovedForwardTimestamp);
-    }
-
-    private PersistentTopic getTopic(String topic) throws ExecutionException, InterruptedException {
-        Optional<Topic> optionalTopic = getPulsarServiceList().get(0).getBrokerService()
-                .getTopic(topic, true).get();
-        return (PersistentTopic) optionalTopic.get();
-    }
-
     private void checkMessageId(List<CompletableFuture<MessageId>> futureList, boolean isFinished) {
         futureList.forEach(messageIdFuture -> {
             try {
@@ -247,9 +211,9 @@ public class TransactionProduceTest extends TransactionTestBase {
             if (partition >= 0) {
                 topic = TopicName.get(topic).toString() + TopicName.PARTITIONED_TOPIC_SUFFIX + partition;
             }
-            return getPulsarServiceList().get(0).getDefaultManagedLedgerFactory().openReadOnlyCursor(
+            return getPulsarServiceList().get(0).getManagedLedgerFactory().openReadOnlyCursor(
                     TopicName.get(topic).getPersistenceNamingEncoding(),
-                    PositionFactory.EARLIEST, new ManagedLedgerConfig());
+                    PositionImpl.EARLIEST, new ManagedLedgerConfig());
         } catch (Exception e) {
             log.error("Failed to get origin topic readonly cursor.", e);
             Assert.fail("Failed to get origin topic readonly cursor.");
@@ -266,7 +230,6 @@ public class TransactionProduceTest extends TransactionTestBase {
                 .build().get();
         log.info("init transaction {}.", txn);
 
-        @Cleanup
         Producer<byte[]> incomingProducer = pulsarClient.newProducer()
                 .topic(ACK_COMMIT_TOPIC)
                 .batchingMaxMessages(1)
@@ -278,7 +241,6 @@ public class TransactionProduceTest extends TransactionTestBase {
         }
         log.info("prepare incoming messages finished.");
 
-        @Cleanup
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic(ACK_COMMIT_TOPIC)
                 .subscriptionName(subscriptionName)
@@ -330,7 +292,6 @@ public class TransactionProduceTest extends TransactionTestBase {
                 .build().get();
         log.info("init transaction {}.", txn);
 
-        @Cleanup
         Producer<byte[]> incomingProducer = pulsarClient.newProducer()
                 .topic(ACK_ABORT_TOPIC)
                 .batchingMaxMessages(1)
@@ -342,7 +303,6 @@ public class TransactionProduceTest extends TransactionTestBase {
         }
         log.info("prepare incoming messages finished.");
 
-        @Cleanup
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic(ACK_ABORT_TOPIC)
                 .subscriptionName(subscriptionName)
@@ -390,7 +350,7 @@ public class TransactionProduceTest extends TransactionTestBase {
 
         int pendingAckCount = 0;
         for (PulsarService pulsarService : getPulsarServiceList()) {
-            for (String key : pulsarService.getBrokerService().getTopics().keySet()) {
+            for (String key : pulsarService.getBrokerService().getTopics().keys()) {
                 if (key.contains(topic)) {
                     Field field = clazz.getDeclaredField("pendingAckHandle");
                     field.setAccessible(true);
@@ -401,8 +361,8 @@ public class TransactionProduceTest extends TransactionTestBase {
                     field = PendingAckHandleImpl.class.getDeclaredField("individualAckPositions");
                     field.setAccessible(true);
 
-                    Map<Position, MutablePair<Position, Long>> map =
-                            (Map<Position, MutablePair<Position, Long>>) field.get(pendingAckHandle);
+                    Map<PositionImpl, MutablePair<PositionImpl, Long>> map =
+                            (Map<PositionImpl, MutablePair<PositionImpl, Long>>) field.get(pendingAckHandle);
                     if (map != null) {
                         pendingAckCount += map.size();
                     }
@@ -412,6 +372,7 @@ public class TransactionProduceTest extends TransactionTestBase {
         log.info("subscriptionName: {}, pendingAckCount: {}", subscriptionName, pendingAckCount);
         return pendingAckCount;
     }
+
 
     @Test
     public void testCommitFailure() throws Exception {
@@ -424,7 +385,7 @@ public class TransactionProduceTest extends TransactionTestBase {
             txn.commit().get();
             Assert.fail();
         } catch (ExecutionException e) {
-            Assert.assertTrue(e.getCause() instanceof PulsarClientException.TransactionHasOperationFailedException);
+            Assert.assertTrue(e.getCause() instanceof PulsarClientException.InvalidMessageException);
             Assert.assertEquals(txn.getState(), Transaction.State.ABORTED);
         }
         try {

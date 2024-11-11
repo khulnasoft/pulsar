@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,23 +20,20 @@ package org.apache.pulsar.client.impl;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.BrokerTestUtil;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerConsumerBase;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.client.api.TopicMessageId;
 import org.awaitility.Awaitility;
 import org.awaitility.reflect.WhiteboxImpl;
 import org.testng.Assert;
@@ -134,7 +131,7 @@ public class NegativeAcksTest extends ProducerConsumerBase {
         Set<String> sentMessages = new HashSet<>();
 
         final int N = 10;
-        for (int i = 0; i < N * 2; i++) {
+        for (int i = 0; i < N; i++) {
             String value = "test-" + i;
             producer.sendAsync(value);
             sentMessages.add(value);
@@ -146,18 +143,10 @@ public class NegativeAcksTest extends ProducerConsumerBase {
             consumer.negativeAcknowledge(msg);
         }
 
-        for (int i = 0; i < N; i++) {
-            Message<String> msg = consumer.receive();
-            consumer.negativeAcknowledge(msg.getMessageId());
-        }
-
-        assertTrue(consumer instanceof ConsumerBase<String>);
-        assertEquals(((ConsumerBase<String>) consumer).getUnAckedMessageTracker().size(), 0);
-
         Set<String> receivedMessages = new HashSet<>();
 
         // All the messages should be received again
-        for (int i = 0; i < N * 2; i++) {
+        for (int i = 0; i < N; i++) {
             Message<String> msg = consumer.receive();
             receivedMessages.add(msg.getValue());
             consumer.acknowledge(msg);
@@ -175,56 +164,51 @@ public class NegativeAcksTest extends ProducerConsumerBase {
     public static Object[][] variationsBackoff() {
         return new Object[][] {
                 // batching / partitions / subscription-type / min-nack-time-ms/ max-nack-time-ms / ack-timeout
-                { false, false, SubscriptionType.Shared, 100, 1000 },
-                { false, false, SubscriptionType.Failover, 100, 1000 },
-                { false, true, SubscriptionType.Shared, 100, 1000 },
-                { false, true, SubscriptionType.Failover, 100, 1000 },
-                { true, false, SubscriptionType.Shared, 100, 1000 },
-                { true, false, SubscriptionType.Failover, 100, 1000 },
-                { true, true, SubscriptionType.Shared, 100, 1000 },
-                { true, true, SubscriptionType.Failover, 100, 1000 },
+                { false, false, SubscriptionType.Shared, 100, 1000, 0 },
+                { false, false, SubscriptionType.Failover, 100, 1000, 0 },
+                { false, true, SubscriptionType.Shared, 100, 1000, 0 },
+                { false, true, SubscriptionType.Failover, 100, 1000, 0 },
+                { true, false, SubscriptionType.Shared, 100, 1000, 0 },
+                { true, false, SubscriptionType.Failover, 100, 1000, 0 },
+                { true, true, SubscriptionType.Shared, 100, 1000, 0 },
+                { true, true, SubscriptionType.Failover, 100, 1000, 0 },
 
-                { false, false, SubscriptionType.Shared, 0, 1000 },
-                { false, false, SubscriptionType.Failover, 0, 1000 },
-                { false, true, SubscriptionType.Shared, 0, 1000 },
-                { false, true, SubscriptionType.Failover, 0, 1000 },
-                { true, false, SubscriptionType.Shared, 0, 1000 },
-                { true, false, SubscriptionType.Failover, 0, 1000 },
-                { true, true, SubscriptionType.Shared, 0, 1000 },
-                { true, true, SubscriptionType.Failover, 0, 1000 },
+                { false, false, SubscriptionType.Shared, 0, 1000, 0 },
+                { false, false, SubscriptionType.Failover, 0, 1000, 0 },
+                { false, true, SubscriptionType.Shared, 0, 1000, 0 },
+                { false, true, SubscriptionType.Failover, 0, 1000, 0 },
+                { true, false, SubscriptionType.Shared, 0, 1000, 0 },
+                { true, false, SubscriptionType.Failover, 0, 1000, 0 },
+                { true, true, SubscriptionType.Shared, 0, 1000, 0 },
+                { true, true, SubscriptionType.Failover, 0, 1000, 0 },
 
-                { false, false, SubscriptionType.Shared, 100, 1000 },
-                { false, false, SubscriptionType.Failover, 100, 1000 },
-                { false, true, SubscriptionType.Shared, 100, 1000 },
-                { false, true, SubscriptionType.Failover, 100, 1000 },
-                { true, false, SubscriptionType.Shared, 100, 1000 },
-                { true, false, SubscriptionType.Failover, 100, 1000 },
-                { true, true, SubscriptionType.Shared, 100, 1000 },
-                { true, true, SubscriptionType.Failover, 100, 1000 },
+                { false, false, SubscriptionType.Shared, 100, 1000, 1000 },
+                { false, false, SubscriptionType.Failover, 100, 1000, 1000 },
+                { false, true, SubscriptionType.Shared, 100, 1000, 1000 },
+                { false, true, SubscriptionType.Failover, 100, 1000, 1000 },
+                { true, false, SubscriptionType.Shared, 100, 1000, 1000 },
+                { true, false, SubscriptionType.Failover, 100, 1000, 1000 },
+                { true, true, SubscriptionType.Shared, 100, 1000, 1000 },
+                { true, true, SubscriptionType.Failover, 100, 1000, 1000 },
 
-                { false, false, SubscriptionType.Shared, 0, 1000 },
-                { false, false, SubscriptionType.Failover, 0, 1000 },
-                { false, true, SubscriptionType.Shared, 0, 1000 },
-                { false, true, SubscriptionType.Failover, 0, 1000 },
-                { true, false, SubscriptionType.Shared, 0, 1000 },
-                { true, false, SubscriptionType.Failover, 0, 1000 },
-                { true, true, SubscriptionType.Shared, 0, 1000 },
-                { true, true, SubscriptionType.Failover, 0, 1000 },
+                { false, false, SubscriptionType.Shared, 0, 1000, 1000 },
+                { false, false, SubscriptionType.Failover, 0, 1000, 1000 },
+                { false, true, SubscriptionType.Shared, 0, 1000, 1000 },
+                { false, true, SubscriptionType.Failover, 0, 1000, 1000 },
+                { true, false, SubscriptionType.Shared, 0, 1000, 1000 },
+                { true, false, SubscriptionType.Failover, 0, 1000, 1000 },
+                { true, true, SubscriptionType.Shared, 0, 1000, 1000 },
+                { true, true, SubscriptionType.Failover, 0, 1000, 1000 },
         };
     }
 
     @Test(dataProvider = "variationsBackoff")
     public void testNegativeAcksWithBackoff(boolean batching, boolean usePartitions, SubscriptionType subscriptionType,
-            int minNackTimeMs, int maxNackTimeMs)
+            int minNackTimeMs, int maxNackTimeMs, int ackTimeout)
             throws Exception {
         log.info("Test negative acks with back off batching={} partitions={} subType={} minNackTimeMs={}, "
                         + "maxNackTimeMs={}", batching, usePartitions, subscriptionType, minNackTimeMs, maxNackTimeMs);
         String topic = BrokerTestUtil.newUniqueName("testNegativeAcksWithBackoff");
-
-        MultiplierRedeliveryBackoff backoff = MultiplierRedeliveryBackoff.builder()
-                .minDelayMs(minNackTimeMs)
-                .maxDelayMs(maxNackTimeMs)
-                .build();
 
         @Cleanup
         Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
@@ -232,7 +216,11 @@ public class NegativeAcksTest extends ProducerConsumerBase {
                 .subscriptionName("sub1")
                 .acknowledgmentGroupTime(0, TimeUnit.SECONDS)
                 .subscriptionType(subscriptionType)
-                .negativeAckRedeliveryBackoff(backoff)
+                .negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
+                        .minDelayMs(minNackTimeMs)
+                        .maxDelayMs(maxNackTimeMs)
+                        .build())
+                .ackTimeout(ackTimeout, TimeUnit.MILLISECONDS)
                 .subscribe();
 
         @Cleanup
@@ -251,110 +239,6 @@ public class NegativeAcksTest extends ProducerConsumerBase {
         }
         producer.flush();
 
-        final int redeliverCount = 5;
-        long firstReceivedAt = System.currentTimeMillis();
-        long expectedTotalRedeliveryDelay = 0;
-        for (int i = 0; i < redeliverCount; i++) {
-            for (int j = 0; j < N; j++) {
-                Message<String> msg = consumer.receive();
-                log.info("Received message {}", msg.getValue());
-                consumer.negativeAcknowledge(msg);
-            }
-            expectedTotalRedeliveryDelay += backoff.next(i);
-        }
-
-        Set<String> receivedMessages = new HashSet<>();
-
-        // All the messages should be received again
-        for (int i = 0; i < N; i++) {
-            Message<String> msg = consumer.receive();
-            receivedMessages.add(msg.getValue());
-            consumer.acknowledge(msg);
-        }
-        long receivedAfterRedeliveryAt = System.currentTimeMillis();
-        log.info("Total redelivery delay: {} ms", receivedAfterRedeliveryAt - firstReceivedAt);
-        assertEquals(receivedMessages, sentMessages);
-
-        if (SubscriptionType.Shared == subscriptionType) {
-            log.info("Total expected redelivery delay {} ms", expectedTotalRedeliveryDelay);
-            assertTrue(receivedAfterRedeliveryAt - firstReceivedAt >= expectedTotalRedeliveryDelay);
-        }
-
-        // There should be no more messages
-        assertNull(consumer.receive(100, TimeUnit.MILLISECONDS));
-        consumer.close();
-        producer.close();
-    }
-
-    @Test(timeOut = 10000)
-    public void testNegativeAcksDeleteFromUnackedTracker() throws Exception {
-        String topic = BrokerTestUtil.newUniqueName("testNegativeAcksDeleteFromUnackedTracker");
-        @Cleanup
-        ConsumerImpl<String> consumer = (ConsumerImpl<String>) pulsarClient.newConsumer(Schema.STRING)
-                .topic(topic)
-                .subscriptionName("sub1")
-                .acknowledgmentGroupTime(0, TimeUnit.SECONDS)
-                .subscriptionType(SubscriptionType.Shared)
-                .ackTimeout(100, TimeUnit.SECONDS)
-                .negativeAckRedeliveryDelay(100, TimeUnit.SECONDS)
-                .subscribe();
-
-        MessageId messageId = new MessageIdImpl(3, 1, 0);
-        TopicMessageId topicMessageId = TopicMessageId.create("topic-1", messageId);
-        BatchMessageIdImpl batchMessageId = new BatchMessageIdImpl(3, 1, 0, 0);
-        BatchMessageIdImpl batchMessageId2 = new BatchMessageIdImpl(3, 1, 0, 1);
-        BatchMessageIdImpl batchMessageId3 = new BatchMessageIdImpl(3, 1, 0, 2);
-
-        UnAckedMessageTracker unAckedMessageTracker = consumer.getUnAckedMessageTracker();
-        unAckedMessageTracker.add(topicMessageId);
-
-        // negative topic message id
-        consumer.negativeAcknowledge(topicMessageId);
-        NegativeAcksTracker negativeAcksTracker = consumer.getNegativeAcksTracker();
-        assertEquals(negativeAcksTracker.getNackedMessagesCount().orElse(-1).intValue(), 1);
-        assertEquals(unAckedMessageTracker.size(), 0);
-        negativeAcksTracker.close();
-        // negative batch message id
-        unAckedMessageTracker.add(messageId);
-        consumer.negativeAcknowledge(batchMessageId);
-        consumer.negativeAcknowledge(batchMessageId2);
-        consumer.negativeAcknowledge(batchMessageId3);
-        assertEquals(negativeAcksTracker.getNackedMessagesCount().orElse(-1).intValue(), 1);
-        assertEquals(unAckedMessageTracker.size(), 0);
-        negativeAcksTracker.close();
-    }
-
-    @Test
-    public void testNegativeAcksWithBatchAckEnabled() throws Exception {
-        cleanup();
-        conf.setAcknowledgmentAtBatchIndexLevelEnabled(true);
-        setup();
-        String topic = BrokerTestUtil.newUniqueName("testNegativeAcksWithBatchAckEnabled");
-
-        @Cleanup
-        Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
-                .topic(topic)
-                .subscriptionName("sub1")
-                .acknowledgmentGroupTime(0, TimeUnit.SECONDS)
-                .subscriptionType(SubscriptionType.Shared)
-                .enableBatchIndexAcknowledgment(true)
-                .negativeAckRedeliveryDelay(1, TimeUnit.SECONDS)
-                .subscribe();
-
-        @Cleanup
-        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
-                .topic(topic)
-                .create();
-
-        Set<String> sentMessages = new HashSet<>();
-        final int N = 10;
-        for (int i = 0; i < N; i++) {
-            String value = "test-" + i;
-            producer.sendAsync(value);
-            sentMessages.add(value);
-        }
-        producer.flush();
-
         for (int i = 0; i < N; i++) {
             Message<String> msg = consumer.receive();
             consumer.negativeAcknowledge(msg);
@@ -370,8 +254,61 @@ public class NegativeAcksTest extends ProducerConsumerBase {
         }
 
         assertEquals(receivedMessages, sentMessages);
+
         // There should be no more messages
         assertNull(consumer.receive(100, TimeUnit.MILLISECONDS));
+        consumer.close();
+        producer.close();
+    }
+    @Test(invocationCount = 5)
+    public void testMultiTopicConsumerConcurrentRedeliverAndReceive() throws Exception {
+        final String topic = BrokerTestUtil.newUniqueName("my-topic");
+        admin.topics().createPartitionedTopic(topic, 2);
+
+        final int receiverQueueSize = 10;
+
+        @Cleanup
+        MultiTopicsConsumerImpl<Integer> consumer =
+                (MultiTopicsConsumerImpl<Integer>) pulsarClient.newConsumer(Schema.INT32)
+                        .topic(topic)
+                        .subscriptionName("sub")
+                        .receiverQueueSize(receiverQueueSize)
+                        .subscribe();
+        ExecutorService internalPinnedExecutor =
+                WhiteboxImpl.getInternalState(consumer, "internalPinnedExecutor");
+
+        @Cleanup
+        Producer<Integer> producer = pulsarClient.newProducer(Schema.INT32)
+                .topic(topic)
+                .enableBatching(false)
+                .create();
+
+        for (int i = 0; i < receiverQueueSize; i++){
+            producer.send(i);
+        }
+
+        Awaitility.await().until(() -> consumer.incomingMessages.size() == receiverQueueSize);
+
+        // For testing the race condition of issue #18491
+        // We need to inject a delay for the pinned internal thread
+        Thread.sleep(1000L);
+        internalPinnedExecutor.submit(() -> consumer.redeliverUnacknowledgedMessages()).get();
+        // Make sure the message redelivery is completed. The incoming queue will be cleaned up during the redelivery.
+        internalPinnedExecutor.submit(() -> {}).get();
+
+        Set<Integer> receivedMsgs = new HashSet<>();
+        for (;;){
+            Message<Integer> msg = consumer.receive(2, TimeUnit.SECONDS);
+            if (msg == null){
+                break;
+            }
+            receivedMsgs.add(msg.getValue());
+        }
+        Assert.assertEquals(receivedMsgs.size(), 10);
+
+        producer.close();
+        consumer.close();
+        admin.topics().deletePartitionedTopic("persistent://public/default/" + topic);
     }
 
     @Test
@@ -447,56 +384,5 @@ public class NegativeAcksTest extends ProducerConsumerBase {
         }
         Assert.assertEquals(count, 9);
         Assert.assertEquals(0, datas.size());
-    }
-
-    @Test(invocationCount = 5)
-    public void testMultiTopicConsumerConcurrentRedeliverAndReceive() throws Exception {
-        final String topic = BrokerTestUtil.newUniqueName("my-topic");
-        admin.topics().createPartitionedTopic(topic, 2);
-
-        final int receiverQueueSize = 10;
-
-        @Cleanup
-        MultiTopicsConsumerImpl<Integer> consumer =
-                (MultiTopicsConsumerImpl<Integer>) pulsarClient.newConsumer(Schema.INT32)
-                .topic(topic)
-                .subscriptionName("sub")
-                .receiverQueueSize(receiverQueueSize)
-                .subscribe();
-        ExecutorService internalPinnedExecutor =
-                WhiteboxImpl.getInternalState(consumer, "internalPinnedExecutor");
-
-        @Cleanup
-        Producer<Integer> producer = pulsarClient.newProducer(Schema.INT32)
-                .topic(topic)
-                .enableBatching(false)
-                .create();
-
-        for (int i = 0; i < receiverQueueSize; i++){
-            producer.send(i);
-        }
-
-        Awaitility.await().until(() -> consumer.incomingMessages.size() == receiverQueueSize);
-
-        // For testing the race condition of issue #18491
-        // We need to inject a delay for the pinned internal thread
-        Thread.sleep(1000L);
-        internalPinnedExecutor.submit(() -> consumer.redeliverUnacknowledgedMessages()).get();
-        // Make sure the message redelivery is completed. The incoming queue will be cleaned up during the redelivery.
-        internalPinnedExecutor.submit(() -> {}).get();
-
-        Set<Integer> receivedMsgs = new HashSet<>();
-        for (;;){
-            Message<Integer> msg = consumer.receive(2, TimeUnit.SECONDS);
-            if (msg == null){
-                break;
-            }
-            receivedMsgs.add(msg.getValue());
-        }
-        Assert.assertEquals(receivedMsgs.size(), 10);
-
-        producer.close();
-        consumer.close();
-        admin.topics().deletePartitionedTopic("persistent://public/default/" + topic);
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,10 +21,10 @@ package org.apache.pulsar.client.impl;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.Objects;
-import org.apache.pulsar.client.api.MessageIdAdv;
+import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.common.api.proto.MessageIdData;
 
-public class ChunkMessageIdImpl extends MessageIdImpl {
+public class ChunkMessageIdImpl extends MessageIdImpl implements MessageId {
     private final MessageIdImpl firstChunkMsgId;
 
     public ChunkMessageIdImpl(MessageIdImpl firstChunkMsgId, MessageIdImpl lastChunkMsgId) {
@@ -32,12 +32,11 @@ public class ChunkMessageIdImpl extends MessageIdImpl {
         this.firstChunkMsgId = firstChunkMsgId;
     }
 
-    @Override
-    public MessageIdAdv getFirstChunkMessageId() {
+    public MessageIdImpl getFirstChunkMessageId() {
         return firstChunkMsgId;
     }
 
-    public MessageIdAdv getLastChunkMessageId() {
+    public MessageIdImpl getLastChunkMessageId() {
         return this;
     }
 

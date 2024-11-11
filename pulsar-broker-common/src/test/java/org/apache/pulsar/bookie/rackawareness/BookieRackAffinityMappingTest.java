@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.bookie.rackawareness;
 import static org.apache.bookkeeper.feature.SettableFeatureProvider.DISABLE_ALL;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -29,7 +28,6 @@ import io.netty.util.HashedWheelTimer;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,11 +35,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import lombok.Cleanup;
+import java.util.stream.Collectors;
 import org.apache.bookkeeper.client.DefaultBookieAddressResolver;
 import org.apache.bookkeeper.client.EnsemblePlacementPolicy;
 import org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicy;
@@ -52,7 +47,6 @@ import org.apache.bookkeeper.discover.RegistrationClient;
 import org.apache.bookkeeper.net.BookieId;
 import org.apache.bookkeeper.net.BookieNode;
 import org.apache.bookkeeper.net.BookieSocketAddress;
-import org.apache.bookkeeper.net.NetworkTopology;
 import org.apache.bookkeeper.proto.BookieAddressResolver;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
@@ -62,8 +56,6 @@ import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.MetadataStoreFactory;
-import org.apache.pulsar.metadata.api.Notification;
-import org.apache.pulsar.metadata.api.NotificationType;
 import org.apache.pulsar.metadata.bookkeeper.BookieServiceInfoSerde;
 import org.apache.pulsar.metadata.bookkeeper.PulsarRegistrationClient;
 import org.awaitility.Awaitility;
@@ -237,7 +229,8 @@ public class BookieRackAffinityMappingTest {
         String data = "{\"group1\": {\"" + BOOKIE1
                 + "\": {\"rack\": \"/rack0\", \"hostname\": \"bookie1.example.com\"}, \"" + BOOKIE2
                 + "\": {\"rack\": \"/rack1\", \"hostname\": \"bookie2.example.com\"}}}";
-        store.put(BookieRackAffinityMapping.BOOKIE_INFO_ROOT_PATH, data.getBytes(), Optional.empty()).join();
+        store.put(BookieRackAffinityMapping.BOOKIE_INFO_ROOT_PATH,
+                data.getBytes(), Optional.empty()).join();
 
         // Case1: ZKCache is given
         BookieRackAffinityMapping mapping = new BookieRackAffinityMapping();
@@ -247,14 +240,16 @@ public class BookieRackAffinityMappingTest {
         ClientConfiguration bkClientConf = new ClientConfiguration();
         bkClientConf.setProperty(BookieRackAffinityMapping.METADATA_STORE_INSTANCE, store);
 
-        PulsarRegistrationClient pulsarRegistrationClient = new PulsarRegistrationClient(store, "/ledgers");
-        DefaultBookieAddressResolver defaultBookieAddressResolver = new DefaultBookieAddressResolver(pulsarRegistrationClient);
+        PulsarRegistrationClient pulsarRegistrationClient =
+                new PulsarRegistrationClient(store, "/ledgers");
+        DefaultBookieAddressResolver defaultBookieAddressResolver =
+                new DefaultBookieAddressResolver(pulsarRegistrationClient);
 
         mapping.setBookieAddressResolver(defaultBookieAddressResolver);
         mapping.setConf(bkClientConf);
         List<String> racks = mapping
                 .resolve(Lists.newArrayList(BOOKIE1.getHostName(), BOOKIE2.getHostName(), BOOKIE3.getHostName()))
-                .stream().filter(Objects::nonNull).toList();
+                .stream().filter(Objects::nonNull).collect(Collectors.toList());
         assertEquals(racks.size(), 0);
 
         HashedWheelTimer timer = new HashedWheelTimer(
@@ -263,7 +258,6 @@ public class BookieRackAffinityMappingTest {
                 bkClientConf.getTimeoutTimerNumTicks());
 
         RackawareEnsemblePlacementPolicy repp = new RackawareEnsemblePlacementPolicy();
-        mapping.registerRackChangeListener(repp);
         Class<?> clazz1 = Class.forName("org.apache.bookkeeper.client.TopologyAwareEnsemblePlacementPolicy");
         Field field1 = clazz1.getDeclaredField("knownBookies");
         field1.setAccessible(true);
@@ -293,10 +287,11 @@ public class BookieRackAffinityMappingTest {
         store.put("/ledgers/available/" + BOOKIE1, serviceInfoSerde.serialize("", bookieServiceInfo),
                 Optional.of(-1L)).get();
 
-        Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 1);
+        Awaitility.await().atMost(30, TimeUnit.SECONDS)
+                .until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 1);
         racks = mapping
                 .resolve(Lists.newArrayList(BOOKIE1.getHostName(), BOOKIE2.getHostName(), BOOKIE3.getHostName()))
-                .stream().filter(Objects::nonNull).toList();
+                .stream().filter(Objects::nonNull).collect(Collectors.toList());
         assertEquals(racks.size(), 1);
         assertEquals(racks.get(0), "/rack0");
         assertEquals(knownBookies.size(), 1);
@@ -305,11 +300,12 @@ public class BookieRackAffinityMappingTest {
         bookieServiceInfo = BookieServiceInfoUtils.buildLegacyBookieServiceInfo(BOOKIE2.toString());
         store.put("/ledgers/available/" + BOOKIE2, serviceInfoSerde.serialize("", bookieServiceInfo),
                 Optional.of(-1L)).get();
-        Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 2);
+        Awaitility.await().atMost(30, TimeUnit.SECONDS)
+                .until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 2);
 
         racks = mapping
                 .resolve(Lists.newArrayList(BOOKIE1.getHostName(), BOOKIE2.getHostName(), BOOKIE3.getHostName()))
-                .stream().filter(Objects::nonNull).toList();
+                .stream().filter(Objects::nonNull).collect(Collectors.toList());
         assertEquals(racks.size(), 2);
         assertEquals(racks.get(0), "/rack0");
         assertEquals(racks.get(1), "/rack1");
@@ -320,11 +316,12 @@ public class BookieRackAffinityMappingTest {
         bookieServiceInfo = BookieServiceInfoUtils.buildLegacyBookieServiceInfo(BOOKIE3.toString());
         store.put("/ledgers/available/" + BOOKIE3, serviceInfoSerde.serialize("", bookieServiceInfo),
                 Optional.of(-1L)).get();
-        Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 2);
+        Awaitility.await().atMost(30, TimeUnit.SECONDS)
+                .until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 2);
 
         racks = mapping
                 .resolve(Lists.newArrayList(BOOKIE1.getHostName(), BOOKIE2.getHostName(), BOOKIE3.getHostName()))
-                .stream().filter(Objects::nonNull).toList();
+                .stream().filter(Objects::nonNull).collect(Collectors.toList());
         assertEquals(racks.size(), 2);
         assertEquals(racks.get(0), "/rack0");
         assertEquals(racks.get(1), "/rack1");
@@ -333,81 +330,6 @@ public class BookieRackAffinityMappingTest {
         assertEquals(knownBookies.get(BOOKIE2.toBookieId()).getNetworkLocation(), "/rack1");
         assertEquals(knownBookies.get(BOOKIE3.toBookieId()).getNetworkLocation(), "/default-rack");
 
-        //remove bookie2 rack, the bookie2 rack should be /default-rack
-        data = "{\"group1\": {\"" + BOOKIE1
-                + "\": {\"rack\": \"/rack0\", \"hostname\": \"bookie1.example.com\"}}}";
-        store.put(BookieRackAffinityMapping.BOOKIE_INFO_ROOT_PATH, data.getBytes(), Optional.empty()).join();
-        Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> ((BookiesRackConfiguration)field.get(mapping)).get("group1").size() == 1);
-
-        racks = mapping
-                .resolve(Lists.newArrayList(BOOKIE1.getHostName(), BOOKIE2.getHostName(), BOOKIE3.getHostName()))
-                .stream().filter(Objects::nonNull).toList();
-        assertEquals(racks.size(), 1);
-        assertEquals(racks.get(0), "/rack0");
-        assertEquals(knownBookies.size(), 3);
-        assertEquals(knownBookies.get(BOOKIE1.toBookieId()).getNetworkLocation(), "/rack0");
-        assertEquals(knownBookies.get(BOOKIE2.toBookieId()).getNetworkLocation(), "/default-rack");
-        assertEquals(knownBookies.get(BOOKIE3.toBookieId()).getNetworkLocation(), "/default-rack");
-
         timer.stop();
-    }
-
-    @Test
-    public void testNoDeadlockWithRackawarePolicy() throws Exception {
-        ClientConfiguration bkClientConf = new ClientConfiguration();
-        bkClientConf.setProperty(BookieRackAffinityMapping.METADATA_STORE_INSTANCE, store);
-
-        BookieRackAffinityMapping mapping = new BookieRackAffinityMapping();
-        mapping.setBookieAddressResolver(BookieSocketAddress.LEGACY_BOOKIEID_RESOLVER);
-        mapping.setConf(bkClientConf);
-
-        @Cleanup("stop")
-        HashedWheelTimer timer = new HashedWheelTimer(new ThreadFactoryBuilder().setNameFormat("TestTimer-%d").build(),
-                bkClientConf.getTimeoutTimerTickDurationMs(), TimeUnit.MILLISECONDS,
-                bkClientConf.getTimeoutTimerNumTicks());
-
-        RackawareEnsemblePlacementPolicy repp = new RackawareEnsemblePlacementPolicy();
-        repp.initialize(bkClientConf, Optional.of(mapping), timer,
-                DISABLE_ALL, NullStatsLogger.INSTANCE, BookieSocketAddress.LEGACY_BOOKIEID_RESOLVER);
-        repp.withDefaultRack(NetworkTopology.DEFAULT_REGION_AND_RACK);
-
-        mapping.registerRackChangeListener(repp);
-
-        @Cleanup("shutdownNow")
-        ExecutorService executor1 = Executors.newSingleThreadExecutor();
-        @Cleanup("shutdownNow")
-        ExecutorService executor2 = Executors.newSingleThreadExecutor();
-
-        CountDownLatch count = new CountDownLatch(2);
-
-        executor1.submit(() -> {
-            try {
-                Method handleUpdates =
-                        BookieRackAffinityMapping.class.getDeclaredMethod("handleUpdates", Notification.class);
-                handleUpdates.setAccessible(true);
-                Notification n =
-                        new Notification(NotificationType.Modified, BookieRackAffinityMapping.BOOKIE_INFO_ROOT_PATH);
-                long start = System.currentTimeMillis();
-                while (System.currentTimeMillis() - start < 2_000) {
-                    handleUpdates.invoke(mapping, n);
-                }
-                count.countDown();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        executor2.submit(() -> {
-            Set<BookieId> writableBookies = new HashSet<>();
-            writableBookies.add(BOOKIE1.toBookieId());
-            long start = System.currentTimeMillis();
-            while (System.currentTimeMillis() - start < 2_000) {
-                repp.onClusterChanged(writableBookies, Collections.emptySet());
-                repp.onClusterChanged(Collections.emptySet(), Collections.emptySet());
-            }
-            count.countDown();
-        });
-
-        assertTrue(count.await(3, TimeUnit.SECONDS));
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.client.impl.auth;
 
 import java.util.Base64;
@@ -27,20 +28,16 @@ import org.apache.pulsar.client.api.AuthenticationDataProvider;
 
 public class AuthenticationDataBasic implements AuthenticationDataProvider {
     private static final String HTTP_HEADER_NAME = "Authorization";
-    private final String commandAuthToken;
-    private final Map<String, String> headers;
+    private String httpAuthToken;
+    private String commandAuthToken;
+    private Map<String, String> headers = new HashMap<>();
 
     public AuthenticationDataBasic(String userId, String password) {
-        this(userId + ":" + password);
-    }
-
-    public AuthenticationDataBasic(String userInfo) {
-        String httpAuthToken = "Basic " + Base64.getEncoder().encodeToString(userInfo.getBytes());
-        this.commandAuthToken = userInfo;
-        this.headers = Collections.unmodifiableMap(new HashMap<String, String>(){{
-            put(HTTP_HEADER_NAME, httpAuthToken);
-            put(PULSAR_AUTH_METHOD_NAME, AuthenticationBasic.AUTH_METHOD_NAME);
-        }});
+        httpAuthToken = "Basic " + Base64.getEncoder().encodeToString((userId + ":" + password).getBytes());
+        commandAuthToken = userId + ":" + password;
+        headers.put(HTTP_HEADER_NAME, httpAuthToken);
+        headers.put(PULSAR_AUTH_METHOD_NAME, AuthenticationBasic.AUTH_METHOD_NAME);
+        this.headers = Collections.unmodifiableMap(this.headers);
     }
 
     @Override

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,13 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.source;
 
-import java.util.Map;
-import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.io.core.SourceContext;
+
+import java.util.Map;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public abstract class PushPulsarSource<T> extends PulsarSource<T> {
 
@@ -49,7 +51,7 @@ public abstract class PushPulsarSource<T> extends PulsarSource<T> {
      * @param sourceContext environment where the source connector is running
      * @throws Exception IO type exceptions when opening a connector
      */
-    public abstract void open(Map<String, Object> config, SourceContext sourceContext) throws Exception;
+    abstract public void open(Map<String, Object> config, SourceContext sourceContext) throws Exception;
 
     /**
      * Attach a consumer function to this Source. This is invoked by the implementation
@@ -67,7 +69,7 @@ public abstract class PushPulsarSource<T> extends PulsarSource<T> {
 
     /**
      * Get length of the queue that records are push onto
-     * Users can override this method to customize the queue length.
+     * Users can override this method to customize the queue length
      * @return queue length
      */
     public int getQueueLength() {

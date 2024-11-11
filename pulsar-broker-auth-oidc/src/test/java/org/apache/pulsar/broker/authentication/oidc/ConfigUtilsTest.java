@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,6 +23,7 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -76,7 +77,11 @@ public class ConfigUtilsTest {
         config.setProperties(props);
         Set<String> actual = ConfigUtils.getConfigValueAsSet(config, "prop1");
         // Trims all whitespace
-        assertEquals(Set.of("a", "b", "c"), actual);
+        HashSet<String> expectedResult = new HashSet<>();
+        expectedResult.add("a");
+        expectedResult.add("b");
+        expectedResult.add("c");
+        assertEquals(expectedResult, actual);
     }
 
     @Test

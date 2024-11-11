@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,6 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.policies.data.TopicType;
 import org.apache.pulsar.tests.TestRetrySupport;
 import org.apache.pulsar.zookeeper.LocalBookkeeperEnsemble;
 import org.testng.Assert;
@@ -77,7 +76,7 @@ public abstract class BkEnsemblesTestBase extends TestRetrySupport {
             if (config == null) {
                 config = new ServiceConfiguration();
             }
-            config.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble.getZookeeperPort());
+            config.setZookeeperServers("127.0.0.1" + ":" + bkEnsemble.getZookeeperPort());
             config.setAdvertisedAddress("localhost");
             config.setWebServicePort(Optional.of(0));
             config.setClusterName("usc");
@@ -89,7 +88,7 @@ public abstract class BkEnsemblesTestBase extends TestRetrySupport {
             config.setManagedLedgerMaxEntriesPerLedger(5);
             config.setManagedLedgerMinLedgerRolloverTimeMinutes(0);
             config.setAdvertisedAddress("127.0.0.1");
-            config.setAllowAutoTopicCreationType(TopicType.NON_PARTITIONED);
+            config.setAllowAutoTopicCreationType("non-partitioned");
             config.setMetadataStoreOperationTimeoutSeconds(10);
             config.setNumIOThreads(1);
             Properties properties = new Properties();
@@ -100,9 +99,6 @@ public abstract class BkEnsemblesTestBase extends TestRetrySupport {
             pulsar = new PulsarService(config);
             pulsar.start();
 
-            if (admin != null) {
-                admin.close();
-            }
             admin = PulsarAdmin.builder().serviceHttpUrl(pulsar.getWebServiceAddress()).build();
 
             admin.clusters().createCluster("usc", ClusterData.builder().serviceUrl(pulsar.getWebServiceAddress()).build());
@@ -119,18 +115,9 @@ public abstract class BkEnsemblesTestBase extends TestRetrySupport {
     protected void cleanup() throws Exception {
         config = null;
         markCurrentSetupNumberCleaned();
-        if (admin != null) {
-            admin.close();
-            admin = null;
-        }
-        if (pulsar != null) {
-            pulsar.close();
-            pulsar = null;
-        }
-        if (bkEnsemble != null) {
-            bkEnsemble.stop();
-            bkEnsemble = null;
-        }
+        admin.close();
+        pulsar.close();
+        bkEnsemble.stop();
     }
 
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,8 +21,8 @@ package org.apache.bookkeeper.mledger.impl.cache;
 import org.apache.bookkeeper.client.api.ReadHandle;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntryCallback;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.EntryImpl;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Pair;
 
 /**
@@ -39,7 +39,7 @@ public interface EntryCache extends Comparable<EntryCache> {
     /**
      * Insert an entry in the cache.
      *
-     * <p/>If the overall limit have been reached, this will trigger the eviction of other entries, possibly from
+     * <p/>If the overall limit have been reached, this will triggered the eviction of other entries, possibly from
      * other EntryCache instances
      *
      * @param entry
@@ -49,12 +49,12 @@ public interface EntryCache extends Comparable<EntryCache> {
     boolean insert(EntryImpl entry);
 
     /**
-     * Remove from cache all the entries related to a ledger up to lastPosition excluded.
+     * Remove from cache all the entries related to a ledger up to lastPosition included.
      *
      * @param lastPosition
      *            the position of the last entry to be invalidated (non-inclusive)
      */
-    void invalidateEntries(Position lastPosition);
+    void invalidateEntries(PositionImpl lastPosition);
 
     void invalidateEntriesBeforeTimestamp(long timestamp);
 
@@ -115,7 +115,7 @@ public interface EntryCache extends Comparable<EntryCache> {
      * @param ctx
      *            the context object
      */
-    void asyncReadEntry(ReadHandle lh, Position position, ReadEntryCallback callback, Object ctx);
+    void asyncReadEntry(ReadHandle lh, PositionImpl position, ReadEntryCallback callback, Object ctx);
 
     /**
      * Get the total size in bytes of all the entries stored in this cache.

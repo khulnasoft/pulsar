@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,12 +23,14 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
+
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.pulsar.functions.api.Function;
 import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.functions.instance.JavaInstance.AsyncFuncRequest;
@@ -54,7 +56,7 @@ public class JavaInstanceTest {
         assertEquals(testString + "-lambda", result.getResult());
         instance.close();
     }
-
+    
     @Test
     public void testNullReturningFunction() throws Exception  {
     	JavaInstance instance = new JavaInstance(
@@ -119,7 +121,7 @@ public class JavaInstanceTest {
         assertEquals(testString + "-lambda", resultHolder.get().getResult());
         instance.close();
     }
-
+    
     @Test
     public void testNullReturningAsyncFunction() throws Exception {
         InstanceConfig instanceConfig = new InstanceConfig();
@@ -186,7 +188,6 @@ public class JavaInstanceTest {
 
     @Test
     public void testAsyncFunctionMaxPending() throws Exception {
-        CountDownLatch count = new CountDownLatch(1);
         InstanceConfig instanceConfig = new InstanceConfig();
         int pendingQueueSize = 3;
         instanceConfig.setMaxPendingAsyncRequests(pendingQueueSize);
@@ -198,7 +199,7 @@ public class JavaInstanceTest {
             CompletableFuture<String> result  = new CompletableFuture<>();
             executor.submit(() -> {
                 try {
-                    count.await();
+                    Thread.sleep(500);
                     result.complete(String.format("%s-lambda", input));
                 } catch (Exception e) {
                     result.completeExceptionally(e);
@@ -224,13 +225,8 @@ public class JavaInstanceTest {
         // no space left
         assertEquals(0, instance.getPendingAsyncRequests().remainingCapacity());
 
-        AsyncFuncRequest[] asyncFuncRequests = new AsyncFuncRequest[3];
         for (int i = 0; i < 3; i++) {
-            asyncFuncRequests[i] = instance.getPendingAsyncRequests().poll();
-        }
-
-        count.countDown();
-        for (AsyncFuncRequest request : asyncFuncRequests) {
+            AsyncFuncRequest request = instance.getPendingAsyncRequests().poll();
             Assert.assertEquals(request.getProcessResult().get(), testString + "-lambda");
         }
 
@@ -239,7 +235,7 @@ public class JavaInstanceTest {
         log.info("start:{} end:{} during:{}", startTime, endTime, endTime - startTime);
         instance.close();
     }
-
+    
 	private static class UserException extends Exception {
     	public UserException(String msg) {
     		super(msg);

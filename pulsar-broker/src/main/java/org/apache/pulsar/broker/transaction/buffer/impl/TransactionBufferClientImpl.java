@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,8 +23,6 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.transaction.buffer.TransactionBufferClientStats;
 import org.apache.pulsar.client.api.transaction.TransactionBufferClient;
 import org.apache.pulsar.client.api.transaction.TxnID;
 import org.apache.pulsar.client.impl.transaction.TransactionBufferHandler;
@@ -37,89 +35,47 @@ import org.apache.pulsar.common.api.proto.TxnAction;
 public class TransactionBufferClientImpl implements TransactionBufferClient {
 
     private final TransactionBufferHandler tbHandler;
-    private final TransactionBufferClientStats stats;
 
-    private TransactionBufferClientImpl(PulsarService pulsarService, TransactionBufferHandler tbHandler,
-                                        boolean exposeTopicLevelMetrics, boolean enableTxnCoordinator) {
+    private TransactionBufferClientImpl(TransactionBufferHandler tbHandler) {
         this.tbHandler = tbHandler;
-        this.stats = TransactionBufferClientStats.create(pulsarService, exposeTopicLevelMetrics, tbHandler,
-                enableTxnCoordinator);
     }
 
     public static TransactionBufferClient create(PulsarService pulsarService, HashedWheelTimer timer,
         int maxConcurrentRequests, long operationTimeoutInMills) throws PulsarServerException {
         TransactionBufferHandler handler = new TransactionBufferHandlerImpl(pulsarService, timer,
                 maxConcurrentRequests, operationTimeoutInMills);
-
-        ServiceConfiguration config = pulsarService.getConfig();
-        boolean exposeTopicLevelMetrics = config.isExposeTopicLevelMetricsInPrometheus();
-        boolean enableTxnCoordinator = config.isTransactionCoordinatorEnabled();
-        return new TransactionBufferClientImpl(pulsarService, handler, exposeTopicLevelMetrics, enableTxnCoordinator);
+        return new TransactionBufferClientImpl(handler);
     }
 
     @Override
     public CompletableFuture<TxnID> commitTxnOnTopic(String topic, long txnIdMostBits,
                                                      long txnIdLeastBits, long lowWaterMark) {
-        long start = System.nanoTime();
-        return tbHandler.endTxnOnTopic(topic, txnIdMostBits, txnIdLeastBits, TxnAction.COMMIT, lowWaterMark)
-                .whenComplete((__, t) -> {
-                    if (null != t) {
-                        this.stats.recordCommitFailed(topic);
-                    } else {
-                        this.stats.recordCommitLatency(topic, System.nanoTime() - start);
-                    }
-                });
+        return tbHandler.endTxnOnTopic(topic, txnIdMostBits, txnIdLeastBits, TxnAction.COMMIT, lowWaterMark);
     }
 
     @Override
     public CompletableFuture<TxnID> abortTxnOnTopic(String topic, long txnIdMostBits,
                                                     long txnIdLeastBits, long lowWaterMark) {
-        long start = System.nanoTime();
-        return tbHandler.endTxnOnTopic(topic, txnIdMostBits, txnIdLeastBits, TxnAction.ABORT, lowWaterMark)
-                .whenComplete((__, t) -> {
-                    if (null != t) {
-                        this.stats.recordAbortFailed(topic);
-                    } else {
-                        this.stats.recordAbortLatency(topic, System.nanoTime() - start);
-                    }
-                });
+        return tbHandler.endTxnOnTopic(topic, txnIdMostBits, txnIdLeastBits, TxnAction.ABORT, lowWaterMark);
     }
 
     @Override
     public CompletableFuture<TxnID> commitTxnOnSubscription(String topic, String subscription, long txnIdMostBits,
                                                             long txnIdLeastBits, long lowWaterMark) {
-        long start = System.nanoTime();
         return tbHandler.endTxnOnSubscription(topic, subscription, txnIdMostBits, txnIdLeastBits,
-                TxnAction.COMMIT, lowWaterMark)
-                .whenComplete((__, t) -> {
-                    if (null != t) {
-                        this.stats.recordCommitFailed(topic);
-                    } else {
-                        this.stats.recordCommitLatency(topic, System.nanoTime() - start);
-                    }
-                });
+                TxnAction.COMMIT, lowWaterMark);
     }
 
     @Override
     public CompletableFuture<TxnID> abortTxnOnSubscription(String topic, String subscription,
                                                            long txnIdMostBits, long txnIdLeastBits, long lowWaterMark) {
-        long start = System.nanoTime();
         return tbHandler.endTxnOnSubscription(topic, subscription, txnIdMostBits, txnIdLeastBits,
-                TxnAction.ABORT, lowWaterMark)
-                .whenComplete((__, t) -> {
-                    if (null != t) {
-                        this.stats.recordAbortFailed(topic);
-
-                    } else {
-                        this.stats.recordAbortLatency(topic, System.nanoTime() - start);
-                    }
-                });
+                TxnAction.ABORT, lowWaterMark);
     }
 
     @Override
     public void close() {
         tbHandler.close();
-        this.stats.close();
     }
 
     @Override

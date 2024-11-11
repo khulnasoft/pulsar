@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -84,7 +84,6 @@ public class ElasticSearchJavaRestClient extends RestClient {
                         .setConnectionRequestTimeout(config.getConnectionRequestTimeoutInMs())
                         .setConnectTimeout(config.getConnectTimeoutInMs())
                         .setSocketTimeout(config.getSocketTimeoutInMs()))
-                .setCompressionEnabled(config.isCompressionEnabled())
                 .setHttpClientConfigCallback(this.configCallback)
                 .setFailureListener(new org.elasticsearch.client.RestClient.FailureListener() {
                     public void onFailure(Node node) {
@@ -144,7 +143,7 @@ public class ElasticSearchJavaRestClient extends RestClient {
     public boolean deleteDocument(String index, String documentId) throws IOException {
         final DeleteRequest req = new
                 DeleteRequest.Builder()
-                .index(index)
+                .index(config.getIndexName())
                 .id(documentId)
                 .build();
 
@@ -156,7 +155,7 @@ public class ElasticSearchJavaRestClient extends RestClient {
     public boolean indexDocument(String index, String documentId, String documentSource) throws IOException {
         final Map mapped = objectMapper.readValue(documentSource, Map.class);
         final IndexRequest<Object> indexRequest = new IndexRequest.Builder<>()
-                .index(index)
+                .index(config.getIndexName())
                 .document(mapped)
                 .id(documentId)
                 .build();

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,13 @@
  */
 package org.apache.pulsar.broker.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
+import com.google.common.collect.Lists;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -34,14 +34,11 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.InjectedClientCnxClientBuilder;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.MessageRoutingMode;
@@ -52,13 +49,9 @@ import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.BatchMessageIdImpl;
-import org.apache.pulsar.client.impl.ClientBuilderImpl;
-import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.client.impl.metrics.InstrumentProvider;
-import org.apache.pulsar.common.api.proto.CommandError;
+import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.util.RelativeTimeUtil;
 import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
@@ -86,11 +79,9 @@ public class SubscriptionSeekTest extends BrokerTestBase {
     public void testSeek() throws Exception {
         final String topicName = "persistent://prop/use/ns-abc/testSeek";
 
-        @Cleanup
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
 
         // Disable pre-fetch in consumer to track the messages received
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName)
                 .subscriptionName("my-subscription").receiverQueueSize(0).subscribe();
 
@@ -139,36 +130,10 @@ public class SubscriptionSeekTest extends BrokerTestBase {
     }
 
     @Test
-    public void testSeekIsByReceive() throws PulsarClientException {
-        final String topicName = "persistent://prop/use/ns-abc/testSeekIsByReceive";
-
-        @Cleanup
-        Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
-
-        String subscriptionName = "my-subscription";
-        @Cleanup
-        org.apache.pulsar.client.api.Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName)
-                .subscriptionName(subscriptionName)
-                .subscribe();
-
-        List<MessageId> messageIds = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            String message = "my-message-" + i;
-            MessageId msgId = producer.send(message.getBytes());
-            messageIds.add(msgId);
-        }
-
-        consumer.seek(messageIds.get(5));
-        Message<byte[]> message = consumer.receive();
-        assertThat(message.getMessageId()).isEqualTo(messageIds.get(6));
-    }
-
-    @Test
     public void testSeekForBatch() throws Exception {
         final String topicName = "persistent://prop/use/ns-abcd/testSeekForBatch";
         String subscriptionName = "my-subscription-batch";
 
-        @Cleanup
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .enableBatching(true)
                 .batchingMaxMessages(3)
@@ -195,7 +160,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         producer.close();
 
 
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
                 .topic(topicName)
                 .subscriptionName(subscriptionName)
@@ -226,7 +190,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         final String topicName = "persistent://prop/use/ns-abcd/testSeekForBatchMessageAndSpecifiedBatchIndex";
         String subscriptionName = "my-subscription-batch";
 
-        @Cleanup
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .enableBatching(true)
                 .batchingMaxMessages(3)
@@ -264,14 +227,12 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         assertEquals(batchMsgId0.getEntryId(), batchMsgId1.getEntryId());
         assertEquals(batchMsgId1.getEntryId(), msgIdToSeekFirst.getEntryId());
 
-        @Cleanup
         PulsarClient newPulsarClient = PulsarClient.builder()
                 // set start backoff interval short enough to make sure client will re-connect quickly
                 .startingBackoffInterval(1, TimeUnit.MICROSECONDS)
                 .serviceUrl(lookupUrl.toString())
                 .build();
 
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<String> consumer = newPulsarClient.newConsumer(Schema.STRING)
                 .topic(topicName)
                 .subscriptionName(subscriptionName)
@@ -301,6 +262,8 @@ public class SubscriptionSeekTest extends BrokerTestBase {
             MessageId receiveId = consumer.receive().getMessageId();
             assertEquals(receiveId, messageId);
         }
+
+        newPulsarClient.close();
     }
 
     @Test
@@ -308,7 +271,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         final String topicName = "persistent://prop/use/ns-abcd/testSeekForBatchByAdmin-" + UUID.randomUUID().toString();
         String subscriptionName = "my-subscription-batch";
 
-        @Cleanup
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .enableBatching(true)
                 .batchingMaxMessages(3)
@@ -334,7 +296,7 @@ public class SubscriptionSeekTest extends BrokerTestBase {
 
         producer.close();
 
-        @Cleanup
+
         org.apache.pulsar.client.api.Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
                 .topic(topicName)
                 .subscriptionName(subscriptionName)
@@ -390,7 +352,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         final String topicName = "persistent://prop/use/ns-abc/testConcurrentReset_" + System.currentTimeMillis();
         final String subscriptionName = "test-sub-name";
 
-        @Cleanup
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
 
         admin.topics().createSubscription(topicName, subscriptionName, MessageId.earliest);
@@ -406,7 +367,7 @@ public class SubscriptionSeekTest extends BrokerTestBase {
             messageIds.add(msgId);
         }
 
-        List<PulsarAdminException> exceptions = new ArrayList<>();
+        List<PulsarAdminException> exceptions = Lists.newLinkedList();
         class ResetCursorThread extends Thread {
             public void run() {
                 try {
@@ -417,7 +378,7 @@ public class SubscriptionSeekTest extends BrokerTestBase {
             }
         }
 
-        List<ResetCursorThread> resetCursorThreads = new ArrayList<>();
+        List<ResetCursorThread> resetCursorThreads = Lists.newLinkedList();
         for (int i = 0; i < 4; i ++) {
             ResetCursorThread thread = new ResetCursorThread();
             resetCursorThreads.add(thread);
@@ -440,7 +401,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         final String topicName = "persistent://prop/use/ns-abc/testSeekPartitions";
 
         admin.topics().createPartitionedTopic(topicName, 2);
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName)
                 .subscriptionName("my-subscription").subscribe();
 
@@ -458,11 +418,9 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         long resetTimeInMillis = TimeUnit.SECONDS
                 .toMillis(RelativeTimeUtil.parseRelativeTimeInSeconds(resetTimeStr));
 
-        @Cleanup
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
 
         // Disable pre-fetch in consumer to track the messages received
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName)
                 .subscriptionName("my-subscription").receiverQueueSize(0).subscribe();
 
@@ -496,7 +454,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         int msgNum = 20;
         admin.topics().createPartitionedTopic(topicName, partitionNum);
         creatProducerAndSendMsg(topicName, msgNum);
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<String> consumer = pulsarClient
                 .newConsumer(Schema.STRING).startMessageIdInclusive()
                 .topic(topicName).subscriptionName("my-sub").subscribe();
@@ -544,7 +501,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         long resetTimeInMillis = TimeUnit.SECONDS
                 .toMillis(RelativeTimeUtil.parseRelativeTimeInSeconds(resetTimeStr));
         admin.topics().createPartitionedTopic(topicName, partitions);
-        @Cleanup
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         // Disable pre-fetch in consumer to track the messages received
         org.apache.pulsar.client.api.Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName)
@@ -598,14 +554,12 @@ public class SubscriptionSeekTest extends BrokerTestBase {
     public void testShouldCloseAllConsumersForMultipleConsumerDispatcherWhenSeek() throws Exception {
         final String topicName = "persistent://prop/use/ns-abc/testShouldCloseAllConsumersForMultipleConsumerDispatcherWhenSeek";
         // Disable pre-fetch in consumer to track the messages received
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer1 = pulsarClient.newConsumer()
                 .topic(topicName)
                 .subscriptionType(SubscriptionType.Shared)
                 .subscriptionName("my-subscription")
                 .subscribe();
 
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer2 = pulsarClient.newConsumer()
                 .topic(topicName)
                 .subscriptionType(SubscriptionType.Shared)
@@ -632,21 +586,21 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         for (Consumer consumer : consumers) {
             assertFalse(connectedSinceSet.contains(consumer.getStats().getConnectedSince()));
         }
+        consumer1.close();
+        consumer2.close();
     }
 
     @Test
     public void testOnlyCloseActiveConsumerForSingleActiveConsumerDispatcherWhenSeek() throws Exception {
         final String topicName = "persistent://prop/use/ns-abc/testOnlyCloseActiveConsumerForSingleActiveConsumerDispatcherWhenSeek";
         // Disable pre-fetch in consumer to track the messages received
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<byte[]> consumer1 = pulsarClient.newConsumer()
                 .topic(topicName)
                 .subscriptionType(SubscriptionType.Failover)
                 .subscriptionName("my-subscription")
                 .subscribe();
 
-        @Cleanup
-        org.apache.pulsar.client.api.Consumer<byte[]> consumer2 = pulsarClient.newConsumer()
+        pulsarClient.newConsumer()
                 .topic(topicName)
                 .subscriptionType(SubscriptionType.Failover)
                 .subscriptionName("my-subscription")
@@ -663,8 +617,8 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         }
         assertEquals(connectedSinceSet.size(), 2);
         consumer1.seek(MessageId.earliest);
-        // Wait for consumers to reconnect
-        Awaitility.await().until(() -> consumer1.isConnected() && consumer2.isConnected());
+        // Wait for consumer to reconnect
+        Awaitility.await().until(consumer1::isConnected);
 
         consumers = topicRef.getSubscriptions().get("my-subscription").getConsumers();
         assertEquals(consumers.size(), 2);
@@ -685,13 +639,11 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         int msgNum = 160;
         admin.topics().createPartitionedTopic(topicName, partitionNum);
         creatProducerAndSendMsg(topicName, msgNum);
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<String> consumer = pulsarClient
                 .newConsumer(Schema.STRING).startMessageIdInclusive()
                 .topic(topicName).subscriptionName("my-sub").subscribe();
 
         TopicName partitionedTopic = TopicName.get(topicName);
-        @Cleanup
         Reader<String> reader = pulsarClient.newReader(Schema.STRING)
                 .startMessageId(MessageId.earliest)
                 .topic(partitionedTopic.getPartition(0).toString()).create();
@@ -728,7 +680,8 @@ public class SubscriptionSeekTest extends BrokerTestBase {
             if (message == null) {
                 break;
             }
-            received.add(message.getMessageId());
+            TopicMessageIdImpl topicMessageId = (TopicMessageIdImpl) message.getMessageId();
+            received.add(topicMessageId.getInnerMessageId());
         }
         int msgNumFromPartition1 = list.size() / 2;
         int msgNumFromPartition2 = 1;
@@ -740,11 +693,12 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         for (MessageId messageId : msgNotIn) {
             assertFalse(received.contains(messageId));
         }
+        reader.close();
+        consumer.close();
     }
 
     private List<MessageId> creatProducerAndSendMsg(String topic, int msgNum) throws Exception {
         List<MessageId> messageIds = new ArrayList<>();
-        @Cleanup
         Producer<String> producer = pulsarClient
                 .newProducer(Schema.STRING)
                 .enableBatching(false)
@@ -753,6 +707,7 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         for (int i = 0; i < msgNum; i++) {
             messageIds.add(producer.send("msg" + i));
         }
+        producer.close();
         return messageIds;
     }
 
@@ -773,7 +728,6 @@ public class SubscriptionSeekTest extends BrokerTestBase {
         MessageId msgIdInTopic2Partition0 = admin.topics().getLastMessageId(topic2.getPartition(0).toString());
         MessageId msgIdInTopic2Partition2 = admin.topics().getLastMessageId(topic2.getPartition(2).toString());
 
-        @Cleanup
         org.apache.pulsar.client.api.Consumer<String> consumer = pulsarClient
                 .newConsumer(Schema.STRING).startMessageIdInclusive()
                 .topics(Arrays.asList(topicName, topicName2)).subscriptionName("my-sub").subscribe();
@@ -807,72 +761,9 @@ public class SubscriptionSeekTest extends BrokerTestBase {
     }
 
     @Test
-    public void testSeekWillNotEncounteredFencedError() throws Exception {
-        String topicName = "persistent://prop/ns-abc/my-topic2";
-        admin.topics().createNonPartitionedTopic(topicName);
-        admin.topicPolicies().setRetention(topicName, new RetentionPolicies(3600, 0));
-        // Create a pulsar client with a subscription fenced counter.
-        ClientBuilderImpl clientBuilder = (ClientBuilderImpl) PulsarClient.builder().serviceUrl(lookupUrl.toString());
-        AtomicInteger receivedFencedErrorCounter = new AtomicInteger();
-        @Cleanup
-        PulsarClient client = InjectedClientCnxClientBuilder.create(clientBuilder, (conf, eventLoopGroup) ->
-                new ClientCnx(InstrumentProvider.NOOP, conf, eventLoopGroup) {
-                    protected void handleError(CommandError error) {
-                        if (error.getMessage() != null && error.getMessage().contains("Subscription is fenced")) {
-                            receivedFencedErrorCounter.incrementAndGet();
-                        }
-                        super.handleError(error);
-                    }
-                });
-
-        // publish some messages.
-        @Cleanup
-        org.apache.pulsar.client.api.Consumer<String> consumer = client.newConsumer(Schema.STRING)
-                .topic(topicName)
-                .subscriptionName("s1")
-                .subscribe();
-
-        @Cleanup
-        Producer<String> producer = client.newProducer(Schema.STRING)
-                .topic(topicName).create();
-        MessageIdImpl msgId1 = (MessageIdImpl) producer.send("0");
-        for (int i = 1; i < 11; i++) {
-            admin.topics().unload(topicName);
-            producer.send(i + "");
-        }
-
-        // Inject a delay for reset-cursor.
-        mockZooKeeper.delay(3000, (op, path) -> {
-            if (path.equals("/managed-ledgers/prop/ns-abc/persistent/my-topic2/s1")) {
-                return op.toString().equalsIgnoreCase("SET");
-            }
-            return false;
-        });
-
-        // Verify: consumer will not receive "subscription fenced" error after a seek.
-        for (int i = 1; i < 11; i++) {
-            Message<String> msg = consumer.receive(2, TimeUnit.SECONDS);
-            assertNotNull(msg);
-            consumer.acknowledge(msg);
-        }
-        consumer.seek(msgId1);
-        Awaitility.await().untilAsserted(() -> {
-            assertTrue(consumer.isConnected());
-        });
-        assertEquals(receivedFencedErrorCounter.get(), 0);
-
-        // cleanup.
-        producer.close();
-        consumer.close();
-        client.close();
-        admin.topics().delete(topicName);
-    }
-
-    @Test
     public void testExceptionBySeekFunction() throws Exception {
         final String topicName = "persistent://prop/use/ns-abc/test" + UUID.randomUUID();
         creatProducerAndSendMsg(topicName,10);
-        @Cleanup
         org.apache.pulsar.client.api.Consumer consumer = pulsarClient
                 .newConsumer()
                 .topic(topicName).subscriptionName("my-sub").subscribe();

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -105,10 +105,5 @@ public class RabbitMQSinkTester extends SinkTester<RabbitMQContainer> {
     private static class Record {
         private final String key;
         private final byte[] body;
-    }
-
-    @Override
-    public void close() throws Exception {
-
     }
 }

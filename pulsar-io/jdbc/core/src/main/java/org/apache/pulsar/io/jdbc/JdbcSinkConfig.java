@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.jdbc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,8 +27,6 @@ import java.io.Serializable;
 import java.util.Map;
 import lombok.Data;
 import lombok.experimental.Accessors;
-import org.apache.pulsar.io.common.IOConfigUtils;
-import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.core.annotations.FieldDoc;
 
 @Data
@@ -88,24 +87,15 @@ public class JdbcSinkConfig implements Serializable {
     @FieldDoc(
         required = false,
         defaultValue = "500",
-        help = "Enable batch mode by time. After timeoutMs milliseconds the operations queue will be flushed."
+        help = "The jdbc operation timeout in milliseconds"
     )
     private int timeoutMs = 500;
     @FieldDoc(
         required = false,
         defaultValue = "200",
-        help = "Enable batch mode by number of operations. This value is the max number of operations "
-                + "batched in the same transaction/batch."
+        help = "The batch size of updates made to the database"
     )
     private int batchSize = 200;
-
-    @FieldDoc(
-            required = false,
-            defaultValue = "false",
-            help = "Use the JDBC batch API. This option is suggested to improve write performance."
-    )
-    private boolean useJdbcBatch = false;
-
     @FieldDoc(
             required = false,
             defaultValue = "true",
@@ -147,14 +137,8 @@ public class JdbcSinkConfig implements Serializable {
         return mapper.readValue(new File(yamlFile), JdbcSinkConfig.class);
     }
 
-    public static JdbcSinkConfig load(Map<String, Object> map, SinkContext sinkContext) throws IOException {
-        return IOConfigUtils.loadWithSecrets(map, JdbcSinkConfig.class, sinkContext);
+    public static JdbcSinkConfig load(Map<String, Object> map) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.readValue(new ObjectMapper().writeValueAsString(map), JdbcSinkConfig.class);
     }
-
-    public void validate() {
-        if (timeoutMs <= 0 && batchSize <= 0) {
-            throw new IllegalArgumentException("timeoutMs or batchSize must be set to a positive value.");
-        }
-    }
-
 }

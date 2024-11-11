@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,16 +18,11 @@
  */
 package org.apache.pulsar.client.impl.schema;
 
-import static org.apache.pulsar.client.impl.schema.SchemaDefinitionBuilderImpl.ALWAYS_ALLOW_NULL;
-import static org.apache.pulsar.client.impl.schema.SchemaDefinitionBuilderImpl.JSR310_CONVERSION_ENABLED;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import static com.google.common.base.Preconditions.checkState;
 import java.util.Optional;
 import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.client.api.schema.SchemaDefinition;
 import org.apache.pulsar.common.schema.SchemaInfo;
-import org.apache.pulsar.common.schema.SchemaType;
 
 /**
  * Schema from a native Apache Avro schema.
@@ -38,25 +33,26 @@ import org.apache.pulsar.common.schema.SchemaType;
  * This class also makes it possible for users to bring in their own Avro serialization method.
  */
 public class NativeAvroBytesSchema<T> implements Schema<byte[]> {
-    private final org.apache.avro.Schema nativeSchema;
-    private final SchemaInfo schemaInfo;
+
+    private Schema<T> schema;
+    private org.apache.avro.Schema nativeSchema;
 
     public NativeAvroBytesSchema(org.apache.avro.Schema schema) {
-        Objects.requireNonNull(schema, "Avro schema cannot be null");
-        this.nativeSchema = schema;
-        Map<String, String> properties = new HashMap<>();
-        properties.put(ALWAYS_ALLOW_NULL, "true");
-        properties.put(JSR310_CONVERSION_ENABLED, "false");
-        this.schemaInfo = SchemaInfo.builder()
-            .name("")
-            .schema(schema.toString().getBytes(StandardCharsets.UTF_8))
-            .properties(properties)
-            .type(SchemaType.AVRO)
-            .build();
+        setSchema(schema);
     }
 
     public NativeAvroBytesSchema(Object schema) {
         this(validateSchema(schema));
+    }
+
+    public void setSchema(org.apache.avro.Schema schema) {
+        SchemaDefinition schemaDefinition = SchemaDefinition.builder().withJsonDef(schema.toString(false)).build();
+        this.nativeSchema = schema;
+        this.schema = AvroSchema.of(schemaDefinition);
+    }
+
+    public boolean schemaInitialized() {
+        return schema != null;
     }
 
     private static org.apache.avro.Schema validateSchema (Object schema) {
@@ -66,8 +62,14 @@ public class NativeAvroBytesSchema<T> implements Schema<byte[]> {
         return (org.apache.avro.Schema) schema;
     }
 
+    private void ensureSchemaInitialized() {
+        checkState(schemaInitialized(), "Schema is not initialized before used");
+    }
+
     @Override
     public byte[] encode(byte[] message) {
+        ensureSchemaInitialized();
+
         return message;
     }
 
@@ -79,7 +81,9 @@ public class NativeAvroBytesSchema<T> implements Schema<byte[]> {
 
     @Override
     public SchemaInfo getSchemaInfo() {
-        return schemaInfo;
+        ensureSchemaInitialized();
+
+        return schema.getSchemaInfo();
     }
 
     @Override

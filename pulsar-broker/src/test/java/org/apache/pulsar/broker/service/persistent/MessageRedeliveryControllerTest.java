@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,14 +24,15 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
+
+import com.google.common.collect.Sets;
 import java.lang.reflect.Field;
 import java.util.Set;
 import java.util.TreeSet;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
-import org.apache.pulsar.common.util.collections.ConcurrentLongLongPairHashMap;
 import org.apache.pulsar.utils.ConcurrentBitmapSortedLongPairSet;
+import org.apache.pulsar.common.util.collections.ConcurrentLongLongPairHashMap;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -198,18 +199,18 @@ public class MessageRedeliveryControllerTest {
         controller.add(2, 1, 104);
 
         if (allowOutOfOrderDelivery) {
-            assertFalse(controller.containsStickyKeyHashes(Set.of(100)));
-            assertFalse(controller.containsStickyKeyHashes(Set.of(101, 102, 103)));
-            assertFalse(controller.containsStickyKeyHashes(Set.of(104, 105)));
+            assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet(100)));
+            assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet(101, 102, 103)));
+            assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet(104, 105)));
         } else {
-            assertTrue(controller.containsStickyKeyHashes(Set.of(100)));
-            assertTrue(controller.containsStickyKeyHashes(Set.of(101, 102, 103)));
-            assertTrue(controller.containsStickyKeyHashes(Set.of(104, 105)));
+            assertTrue(controller.containsStickyKeyHashes(Sets.newHashSet(100)));
+            assertTrue(controller.containsStickyKeyHashes(Sets.newHashSet(101, 102, 103)));
+            assertTrue(controller.containsStickyKeyHashes(Sets.newHashSet(104, 105)));
         }
 
-        assertFalse(controller.containsStickyKeyHashes(Set.of()));
-        assertFalse(controller.containsStickyKeyHashes(Set.of(99)));
-        assertFalse(controller.containsStickyKeyHashes(Set.of(105, 106)));
+        assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet()));
+        assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet(99)));
+        assertFalse(controller.containsStickyKeyHashes(Sets.newHashSet(105, 106)));
     }
 
     @Test(dataProvider = "allowOutOfOrderDelivery", timeOut = 10000)
@@ -225,19 +226,19 @@ public class MessageRedeliveryControllerTest {
 
         if (allowOutOfOrderDelivery) {
             // The entries are sorted by ledger ID but not by entry ID
-            Position[] actual1 = controller.getMessagesToReplayNow(3, item -> true).toArray(new Position[3]);
-            Position[] expected1 = { PositionFactory.create(1, 1), PositionFactory.create(1, 2), PositionFactory.create(1, 3) };
+            PositionImpl[] actual1 = controller.getMessagesToReplayNow(3).toArray(new PositionImpl[3]);
+            PositionImpl[] expected1 = { PositionImpl.get(1, 1), PositionImpl.get(1, 2), PositionImpl.get(1, 3) };
             assertEqualsNoOrder(actual1, expected1);
         } else {
             // The entries are completely sorted
-            Set<Position> actual2 = controller.getMessagesToReplayNow(6, item -> true);
-            Set<Position> expected2 = new TreeSet<>();
-            expected2.add(PositionFactory.create(1, 1));
-            expected2.add(PositionFactory.create(1, 2));
-            expected2.add(PositionFactory.create(1, 3));
-            expected2.add(PositionFactory.create(2, 1));
-            expected2.add(PositionFactory.create(2, 2));
-            expected2.add(PositionFactory.create(3, 1));
+            Set<PositionImpl> actual2 = controller.getMessagesToReplayNow(6);
+            Set<PositionImpl> expected2 = new TreeSet<>();
+            expected2.add(PositionImpl.get(1, 1));
+            expected2.add(PositionImpl.get(1, 2));
+            expected2.add(PositionImpl.get(1, 3));
+            expected2.add(PositionImpl.get(2, 1));
+            expected2.add(PositionImpl.get(2, 2));
+            expected2.add(PositionImpl.get(3, 1));
             assertEquals(actual2, expected2);
         }
     }

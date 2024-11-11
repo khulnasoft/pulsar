@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,13 +27,11 @@ public interface Replicator {
 
     void startProducer();
 
-    Topic getLocalTopic();
+    ReplicatorStatsImpl getStats();
 
-    ReplicatorStatsImpl computeStats();
+    CompletableFuture<Void> disconnect();
 
-    CompletableFuture<Void> terminate();
-
-    CompletableFuture<Void> disconnect(boolean failIfHasBacklog, boolean closeTheStartingProducer);
+    CompletableFuture<Void> disconnect(boolean b);
 
     void updateRates();
 
@@ -51,10 +49,4 @@ public interface Replicator {
     }
 
     boolean isConnected();
-
-    long getNumberOfEntriesInBacklog();
-
-    boolean isTerminated();
-
-    ReplicatorStatsImpl getStats();
 }

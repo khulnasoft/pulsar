@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,8 +32,6 @@ import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.resources.PulsarResources;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.impl.auth.AuthenticationTls;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -49,10 +47,13 @@ import org.testng.annotations.Test;
 
 public class SuperUserAuthedAdminProxyHandlerTest extends MockedPulsarServiceBaseTest {
     private ProxyConfiguration proxyConfig = new ProxyConfiguration();
-    private Authentication proxyClientAuthentication;
     private WebServer webServer;
     private BrokerDiscoveryProvider discoveryProvider;
     private PulsarResources resource;
+
+    static String getTlsFile(String name) {
+        return String.format("./src/test/resources/authentication/tls-admin-proxy/%s.pem", name);
+    }
 
     @BeforeMethod
     @Override
@@ -63,9 +64,9 @@ public class SuperUserAuthedAdminProxyHandlerTest extends MockedPulsarServiceBas
 
         conf.setBrokerServicePortTls(Optional.of(0));
         conf.setWebServicePortTls(Optional.of(0));
-        conf.setTlsTrustCertsFilePath(CA_CERT_FILE_PATH);
-        conf.setTlsCertificateFilePath(BROKER_CERT_FILE_PATH);
-        conf.setTlsKeyFilePath(BROKER_KEY_FILE_PATH);
+        conf.setTlsTrustCertsFilePath(getTlsFile("ca.cert"));
+        conf.setTlsCertificateFilePath(getTlsFile("broker.cert"));
+        conf.setTlsKeyFilePath(getTlsFile("broker.key-pk8"));
         conf.setTlsAllowInsecureConnection(false);
         conf.setSuperUserRoles(ImmutableSet.of("admin", "superproxy"));
         conf.setProxyRoles(ImmutableSet.of("superproxy"));
@@ -83,33 +84,28 @@ public class SuperUserAuthedAdminProxyHandlerTest extends MockedPulsarServiceBas
         proxyConfig.setWebServicePort(Optional.of(0));
         proxyConfig.setWebServicePortTls(Optional.of(0));
         proxyConfig.setTlsEnabledWithBroker(true);
-        proxyConfig.setClusterName(configClusterName);
 
         // enable tls and auth&auth at proxy
-        proxyConfig.setTlsCertificateFilePath(BROKER_CERT_FILE_PATH);
-        proxyConfig.setTlsKeyFilePath(BROKER_KEY_FILE_PATH);
-        proxyConfig.setTlsTrustCertsFilePath(CA_CERT_FILE_PATH);
+        proxyConfig.setTlsCertificateFilePath(getTlsFile("broker.cert"));
+        proxyConfig.setTlsKeyFilePath(getTlsFile("broker.key-pk8"));
+        proxyConfig.setTlsTrustCertsFilePath(getTlsFile("ca.cert"));
 
         proxyConfig.setBrokerClientAuthenticationPlugin(AuthenticationTls.class.getName());
         proxyConfig.setBrokerClientAuthenticationParameters(
                 String.format("tlsCertFile:%s,tlsKeyFile:%s",
-                              getTlsFileForClient("superproxy.cert"), getTlsFileForClient("superproxy.key-pk8")));
-        proxyConfig.setBrokerClientTrustCertsFilePath(CA_CERT_FILE_PATH);
+                              getTlsFile("superproxy.cert"), getTlsFile("superproxy.key-pk8")));
+        proxyConfig.setBrokerClientTrustCertsFilePath(getTlsFile("ca.cert"));
         proxyConfig.setAuthenticationProviders(ImmutableSet.of(AuthenticationProviderTls.class.getName()));
 
-        proxyClientAuthentication = AuthenticationFactory.create(proxyConfig.getBrokerClientAuthenticationPlugin(),
-                proxyConfig.getBrokerClientAuthenticationParameters());
-        proxyClientAuthentication.start();
-
-        resource = new PulsarResources(registerCloseable(new ZKMetadataStore(mockZooKeeper)),
-                registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal)));
+        resource = new PulsarResources(new ZKMetadataStore(mockZooKeeper),
+                new ZKMetadataStore(mockZooKeeperGlobal));
         webServer = new WebServer(proxyConfig, new AuthenticationService(
                                           PulsarConfigurationLoader.convertFrom(proxyConfig)));
-        discoveryProvider = spy(registerCloseable(new BrokerDiscoveryProvider(proxyConfig, resource)));
+        discoveryProvider = spy(new BrokerDiscoveryProvider(proxyConfig, resource));
         LoadManagerReport report = new LoadReport(brokerUrl.toString(), brokerUrlTls.toString(), null, null);
         doReturn(report).when(discoveryProvider).nextBroker();
 
-        ServletHolder servletHolder = new ServletHolder(new AdminProxyHandler(proxyConfig, discoveryProvider, proxyClientAuthentication));
+        ServletHolder servletHolder = new ServletHolder(new AdminProxyHandler(proxyConfig, discoveryProvider));
         webServer.addServlet("/admin", servletHolder);
         webServer.addServlet("/lookup", servletHolder);
 
@@ -121,20 +117,17 @@ public class SuperUserAuthedAdminProxyHandlerTest extends MockedPulsarServiceBas
     @Override
     protected void cleanup() throws Exception {
         webServer.stop();
-        if (proxyClientAuthentication != null) {
-            proxyClientAuthentication.close();
-        }
         super.internalCleanup();
     }
 
     PulsarAdmin getAdminClient(String user) throws Exception {
         return PulsarAdmin.builder()
             .serviceHttpUrl("https://localhost:" + webServer.getListenPortHTTPS().get())
-            .tlsTrustCertsFilePath(CA_CERT_FILE_PATH)
+            .tlsTrustCertsFilePath(getTlsFile("ca.cert"))
             .allowTlsInsecureConnection(false)
             .authentication(AuthenticationTls.class.getName(),
-                    ImmutableMap.of("tlsCertFile", getTlsFileForClient(user + ".cert"),
-                                    "tlsKeyFile", getTlsFileForClient(user + ".key-pk8")))
+                    ImmutableMap.of("tlsCertFile", getTlsFile(user + ".cert"),
+                                    "tlsKeyFile", getTlsFile(user + ".key-pk8")))
             .build();
     }
 

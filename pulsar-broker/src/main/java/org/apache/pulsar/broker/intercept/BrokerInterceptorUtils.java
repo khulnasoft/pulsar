@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -61,7 +61,7 @@ public class BrokerInterceptorUtils {
     private BrokerInterceptorDefinition getBrokerInterceptorDefinition(NarClassLoader ncl) throws IOException {
         String configStr = ncl.getServiceDefinition(BROKER_INTERCEPTOR_DEFINITION_FILE);
 
-        return ObjectMapperFactory.getYamlMapper().reader().readValue(
+        return ObjectMapperFactory.getThreadLocalYaml().readValue(
                 configStr, BrokerInterceptorDefinition.class
         );
     }
@@ -75,7 +75,7 @@ public class BrokerInterceptorUtils {
      */
     public BrokerInterceptorDefinitions searchForInterceptors(String interceptorsDirectory,
                                                               String narExtractionDirectory) throws IOException {
-        Path path = Paths.get(interceptorsDirectory).toAbsolutePath().normalize();
+        Path path = Paths.get(interceptorsDirectory).toAbsolutePath();
         log.info("Searching for broker interceptors in {}", path);
 
         BrokerInterceptorDefinitions interceptors = new BrokerInterceptorDefinitions();
@@ -119,7 +119,7 @@ public class BrokerInterceptorUtils {
      */
     BrokerInterceptorWithClassLoader load(BrokerInterceptorMetadata metadata, String narExtractionDirectory)
             throws IOException {
-        final File narFile = metadata.getArchivePath().toAbsolutePath().normalize().toFile();
+        final File narFile = metadata.getArchivePath().toAbsolutePath().toFile();
         NarClassLoader ncl = NarClassLoaderBuilder.builder()
                 .narFile(narFile)
                 .parentClassLoader(BrokerInterceptorUtils.class.getClassLoader())

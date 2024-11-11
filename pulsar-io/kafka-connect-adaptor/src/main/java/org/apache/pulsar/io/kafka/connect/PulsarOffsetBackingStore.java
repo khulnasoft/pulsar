@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -255,7 +255,7 @@ public class PulsarOffsetBackingStore implements OffsetBackingStore {
 
     private Map<String, Object> loadConfigFromJsonString(String config) throws JsonProcessingException {
         if (!isBlank(config)) {
-            return mapper.readValue(config, new TypeReference<>() {});
+            return mapper.readValue(config, new TypeReference<Map<String, Object>>() {});
         } else {
             return Collections.emptyMap();
         }

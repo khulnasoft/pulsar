@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,20 +22,19 @@ import com.google.common.collect.Range;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionBound;
-import org.apache.bookkeeper.mledger.PositionFactory;
+import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ReadOnlyCursor;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.PositionBound;
 import org.apache.bookkeeper.mledger.proto.MLDataFormats;
 
 @Slf4j
 public class ReadOnlyCursorImpl extends ManagedCursorImpl implements ReadOnlyCursor {
 
-    public ReadOnlyCursorImpl(BookKeeper bookkeeper, ManagedLedgerImpl ledger,
-                              Position startPosition, String cursorName) {
-        super(bookkeeper, ledger, cursorName);
+    public ReadOnlyCursorImpl(BookKeeper bookkeeper, ManagedLedgerConfig config, ManagedLedgerImpl ledger,
+                              PositionImpl startPosition, String cursorName) {
+        super(bookkeeper, config, ledger, cursorName);
 
-        if (startPosition.equals(PositionFactory.EARLIEST)) {
+        if (startPosition.equals(PositionImpl.EARLIEST)) {
             readPosition = ledger.getFirstPosition().getNext();
         } else {
             readPosition = startPosition;
@@ -68,12 +67,7 @@ public class ReadOnlyCursorImpl extends ManagedCursorImpl implements ReadOnlyCur
     }
 
     @Override
-    public long getNumberOfEntries(Range<Position> range) {
+    public long getNumberOfEntries(Range<PositionImpl> range) {
         return this.ledger.getNumberOfEntries(range);
-    }
-
-    @Override
-    public boolean isMessageDeleted(Position position) {
-        return false;
     }
 }

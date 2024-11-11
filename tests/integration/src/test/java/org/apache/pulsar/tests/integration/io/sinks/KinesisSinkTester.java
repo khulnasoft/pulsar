@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.tests.integration.io.sinks;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.google.common.collect.ImmutableMap;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -51,12 +50,10 @@ import software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest;
 import software.amazon.awssdk.services.kinesis.model.ListShardsRequest;
 import software.amazon.awssdk.services.kinesis.model.Record;
 import software.amazon.awssdk.services.kinesis.model.ShardIteratorType;
-import software.amazon.kinesis.retrieval.AggregatorUtil;
-import software.amazon.kinesis.retrieval.KinesisClientRecord;
 
-import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -68,7 +65,7 @@ public class KinesisSinkTester extends SinkTester<LocalStackContainer> {
     private static final String NAME = "kinesis";
     private static final int LOCALSTACK_SERVICE_PORT = 4566;
     public static final String STREAM_NAME = "my-stream-1";
-    public static final ObjectReader READER = ObjectMapperFactory.getMapper().reader();
+    public static final ObjectReader READER = ObjectMapperFactory.getThreadLocal().reader();
     private final boolean withSchema;
     private KinesisAsyncClient client;
 
@@ -119,11 +116,11 @@ public class KinesisSinkTester extends SinkTester<LocalStackContainer> {
     }
 
     @Override
-    public void stopServiceContainer() {
+    public void stopServiceContainer(PulsarCluster cluster) {
         if (client != null) {
             client.close();
         }
-        super.stopServiceContainer();
+        super.stopServiceContainer(cluster);
     }
 
     @Override
@@ -208,56 +205,38 @@ public class KinesisSinkTester extends SinkTester<LocalStackContainer> {
 
         Map<String, String> actualKvs = new LinkedHashMap<>();
 
-        addMoreRecords(actualKvs, iterator);
+        // millisBehindLatest equals zero when record processing is caught up,
+        // and there are no new records to process at this moment.
+        // See https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html#Streams-GetRecords-response-MillisBehindLatest
+        Awaitility.await().until(() -> addMoreRecordsAndGetMillisBehindLatest(actualKvs, iterator) == 0);
 
         assertEquals(actualKvs, kvs);
     }
 
     @SneakyThrows
-    private void parseRecordData(Map<String, String> actualKvs, String data, String partitionKey) {
-        if (withSchema) {
-            JsonNode payload = READER.readTree(data).at("/payload");
-            String i = payload.at("/value/field1").asText();
-            assertEquals(payload.at("/value/field2").asText(), "v2_" + i);
-            assertEquals(payload.at("/key/field1").asText(), "f1_" + i);
-            assertEquals(payload.at("/key/field2").asText(), "f2_" + i);
-            actualKvs.put(i, i);
-        } else {
-            actualKvs.put(partitionKey, data);
-        }
-    }
-
-    @SneakyThrows
-    private void addMoreRecords(Map<String, String> actualKvs, String iterator) {
-        GetRecordsResponse response;
-        List<KinesisClientRecord> aggRecords = new ArrayList<>();
-        do {
-            GetRecordsRequest request = GetRecordsRequest.builder().shardIterator(iterator).build();
-            response = client.getRecords(request).get();
-            if (response.hasRecords()) {
-                for (Record record : response.records()) {
-                    // KinesisSink uses KPL with aggregation enabled (by default).
-                    // However, due to the async state initialization of the KPL internal ShardMap,
-                    // the first sinked records might not be aggregated in Kinesis.
-                    // ref: https://github.com/awslabs/amazon-kinesis-producer/issues/131
-                    try {
-                        String data = record.data().asString(StandardCharsets.UTF_8);
-                        parseRecordData(actualKvs, data, record.partitionKey());
-                    } catch (UncheckedIOException e) {
-                        aggRecords.add(KinesisClientRecord.fromRecord(record));
-                    }
+    private Long addMoreRecordsAndGetMillisBehindLatest(Map<String, String> kvs, String iterator) {
+        final GetRecordsResponse response = client.getRecords(
+                GetRecordsRequest
+                        .builder()
+                        .shardIterator(iterator)
+                        .build())
+                .get();
+        if(response.hasRecords()) {
+            for (Record record : response.records()) {
+                String data = record.data().asString(StandardCharsets.UTF_8);
+                if (withSchema) {
+                    JsonNode payload = READER.readTree(data).at("/payload");
+                    String i = payload.at("/value/field1").asText();
+                    assertEquals(payload.at("/value/field2").asText(), "v2_" + i);
+                    assertEquals(payload.at("/key/field1").asText(), "f1_" + i);
+                    assertEquals(payload.at("/key/field2").asText(), "f2_" + i);
+                    kvs.put(i, i);
+                } else {
+                    kvs.put(record.partitionKey(), data);
                 }
             }
-            iterator = response.nextShardIterator();
-            // millisBehindLatest equals zero when record processing is caught up,
-            // and there are no new records to process at this moment.
-            // See https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html#Streams-GetRecords-response-MillisBehindLatest
-        } while (response.millisBehindLatest() != 0);
-
-        for (KinesisClientRecord record : new AggregatorUtil().deaggregate(aggRecords)) {
-            String data = new String(record.data().array(), StandardCharsets.UTF_8);
-            parseRecordData(actualKvs, data, record.partitionKey());
         }
+        return response.millisBehindLatest();
     }
 
     @Data
@@ -268,13 +247,5 @@ public class KinesisSinkTester extends SinkTester<LocalStackContainer> {
         private List<Integer> list1;
         private Set<Long> set1;
         private Map<String, String> map1;
-    }
-
-    @Override
-    public void close() throws Exception {
-        if (client != null) {
-            client.close();
-            client = null;
-        }
     }
 }

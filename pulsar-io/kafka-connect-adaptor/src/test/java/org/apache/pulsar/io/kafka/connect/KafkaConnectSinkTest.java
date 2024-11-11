@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,13 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.kafka.connect;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
-import lombok.Cleanup;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.generic.GenericData;
@@ -64,12 +64,12 @@ import org.apache.pulsar.client.impl.schema.JSONSchema;
 import org.apache.pulsar.client.impl.schema.SchemaInfoImpl;
 import org.apache.pulsar.client.impl.schema.generic.GenericAvroRecord;
 import org.apache.pulsar.client.impl.schema.generic.GenericAvroSchema;
+import org.apache.pulsar.client.util.MessageIdUtils;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.schema.SchemaType;
 import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.functions.source.PulsarRecord;
-import org.apache.pulsar.functions.utils.FunctionCommon;
 import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.kafka.connect.schema.KafkaConnectData;
 import org.apache.pulsar.io.kafka.connect.schema.PulsarSchemaToKafkaSchema;
@@ -303,8 +303,8 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
         assertEquals(status.get(), 1);
 
         final TopicPartition tp = new TopicPartition("fake-topic", 0);
-        assertNotEquals(FunctionCommon.getSequenceId(msgId), 0);
-        assertEquals(sink.currentOffset(tp.topic(), tp.partition()), FunctionCommon.getSequenceId(msgId));
+        assertNotEquals(MessageIdUtils.getOffset(msgId), 0);
+        assertEquals(sink.currentOffset(tp.topic(), tp.partition()), MessageIdUtils.getOffset(msgId));
 
         sink.taskContext.offset(tp, 0);
         verify(context, times(1)).seek(Mockito.anyString(), Mockito.anyInt(), any());
@@ -347,12 +347,12 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
         assertEquals(status.get(), 1);
 
         final TopicPartition tp = new TopicPartition(sink.sanitizeNameIfNeeded(pulsarTopicName, true), 0);
-        assertNotEquals(FunctionCommon.getSequenceId(msgId), 0);
-        assertEquals(sink.currentOffset(tp.topic(), tp.partition()), FunctionCommon.getSequenceId(msgId));
+        assertNotEquals(MessageIdUtils.getOffset(msgId), 0);
+        assertEquals(sink.currentOffset(tp.topic(), tp.partition()), MessageIdUtils.getOffset(msgId));
 
         sink.taskContext.offset(tp, 0);
         verify(context, times(1)).seek(pulsarTopicName,
-                tp.partition(), FunctionCommon.getMessageId(0));
+                tp.partition(), MessageIdUtils.getMessageId(0));
         assertEquals(sink.currentOffset(tp.topic(), tp.partition()), 0);
 
         sink.taskContext.pause(tp);
@@ -790,11 +790,10 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
 
     @Test
     public void kafkaLogicalTypesTimestampTest() {
-        Schema schema = new TestSchema(SchemaInfoImpl.builder()
-                .name(Timestamp.LOGICAL_NAME)
-                .type(SchemaType.INT64)
-                .schema(new byte[0])
-                .build());
+        Schema schema = new TestSchema(new SchemaInfoImpl()
+                .setName(Timestamp.LOGICAL_NAME)
+                .setType(SchemaType.INT64)
+                .setSchema(new byte[0]));
 
         org.apache.kafka.connect.data.Schema kafkaSchema = PulsarSchemaToKafkaSchema
                 .getKafkaConnectSchema(schema, true);
@@ -810,11 +809,10 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
 
     @Test
     public void kafkaLogicalTypesTimeTest() {
-        Schema schema = new TestSchema(SchemaInfoImpl.builder()
-                .name(Time.LOGICAL_NAME)
-                .type(SchemaType.INT32)
-                .schema(new byte[0])
-                .build());
+        Schema schema = new TestSchema(new SchemaInfoImpl()
+                .setName(Time.LOGICAL_NAME)
+                .setType(SchemaType.INT32)
+                .setSchema(new byte[0]));
 
         org.apache.kafka.connect.data.Schema kafkaSchema = PulsarSchemaToKafkaSchema
                 .getKafkaConnectSchema(schema, true);
@@ -830,11 +828,10 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
 
     @Test
     public void kafkaLogicalTypesDateTest() {
-        Schema schema = new TestSchema(SchemaInfoImpl.builder()
-                .name(Date.LOGICAL_NAME)
-                .type(SchemaType.INT32)
-                .schema(new byte[0])
-                .build());
+        Schema schema = new TestSchema(new SchemaInfoImpl()
+                .setName(Date.LOGICAL_NAME)
+                .setType(SchemaType.INT32)
+                .setSchema(new byte[0]));
 
         org.apache.kafka.connect.data.Schema kafkaSchema = PulsarSchemaToKafkaSchema
                 .getKafkaConnectSchema(schema, true);
@@ -852,12 +849,11 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
     public void kafkaLogicalTypesDecimalTest() {
         Map<String, String> props = new HashMap<>();
         props.put("scale", "10");
-        Schema schema = new TestSchema(SchemaInfoImpl.builder()
-                .name(Decimal.LOGICAL_NAME)
-                .type(SchemaType.BYTES)
-                .properties(props)
-                .schema(new byte[0])
-                .build());
+        Schema schema = new TestSchema(new SchemaInfoImpl()
+                .setName(Decimal.LOGICAL_NAME)
+                .setType(SchemaType.BYTES)
+                .setProperties(props)
+                .setSchema(new byte[0]));
 
         org.apache.kafka.connect.data.Schema kafkaSchema = PulsarSchemaToKafkaSchema
                 .getKafkaConnectSchema(schema, true);
@@ -1215,11 +1211,9 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
 
         // close the producer, open again
         sink = new KafkaConnectSink();
-        @Cleanup
-        PulsarClient pulsarClient1 = PulsarClient.builder()
+        when(context.getPulsarClient()).thenReturn(PulsarClient.builder()
                 .serviceUrl(brokerUrl.toString())
-                .build();
-        when(context.getPulsarClient()).thenReturn(pulsarClient1);
+                .build());
         sink.open(props, context);
 
         // offset is 1 after reopening the producer
@@ -1347,11 +1341,9 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
 
         // close the producer, open again
         sink = new KafkaConnectSink();
-        @Cleanup
-        PulsarClient pulsarClient1 = PulsarClient.builder()
+        when(context.getPulsarClient()).thenReturn(PulsarClient.builder()
                 .serviceUrl(brokerUrl.toString())
-                .build();
-        when(context.getPulsarClient()).thenReturn(pulsarClient1);
+                .build());
         sink.open(props, context);
 
         // offset is 1 after reopening the producer
@@ -1478,14 +1470,15 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
     }
 
     private static PulsarSchemaToKafkaSchemaTest.ComplexStruct getPojoComplexStruct() {
+        Map<String, PulsarSchemaToKafkaSchemaTest.StructWithAnnotations> map = new HashMap<>();
+        map.put("key1", getPojoStructWithAnnotations());
+        map.put("key2", getPojoStructWithAnnotations());
         return new PulsarSchemaToKafkaSchemaTest.ComplexStruct()
                 .setStringList(Lists.newArrayList("str11", "str22"))
                 .setStructArr(new PulsarSchemaToKafkaSchemaTest.StructWithAnnotations[]{getPojoStructWithAnnotations()})
                 .setStructList(Lists.newArrayList(getPojoStructWithAnnotations()))
                 .setStruct(getPojoStructWithAnnotations())
-                .setStructMap(Map.of("key1", getPojoStructWithAnnotations(),
-                        "key2", getPojoStructWithAnnotations()))
-
+                .setStructMap(map)
                 .setByteField((byte) 1)
                 .setShortField((short) 2)
                 .setIntField(3)
@@ -1572,7 +1565,7 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
         assertNull(ref);
 
         ref = KafkaConnectSink.getMessageSequenceRefForBatchMessage(
-                        new TopicMessageIdImpl("topic-0", new MessageIdImpl(ledgerId, entryId, 0))
+                        new TopicMessageIdImpl("topic-0", "topic", new MessageIdImpl(ledgerId, entryId, 0))
         );
         assertNull(ref);
 
@@ -1584,7 +1577,7 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
         assertEquals(ref.getBatchIdx(), batchIdx);
 
         ref = KafkaConnectSink.getMessageSequenceRefForBatchMessage(
-                new TopicMessageIdImpl("topic-0", new BatchMessageIdImpl(ledgerId, entryId, 0, batchIdx))
+                new TopicMessageIdImpl("topic-0", "topic", new BatchMessageIdImpl(ledgerId, entryId, 0, batchIdx))
         );
 
         assertEquals(ref.getLedgerId(), ledgerId);
@@ -1675,7 +1668,7 @@ public class KafkaConnectSinkTest extends ProducerConsumerBase {
         SinkRecord sinkRecord = sink.toSinkRecord(record);
 
         Assert.assertEquals(sinkRecord.topic(), expectedKafkaTopic);
-        Assert.assertEquals(sinkRecord.kafkaPartition(), expectedPartition);
+        Assert.assertEquals((int)sinkRecord.kafkaPartition(), expectedPartition);
 
         sink.close();
     }

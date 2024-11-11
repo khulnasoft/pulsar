@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,10 @@
  */
 package org.apache.pulsar.client.impl;
 
-import static org.testng.Assert.fail;
 import static org.assertj.core.api.Assertions.assertThat;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -103,31 +100,6 @@ public class ClientBuilderImplTest {
         PulsarClient.builder().dnsLookupBind("localhost", 65536).build();
     }
 
-    @Test(expectedExceptions = IllegalArgumentException.class)
-    public void testClientBuilderWithIllegalDNSServerHostname() throws PulsarClientException {
-        PulsarClient.builder().dnsServerAddresses(
-                Arrays.asList(new InetSocketAddress("1.2.3.4", 53), new InetSocketAddress("localhost",53)));
-    }
-
-    @Test()
-    public void testClientBuilderWithDNSServerIP() throws PulsarClientException {
-        PulsarClient.builder().dnsServerAddresses(
-                Arrays.asList(new InetSocketAddress("1.2.3.4", 53)));
-    }
-
-    @Test
-    public void testConnectionMaxIdleSeconds() throws Exception {
-        // test config disabled.
-        PulsarClient.builder().connectionMaxIdleSeconds(-1);
-        // test config correct
-        PulsarClient.builder().connectionMaxIdleSeconds(60);
-        // test config not correct.
-        try {
-            PulsarClient.builder().connectionMaxIdleSeconds(14);
-            fail();
-        } catch (IllegalArgumentException e){
-        }
-    }
 
     // Tests for loadConf and authentication
 

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -63,11 +63,11 @@ public class ProxyPingTest extends ProducerConsumerBase {
         WebSocketProxyConfiguration config = new WebSocketProxyConfiguration();
         config.setWebServicePort(Optional.of(0));
         config.setClusterName("test");
-        config.setConfigurationMetadataStoreUrl(GLOBAL_DUMMY_VALUE);
+        config.setConfigurationStoreServers(GLOBAL_DUMMY_VALUE);
         config.setWebSocketSessionIdleTimeoutMillis(3 * 1000);
         config.setWebSocketPingDurationSeconds(2);
         service = spyWithClassAndConstructorArgs(WebSocketService.class, config);
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal))).when(service)
+        doReturn(new ZKMetadataStore(mockZooKeeperGlobal)).when(service)
                 .createConfigMetadataStore(anyString(), anyInt(), anyBoolean());
         proxyServer = new ProxyServer(config);
         WebSocketServiceStarter.start(proxyServer, service);

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,12 +19,13 @@
 package org.apache.pulsar.functions.instance.stats;
 
 import io.prometheus.client.Collector;
+
 import java.io.IOException;
 import java.io.Writer;
 import java.util.Enumeration;
 
 /**
- * Provide Prometheus text format for a collection of metrics, without the HELP string.
+ * Provide Prometheus text format for a collection of metrics, without the HELP string
  */
 public class PrometheusTextFormat {
     /**

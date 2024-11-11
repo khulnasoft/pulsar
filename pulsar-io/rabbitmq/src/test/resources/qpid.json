@@ -1,57 +1,25 @@
 {
-  "name": "${broker.name}",
+  "name": "EmbeddedBroker",
   "modelVersion": "2.0",
+  "storeVersion": 1,
   "authenticationproviders": [
     {
-      "name": "plain",
-      "type": "Plain",
-      "secureOnlyMechanisms": [],
-      "users": [
-        {
-          "name": "guest",
-          "password": "guest",
-          "type": "managed"
-        }
-      ]
-    }
-  ],
-  "brokerloggers": [
+      "name": "noPassword",
+      "type": "Anonymous",
+      "secureOnlyMechanisms": []
+    },
     {
-      "name": "console",
-      "type": "Console",
-      "brokerloginclusionrules": [
-        {
-          "name": "Root",
-          "type": "NameAndLevel",
-          "level": "WARN",
-          "loggerName": "ROOT"
-        },
-        {
-          "name": "Qpid",
-          "type": "NameAndLevel",
-          "level": "INFO",
-          "loggerName": "org.apache.qpid.*"
-        },
-        {
-          "name": "Operational",
-          "type": "NameAndLevel",
-          "level": "INFO",
-          "loggerName": "qpid.message.*"
-        },
-        {
-          "name": "Statistics",
-          "type": "NameAndLevel",
-          "level": "INFO",
-          "loggerName": "qpid.statistics.*"
-        }
-      ]
+      "name": "passwordFile",
+      "type": "PlainPasswordFile",
+      "path": "${qpid.home_dir}${file.separator}etc${file.separator}passwd",
+      "secureOnlyMechanisms": []
     }
   ],
   "ports": [
     {
       "name": "AMQP",
       "port": "${qpid.amqp_port}",
-      "authenticationProvider": "plain",
+      "authenticationProvider": "passwordFile",
       "protocols": [
         "AMQP_0_9_1"
       ]
@@ -60,9 +28,10 @@
   "virtualhostnodes": [
     {
       "name": "default",
-      "type": "Memory",
+      "type": "JSON",
       "defaultVirtualHostNode": "true",
-      "virtualHostInitialConfiguration": "{\"type\": \"Memory\"}"
+      "virtualHostInitialConfiguration": "${qpid.initial_config_virtualhost_config}",
+      "storeType": "DERBY"
     }
   ]
 }

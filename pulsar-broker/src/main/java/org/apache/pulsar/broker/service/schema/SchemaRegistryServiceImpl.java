@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -43,12 +43,9 @@ import javax.validation.constraints.NotNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.schema.exceptions.IncompatibleSchemaException;
-import org.apache.pulsar.broker.service.schema.exceptions.NotExistSchemaException;
 import org.apache.pulsar.broker.service.schema.exceptions.SchemaException;
 import org.apache.pulsar.broker.service.schema.proto.SchemaRegistryFormat;
 import org.apache.pulsar.common.policies.data.SchemaCompatibilityStrategy;
@@ -67,42 +64,36 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
     private final Map<SchemaType, SchemaCompatibilityCheck> compatibilityChecks;
     private final SchemaStorage schemaStorage;
     private final Clock clock;
-    private final SchemaRegistryStats stats;
 
     @VisibleForTesting
     SchemaRegistryServiceImpl(SchemaStorage schemaStorage,
-                              Map<SchemaType, SchemaCompatibilityCheck> compatibilityChecks,
-                              Clock clock,
-                              PulsarService pulsarService) {
+                              Map<SchemaType, SchemaCompatibilityCheck> compatibilityChecks, Clock clock) {
         this.schemaStorage = schemaStorage;
         this.compatibilityChecks = compatibilityChecks;
         this.clock = clock;
-        this.stats = new SchemaRegistryStats(pulsarService);
     }
 
-    SchemaRegistryServiceImpl(SchemaStorage schemaStorage,
-                              Map<SchemaType, SchemaCompatibilityCheck> compatibilityChecks,
-                              PulsarService pulsarService) {
-        this(schemaStorage, compatibilityChecks, Clock.systemUTC(), pulsarService);
+    @VisibleForTesting
+    SchemaRegistryServiceImpl(SchemaStorage schemaStorage, Map<SchemaType, SchemaCompatibilityCheck>
+            compatibilityChecks) {
+        this(schemaStorage, compatibilityChecks, Clock.systemUTC());
     }
 
     @Override
     @NotNull
     public CompletableFuture<SchemaAndMetadata> getSchema(String schemaId) {
         return getSchema(schemaId, SchemaVersion.Latest).thenApply((schema) -> {
-            if (schema != null && schema.schema.isDeleted()) {
-                return null;
-            } else {
-                return schema;
-            }
-        });
+                if (schema != null && schema.schema.isDeleted()) {
+                    return null;
+                } else {
+                    return schema;
+                }
+            });
     }
 
     @Override
     @NotNull
     public CompletableFuture<SchemaAndMetadata> getSchema(String schemaId, SchemaVersion version) {
-        long start = this.clock.millis();
-
         CompletableFuture<StoredSchema> completableFuture;
         if (version == SchemaVersion.Latest) {
             completableFuture = schemaStorage.get(schemaId, version);
@@ -114,10 +105,6 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                         ((LongSchemaVersion) schemaAndMetadata.version).getVersion() == longVersion)
                         .collect(Collectors.toList())
                 ).thenCompose(metadataList -> {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Meta data list size {}", schemaId,
-                                    CollectionUtils.isEmpty(metadataList) ? 0 : metadataList.size());
-                        }
                         if (CollectionUtils.isNotEmpty(metadataList)) {
                             return schemaStorage.get(schemaId, version);
                         }
@@ -126,8 +113,7 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                 );
         }
 
-        return completableFuture
-                .thenCompose(stored -> {
+        return completableFuture.thenCompose(stored -> {
                     if (isNull(stored)) {
                         return completedFuture(null);
                     } else {
@@ -135,37 +121,14 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                                 .thenApply(Functions::schemaInfoToSchema)
                                 .thenApply(schema -> new SchemaAndMetadata(schemaId, schema, stored.version));
                     }
-                })
-                .whenComplete((v, t) -> {
-                    var latencyMs = this.clock.millis() - start;
-                    if (t != null) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Get schema failed", schemaId);
-                        }
-                        this.stats.recordGetFailed(schemaId, latencyMs);
-                    } else {
-                        if (log.isDebugEnabled()) {
-                            log.debug(null == v ? "[{}] Schema not found" : "[{}] Schema is present", schemaId);
-                        }
-                        this.stats.recordGetLatency(schemaId, latencyMs);
-                    }
-                });
+                }
+        );
     }
 
     @Override
     public CompletableFuture<List<CompletableFuture<SchemaAndMetadata>>> getAllSchemas(String schemaId) {
-        long start = this.clock.millis();
-
         return schemaStorage.getAll(schemaId)
-                .thenCompose(schemas -> convertToSchemaAndMetadata(schemaId, schemas))
-                .whenComplete((v, t) -> {
-                    var latencyMs = this.clock.millis() - start;
-                    if (t != null) {
-                        this.stats.recordListFailed(schemaId, latencyMs);
-                    } else {
-                        this.stats.recordListLatency(schemaId, latencyMs);
-                    }
-                });
+                .thenCompose(schemas -> convertToSchemaAndMetadata(schemaId, schemas));
     }
 
     private CompletableFuture<List<CompletableFuture<SchemaAndMetadata>>> convertToSchemaAndMetadata(String schemaId,
@@ -189,7 +152,6 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
     @NotNull
     public CompletableFuture<SchemaVersion> putSchemaIfAbsent(String schemaId, SchemaData schema,
                                                               SchemaCompatibilityStrategy strategy) {
-        MutableLong start = new MutableLong(0);
         CompletableFuture<SchemaVersion> promise = new CompletableFuture<>();
         schemaStorage.put(schemaId,
             schemasFuture -> schemasFuture
@@ -207,8 +169,8 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                         CompletableFuture<Void> checkCompatibilityFuture = new CompletableFuture<>();
                         if (schemaAndMetadataList.size() != 0) {
                             if (isTransitiveStrategy(strategy)) {
-                                checkCompatibilityFuture =
-                                        checkCompatibilityWithAll(schemaId, schema, strategy, schemaAndMetadataList);
+                                checkCompatibilityFuture = checkCompatibilityWithAll(schema, strategy,
+                                        schemaAndMetadataList);
                             } else {
                                 checkCompatibilityFuture = checkCompatibilityWithLatest(schemaId, schema, strategy);
                             }
@@ -226,17 +188,11 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                                     .setTimestamp(clock.millis())
                                     .addAllProps(toPairs(schema.getProps()))
                                     .build();
-
-                            start.setValue(this.clock.millis());
                             return CompletableFuture.completedFuture(Pair.of(info.toByteArray(), context));
                         });
                 }))).whenComplete((v, ex) -> {
-                    var latencyMs = this.clock.millis() - start.getValue();
                     if (ex != null) {
                         log.error("[{}] Put schema failed", schemaId, ex);
-                        if (start.getValue() != 0) {
-                            this.stats.recordPutFailed(schemaId, latencyMs);
-                        }
                         promise.completeExceptionally(ex);
                     } else {
                         if (log.isDebugEnabled()) {
@@ -245,9 +201,6 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                         // The schema storage will return null schema version if no schema is persisted to the storage
                         if (v != null) {
                             promise.complete(v);
-                            if (start.getValue() != 0) {
-                                this.stats.recordPutLatency(schemaId, this.clock.millis() - start.getValue());
-                            }
                         }
                     }
             });
@@ -255,27 +208,10 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
     }
 
     @Override
-    public CompletableFuture<SchemaVersion> deleteSchema(String schemaId, String user, boolean force) {
-        long start = this.clock.millis();
-
-        if (force) {
-            return deleteSchemaStorage(schemaId, true);
-        }
+    @NotNull
+    public CompletableFuture<SchemaVersion> deleteSchema(String schemaId, String user) {
         byte[] deletedEntry = deleted(schemaId, user).toByteArray();
-        return schemaStorage
-                .put(schemaId, deletedEntry, new byte[]{})
-                .whenComplete((v, t) -> {
-                    var latencyMs = this.clock.millis() - start;
-                    if (t != null) {
-                        log.error("[{}] User {} delete schema failed", schemaId, user);
-                        this.stats.recordDelFailed(schemaId, latencyMs);
-                    } else {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] User {} delete schema finished", schemaId, user);
-                        }
-                        this.stats.recordDelLatency(schemaId, latencyMs);
-                    }
-                });
+        return schemaStorage.put(schemaId, deletedEntry, new byte[]{});
     }
 
     @Override
@@ -285,21 +221,7 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
 
     @Override
     public CompletableFuture<SchemaVersion> deleteSchemaStorage(String schemaId, boolean forcefully) {
-        long start = this.clock.millis();
-
-        return schemaStorage.delete(schemaId, forcefully)
-                .whenComplete((v, t) -> {
-                    var latencyMs = this.clock.millis() - start;
-                    if (t != null) {
-                        this.stats.recordDelFailed(schemaId, latencyMs);
-                        log.error("[{}] Delete schema storage failed", schemaId);
-                    } else {
-                        this.stats.recordDelLatency(schemaId, latencyMs);
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Delete schema storage finished", schemaId);
-                        }
-                    }
-                });
+        return schemaStorage.delete(schemaId, forcefully);
     }
 
     @Override
@@ -338,7 +260,6 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
     @Override
     public void close() throws Exception {
         schemaStorage.close();
-        this.stats.close();
     }
 
     private SchemaRegistryFormat.SchemaInfo deleted(String schemaId, String user) {
@@ -354,14 +275,14 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
 
     private void checkCompatible(SchemaAndMetadata existingSchema, SchemaData newSchema,
                                  SchemaCompatibilityStrategy strategy) throws IncompatibleSchemaException {
+        SchemaHash existingHash = SchemaHash.of(existingSchema.schema);
+        SchemaHash newHash = SchemaHash.of(newSchema);
         SchemaData existingSchemaData = existingSchema.schema;
         if (newSchema.getType() != existingSchemaData.getType()) {
             throw new IncompatibleSchemaException(String.format("Incompatible schema: "
                             + "exists schema type %s, new schema type %s",
                     existingSchemaData.getType(), newSchema.getType()));
         }
-        SchemaHash existingHash = SchemaHash.of(existingSchemaData);
-        SchemaHash newHash = SchemaHash.of(newSchema);
         if (!newHash.equals(existingHash)) {
             compatibilityChecks.getOrDefault(newSchema.getType(), SchemaCompatibilityCheck.DEFAULT)
                     .checkCompatible(existingSchemaData, newSchema, strategy);
@@ -399,7 +320,7 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                     return checkCompatibilityWithAll(schemaId, schemaData, strategy);
                 }
             } else {
-                return FutureUtil.failedFuture(new NotExistSchemaException("Topic does not have schema to check"));
+                return FutureUtil.failedFuture(new IncompatibleSchemaException("Topic does not have schema to check"));
             }
         });
     }
@@ -459,27 +380,21 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
         return getSchema(schemaId).thenCompose(existingSchema -> {
             if (existingSchema != null && !existingSchema.schema.isDeleted()) {
                 CompletableFuture<Void> result = new CompletableFuture<>();
-                result.whenComplete((__, t) -> {
-                    if (t != null) {
-                        log.error("[{}] Schema is incompatible", schemaId);
-                        this.stats.recordSchemaIncompatible(schemaId);
-                    } else {
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] Schema is compatible", schemaId);
-                        }
-                        this.stats.recordSchemaCompatible(schemaId);
+                if (existingSchema.schema.getType() != schema.getType()) {
+                    result.completeExceptionally(new IncompatibleSchemaException(
+                            String.format("Incompatible schema: exists schema type %s, new schema type %s",
+                                    existingSchema.schema.getType(), schema.getType())));
+                } else {
+                    try {
+                        checkCompatible(existingSchema, schema, strategy);
+                        result.complete(null);
+                    } catch (IncompatibleSchemaException e) {
+                        result.completeExceptionally(e);
                     }
-                });
-
-                try {
-                    checkCompatible(existingSchema, schema, strategy);
-                    result.complete(null);
-                } catch (IncompatibleSchemaException e) {
-                    result.completeExceptionally(e);
                 }
                 return result;
             } else {
-                return CompletableFuture.completedFuture(null);
+                return FutureUtils.exception(new IncompatibleSchemaException("Do not have existing schema."));
             }
         });
     }
@@ -488,25 +403,13 @@ public class SchemaRegistryServiceImpl implements SchemaRegistryService {
                                                                      SchemaCompatibilityStrategy strategy) {
 
         return trimDeletedSchemaAndGetList(schemaId).thenCompose(schemaAndMetadataList ->
-                checkCompatibilityWithAll(schemaId, schema, strategy, schemaAndMetadataList));
+                checkCompatibilityWithAll(schema, strategy, schemaAndMetadataList));
     }
 
-    private CompletableFuture<Void> checkCompatibilityWithAll(String schemaId, SchemaData schema,
+    private CompletableFuture<Void> checkCompatibilityWithAll(SchemaData schema,
                                                               SchemaCompatibilityStrategy strategy,
                                                               List<SchemaAndMetadata> schemaAndMetadataList) {
         CompletableFuture<Void> result = new CompletableFuture<>();
-        result.whenComplete((v, t) -> {
-            if (t != null) {
-                this.stats.recordSchemaIncompatible(schemaId);
-                log.error("[{}] Schema is incompatible, schema type {}", schemaId, schema.getType());
-            } else {
-                this.stats.recordSchemaCompatible(schemaId);
-                if (log.isDebugEnabled()) {
-                    log.debug("[{}] Schema is compatible, schema type {}", schemaId, schema.getType());
-                }
-            }
-        });
-
         if (strategy == SchemaCompatibilityStrategy.ALWAYS_COMPATIBLE) {
             result.complete(null);
         } else {

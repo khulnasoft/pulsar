@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,8 +25,6 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.TypedMessageBuilder;
-import org.apache.pulsar.common.io.SinkConfig;
-import org.apache.pulsar.common.io.SourceConfig;
 import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.core.SourceContext;
 import org.apache.pulsar.io.core.annotations.FieldDoc;
@@ -53,14 +51,6 @@ public class IOConfigUtilsTest {
                 help = "testRequired"
         )
         protected String testRequired;
-
-        @FieldDoc(
-                required = true,
-                defaultValue = "defaultRequired",
-                sensitive = true,
-                help = "testRequired"
-        )
-        protected String testDefaultRequired;
 
         @FieldDoc(
                 required = false,
@@ -201,11 +191,6 @@ public class IOConfigUtilsTest {
         }
 
         @Override
-        public SourceConfig getSourceConfig() {
-            return null;
-        }
-
-        @Override
         public String getTenant() {
             return null;
         }
@@ -267,12 +252,12 @@ public class IOConfigUtilsTest {
         public CompletableFuture<ByteBuffer> getStateAsync(String key) {
             return null;
         }
-
+        
         @Override
         public void deleteState(String key) {
-
+        	
         }
-
+        
         @Override
         public CompletableFuture<Void> deleteStateAsync(String key) {
         	return null;
@@ -292,11 +277,6 @@ public class IOConfigUtilsTest {
         public PulsarClient getPulsarClient() {
             return null;
         }
-
-        @Override
-        public void fatal(Throwable t) {
-
-        }
     }
 
     @Test
@@ -312,9 +292,6 @@ public class IOConfigUtilsTest {
         configMap.put("testRequired", "test");
         TestDefaultConfig testDefaultConfig =
                 IOConfigUtils.loadWithSecrets(configMap, TestDefaultConfig.class, new TestSinkContext());
-        // if there is default value for a required field and no value provided when load config,
-        // it should not throw exception but use the default value.
-        Assert.assertEquals(testDefaultConfig.getTestDefaultRequired(), "defaultRequired");
         Assert.assertEquals(testDefaultConfig.getDefaultStr(), "defaultStr");
         Assert.assertEquals(testDefaultConfig.isDefaultBool(), true);
         Assert.assertEquals(testDefaultConfig.getDefaultInt(), 100);
@@ -398,11 +375,6 @@ public class IOConfigUtilsTest {
         }
 
         @Override
-        public SinkConfig getSinkConfig() {
-            return null;
-        }
-
-        @Override
         public String getTenant() {
             return null;
         }
@@ -465,12 +437,12 @@ public class IOConfigUtilsTest {
         public CompletableFuture<ByteBuffer> getStateAsync(String key) {
             return null;
         }
-
+        
         @Override
         public void deleteState(String key) {
-
+        	
         }
-
+        
         @Override
         public CompletableFuture<Void> deleteStateAsync(String key) {
         	return null;
@@ -479,11 +451,6 @@ public class IOConfigUtilsTest {
         @Override
         public PulsarClient getPulsarClient() {
             return null;
-        }
-
-        @Override
-        public void fatal(Throwable t) {
-
         }
     }
 

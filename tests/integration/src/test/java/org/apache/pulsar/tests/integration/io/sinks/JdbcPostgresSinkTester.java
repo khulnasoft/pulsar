@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -190,13 +190,5 @@ public class JdbcPostgresSinkTester extends SinkTester<PostgreSQLContainer> {
 
     public boolean isKeyValueSchema() {
         return keyValueSchema;
-    }
-
-    @Override
-    public void close() throws Exception {
-        if (connection != null) {
-            connection.close();
-            connection = null;
-        }
     }
 }

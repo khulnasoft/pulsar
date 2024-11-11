@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,15 @@
  */
 package org.apache.pulsar.broker;
 
+import static org.mockito.Mockito.spy;
 import static org.testng.AssertJUnit.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
+
 import java.util.concurrent.ScheduledFuture;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.loadbalance.LoadSheddingTask;
+import org.awaitility.reflect.WhiteboxImpl;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -45,32 +47,33 @@ public class PulsarServiceCloseTest extends MockedPulsarServiceBaseTest {
         super.internalCleanup();
     }
 
-    @Override
-    protected ServiceConfiguration getDefaultConf() {
-        ServiceConfiguration conf = super.getDefaultConf();
+    protected PulsarService startBrokerWithoutAuthorization(ServiceConfiguration conf) throws Exception {
         conf.setBrokerShutdownTimeoutMs(1000 * 60 * 5);
         conf.setLoadBalancerSheddingIntervalMinutes(30);
-        return conf;
+        PulsarService pulsar = spy(newPulsarService(conf));
+        setupBrokerMocks(pulsar);
+        beforePulsarStartMocks(pulsar);
+        pulsar.start();
+        log.info("Pulsar started. brokerServiceUrl: {} webServiceAddress: {}", pulsar.getBrokerServiceUrl(),
+                pulsar.getWebServiceAddress());
+        return pulsar;
     }
 
     @Test(timeOut = 30_000)
     public void closeInTimeTest() throws Exception {
         LoadSheddingTask task = pulsar.getLoadSheddingTask();
-
-        {
-            assertFalse((boolean) FieldUtils.readField(task, "isCancel", true));
-            ScheduledFuture<?> loadSheddingFuture = (ScheduledFuture<?>) FieldUtils.readField(task, "future", true);
-            assertFalse(loadSheddingFuture.isCancelled());
-        }
+        boolean isCancel = WhiteboxImpl.getInternalState(task, "isCancel");
+        assertFalse(isCancel);
+        ScheduledFuture<?> loadSheddingFuture = WhiteboxImpl.getInternalState(task, "future");
+        assertFalse(loadSheddingFuture.isCancelled());
 
         // The pulsar service is not used, so it should be closed gracefully in short time.
         pulsar.close();
 
-        {
-            assertTrue((boolean) FieldUtils.readField(task, "isCancel", true));
-            ScheduledFuture<?> loadSheddingFuture = (ScheduledFuture<?>) FieldUtils.readField(task, "future", true);
-            assertTrue(loadSheddingFuture.isCancelled());
-        }
+        isCancel = WhiteboxImpl.getInternalState(task, "isCancel");
+        assertTrue(isCancel);
+        loadSheddingFuture = WhiteboxImpl.getInternalState(task, "future");
+        assertTrue(loadSheddingFuture.isCancelled());
     }
 
 }

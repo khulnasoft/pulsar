@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -31,12 +31,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.LedgerOffloaderStats;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.common.naming.TopicName;
-
+@Slf4j
 public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Runnable {
     private static final String TOPIC_LABEL = "topic";
     private static final String NAMESPACE_LABEL = "namespace";
@@ -60,6 +61,7 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
     private final Summary readOffloadDataLatency;
 
     private final Map<String, Long> topicAccess;
+    private final Map<String, String> topic2Namespace;
     private final Map<String, Pair<LongAdder, LongAdder>> offloadAndReadOffloadBytesMap;
 
     final AtomicBoolean closed = new AtomicBoolean(false);
@@ -73,6 +75,7 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
         }
 
         this.topicAccess = new ConcurrentHashMap<>();
+        this.topic2Namespace = new ConcurrentHashMap<>();
         this.offloadAndReadOffloadBytesMap = new ConcurrentHashMap<>();
 
         String[] labels = exposeTopicLevelMetrics
@@ -221,11 +224,13 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
     }
 
     private String getNamespace(String topic) {
-        try {
-            return TopicName.get(topic).getNamespace();
-        } catch (IllegalArgumentException ex) {
-            return UNKNOWN;
-        }
+        return this.topic2Namespace.computeIfAbsent(topic, t -> {
+            try {
+                return TopicName.get(t).getNamespace();
+            } catch (IllegalArgumentException ex) {
+                return UNKNOWN;
+            }
+        });
     }
 
     private void cleanExpiredTopicMetrics() {
@@ -237,6 +242,7 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
             long access = entry.getValue();
 
             if (now - access >= timeout) {
+                this.topic2Namespace.remove(topic);
                 this.offloadAndReadOffloadBytesMap.remove(topic);
                 String[] labelValues = this.labelValues(topic);
                 this.offloadError.remove(labelValues);
@@ -287,6 +293,9 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
             CollectorRegistry.defaultRegistry.unregister(this.readOffloadRate);
             CollectorRegistry.defaultRegistry.unregister(this.readOffloadIndexLatency);
             CollectorRegistry.defaultRegistry.unregister(this.readOffloadDataLatency);
+            this.topic2Namespace.clear();
+            this.offloadAndReadOffloadBytesMap.clear();
+
             CollectorRegistry.defaultRegistry.unregister(this.deleteOffloadOps);
             instance = null;
         }
@@ -299,7 +308,7 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
             return pair.getLeft().sum();
         }
 
-        String namespace = this.getNamespace(topic);
+        String namespace = this.topic2Namespace.get(topic);
         List<String> topics = this.offloadAndReadOffloadBytesMap.keySet().stream()
                 .filter(topicName -> topicName.contains(namespace)).collect(Collectors.toList());
 
@@ -335,7 +344,7 @@ public final class LedgerOffloaderStatsImpl implements LedgerOffloaderStats, Run
             return pair.getRight().sum();
         }
 
-        String namespace = this.getNamespace(topic);
+        String namespace = this.topic2Namespace.get(topic);
         List<String> topics = this.offloadAndReadOffloadBytesMap.keySet().stream()
                 .filter(topicName -> topicName.contains(namespace)).collect(Collectors.toList());
 

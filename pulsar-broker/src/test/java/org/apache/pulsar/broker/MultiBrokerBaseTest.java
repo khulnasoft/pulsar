@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,21 +21,20 @@ package org.apache.pulsar.broker;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
-import org.apache.pulsar.broker.testcontext.PulsarTestContext;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminBuilder;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.common.util.PortManager;
+import org.apache.pulsar.metadata.api.MetadataStoreException;
+import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
+import org.apache.pulsar.metadata.impl.ZKMetadataStore;
+import org.apache.zookeeper.MockZooKeeperSession;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
-@Slf4j
 public abstract class MultiBrokerBaseTest extends MockedPulsarServiceBaseTest {
-    protected List<PulsarTestContext> additionalPulsarTestContexts;
     protected List<PulsarService> additionalBrokers;
     protected List<PulsarAdmin> additionalBrokerAdmins;
     protected List<PulsarClient> additionalBrokerClients;
@@ -63,11 +62,8 @@ public abstract class MultiBrokerBaseTest extends MockedPulsarServiceBaseTest {
         additionalBrokers = new ArrayList<>(numberOfAdditionalBrokers);
         additionalBrokerAdmins = new ArrayList<>(numberOfAdditionalBrokers);
         additionalBrokerClients = new ArrayList<>(numberOfAdditionalBrokers);
-        additionalPulsarTestContexts = new ArrayList<>(numberOfAdditionalBrokers);
         for (int i = 0; i < numberOfAdditionalBrokers; i++) {
-            PulsarTestContext pulsarTestContext = createAdditionalBroker(i);
-            additionalPulsarTestContexts.add(i, pulsarTestContext);
-            PulsarService pulsarService = pulsarTestContext.getPulsarService();
+            PulsarService pulsarService = createAdditionalBroker(i);
             additionalBrokers.add(i, pulsarService);
             PulsarAdminBuilder pulsarAdminBuilder =
                     PulsarAdmin.builder().serviceHttpUrl(pulsarService.getWebServiceAddress() != null
@@ -83,8 +79,20 @@ public abstract class MultiBrokerBaseTest extends MockedPulsarServiceBaseTest {
         return getDefaultConf();
     }
 
-    protected PulsarTestContext createAdditionalBroker(int additionalBrokerIndex) throws Exception {
-        return createAdditionalPulsarTestContext(createConfForAdditionalBroker(additionalBrokerIndex));
+    protected PulsarService createAdditionalBroker(int additionalBrokerIndex) throws Exception {
+        return startBroker(createConfForAdditionalBroker(additionalBrokerIndex));
+    }
+
+    @Override
+    protected MetadataStoreExtended createLocalMetadataStore() throws MetadataStoreException {
+        // use MockZooKeeperSession to provide a unique session id for each instance
+        return new ZKMetadataStore(MockZooKeeperSession.newInstance(mockZooKeeper));
+    }
+
+    @Override
+    protected MetadataStoreExtended createConfigurationMetadataStore() throws MetadataStoreException {
+        // use MockZooKeeperSession to provide a unique session id for each instance
+        return new ZKMetadataStore(MockZooKeeperSession.newInstance(mockZooKeeperGlobal));
     }
 
     @AfterClass(alwaysRun = true)
@@ -111,21 +119,16 @@ public abstract class MultiBrokerBaseTest extends MockedPulsarServiceBaseTest {
             }
             additionalBrokerClients = null;
         }
-        if (additionalPulsarTestContexts != null) {
-            for (PulsarTestContext pulsarTestContext : additionalPulsarTestContexts) {
-                PulsarService pulsarService = pulsarTestContext.getPulsarService();
+        if (additionalBrokers != null) {
+            for (PulsarService pulsarService : additionalBrokers) {
                 try {
                     pulsarService.getConfiguration().setBrokerShutdownTimeoutMs(0L);
-                    pulsarTestContext.close();
-                    pulsarService.getConfiguration().getBrokerServicePort().ifPresent(PortManager::releaseLockedPort);
-                    pulsarService.getConfiguration().getWebServicePort().ifPresent(PortManager::releaseLockedPort);
-                    pulsarService.getConfiguration().getWebServicePortTls().ifPresent(PortManager::releaseLockedPort);
-                } catch (Exception e) {
-                    log.warn("Failed to stop additional broker", e);
+                    pulsarService.close();
+                } catch (PulsarServerException e) {
+                    // ignore
                 }
             }
             additionalBrokers = null;
-            additionalPulsarTestContexts = null;
         }
     }
 

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -34,7 +34,6 @@ import org.apache.pulsar.client.api.BatcherBuilder;
 import org.apache.pulsar.client.api.CompressionType;
 import org.apache.pulsar.client.api.CryptoKeyReader;
 import org.apache.pulsar.client.api.HashingScheme;
-import org.apache.pulsar.client.api.MessageCrypto;
 import org.apache.pulsar.client.api.MessageRouter;
 import org.apache.pulsar.client.api.MessageRoutingMode;
 import org.apache.pulsar.client.api.Producer;
@@ -199,12 +198,6 @@ public class ProducerBuilderImpl<T> implements ProducerBuilder<T> {
     }
 
     @Override
-    public ProducerBuilder<T> chunkMaxMessageSize(int chunkMaxMessageSize) {
-        conf.setChunkMaxMessageSize(chunkMaxMessageSize);
-        return this;
-    }
-
-    @Override
     public ProducerBuilder<T> cryptoKeyReader(@NonNull CryptoKeyReader cryptoKeyReader) {
         conf.setCryptoKeyReader(cryptoKeyReader);
         return this;
@@ -220,12 +213,6 @@ public class ProducerBuilderImpl<T> implements ProducerBuilder<T> {
     public ProducerBuilder<T> defaultCryptoKeyReader(@NonNull Map<String, String> publicKeys) {
         checkArgument(!publicKeys.isEmpty(), "publicKeys cannot be empty");
         return cryptoKeyReader(DefaultCryptoKeyReader.builder().publicKeys(publicKeys).build());
-    }
-
-    @Override
-    public ProducerBuilder<T> messageCrypto(MessageCrypto messageCrypto) {
-        conf.setMessageCrypto(messageCrypto);
-        return this;
     }
 
     @Override
@@ -358,12 +345,10 @@ public class ProducerBuilderImpl<T> implements ProducerBuilder<T> {
             messageRoutingMode(MessageRoutingMode.RoundRobinPartition);
         } else if (conf.getMessageRoutingMode() == null && conf.getCustomMessageRouter() != null) {
             messageRoutingMode(MessageRoutingMode.CustomPartition);
-        } else if (conf.getMessageRoutingMode() == MessageRoutingMode.CustomPartition
-                && conf.getCustomMessageRouter() == null) {
-            throw new PulsarClientException("When 'messageRoutingMode' is " + MessageRoutingMode.CustomPartition
-                + ", 'messageRouter' should be set");
-        } else if (conf.getMessageRoutingMode() != MessageRoutingMode.CustomPartition
-                && conf.getCustomMessageRouter() != null) {
+        } else if ((conf.getMessageRoutingMode() == MessageRoutingMode.CustomPartition
+                && conf.getCustomMessageRouter() == null)
+                || (conf.getMessageRoutingMode() != MessageRoutingMode.CustomPartition
+                && conf.getCustomMessageRouter() != null)) {
             throw new PulsarClientException("When 'messageRouter' is set, 'messageRoutingMode' "
                     + "should be set as " + MessageRoutingMode.CustomPartition);
         }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,6 +20,7 @@ package org.apache.pulsar.client.admin.internal;
 
 import java.util.concurrent.CompletableFuture;
 import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -33,8 +34,8 @@ public class ResourceQuotasImpl extends BaseResource implements ResourceQuotas {
     private final WebTarget adminQuotas;
     private final WebTarget adminV2Quotas;
 
-    public ResourceQuotasImpl(WebTarget web, Authentication auth, long requestTimeoutMs) {
-        super(auth, requestTimeoutMs);
+    public ResourceQuotasImpl(WebTarget web, Authentication auth, long readTimeoutMs) {
+        super(auth, readTimeoutMs);
         adminQuotas = web.path("/admin/resource-quotas");
         adminV2Quotas = web.path("/admin/v2/resource-quotas");
     }
@@ -46,7 +47,20 @@ public class ResourceQuotasImpl extends BaseResource implements ResourceQuotas {
 
     @Override
     public CompletableFuture<ResourceQuota> getDefaultResourceQuotaAsync() {
-        return asyncGetRequest(adminV2Quotas, new FutureCallback<ResourceQuota>(){});
+        final CompletableFuture<ResourceQuota> future = new CompletableFuture<>();
+        asyncGetRequest(adminV2Quotas,
+                new InvocationCallback<ResourceQuota>() {
+                    @Override
+                    public void completed(ResourceQuota resourceQuota) {
+                        future.complete(resourceQuota);
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override
@@ -68,7 +82,20 @@ public class ResourceQuotasImpl extends BaseResource implements ResourceQuotas {
     public CompletableFuture<ResourceQuota> getNamespaceBundleResourceQuotaAsync(String namespace, String bundle) {
         NamespaceName ns = NamespaceName.get(namespace);
         WebTarget path = namespacePath(ns, bundle);
-        return asyncGetRequest(path, new FutureCallback<ResourceQuota>(){});
+        final CompletableFuture<ResourceQuota> future = new CompletableFuture<>();
+        asyncGetRequest(path,
+                new InvocationCallback<ResourceQuota>() {
+                    @Override
+                    public void completed(ResourceQuota resourceQuota) {
+                        future.complete(resourceQuota);
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override

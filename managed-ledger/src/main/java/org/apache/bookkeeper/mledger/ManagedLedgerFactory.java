@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.bookkeeper.mledger;
 
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
@@ -28,8 +27,6 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.ManagedLedgerInfoCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenReadOnlyCursorCallback;
 import org.apache.bookkeeper.mledger.impl.cache.EntryCacheManager;
-import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.PersistentOfflineTopicStats;
 
 /**
  * A factory to open/create managed ledgers and delete them.
@@ -92,7 +89,7 @@ public interface ManagedLedgerFactory {
      *            opaque context
      */
     void asyncOpen(String name, ManagedLedgerConfig config, OpenLedgerCallback callback,
-            Supplier<CompletableFuture<Boolean>> mlOwnershipChecker, Object ctx);
+            Supplier<Boolean> mlOwnershipChecker, Object ctx);
 
     /**
      * Open a {@link ReadOnlyCursor} positioned to the earliest entry for the specified managed ledger.
@@ -118,17 +115,6 @@ public interface ManagedLedgerFactory {
      */
     void asyncOpenReadOnlyCursor(String managedLedgerName, Position startPosition, ManagedLedgerConfig config,
             OpenReadOnlyCursorCallback callback, Object ctx);
-
-    /**
-     * Asynchronous open a Read-only managedLedger.
-     * @param managedLedgerName the unique name that identifies the managed ledger
-     * @param callback
-     * @param config the managed ledger configuration.
-     * @param ctx opaque context
-     */
-    void asyncOpenReadOnlyManagedLedger(String managedLedgerName,
-                                AsyncCallbacks.OpenReadOnlyManagedLedgerCallback callback,
-                                ManagedLedgerConfig config, Object ctx);
 
     /**
      * Get the current metadata info for a managed ledger.
@@ -231,18 +217,4 @@ public interface ManagedLedgerFactory {
      * */
     long getCacheEvictionTimeThreshold();
 
-    /**
-     * @return properties of this managedLedger.
-     */
-    CompletableFuture<Map<String, String>> getManagedLedgerPropertiesAsync(String name);
-
-    Map<String, ManagedLedger> getManagedLedgers();
-
-    ManagedLedgerFactoryMXBean getCacheStats();
-
-
-    void estimateUnloadedTopicBacklog(PersistentOfflineTopicStats offlineTopicStats, TopicName topicName,
-                                      boolean accurate, Object ctx) throws Exception;
-
-    ManagedLedgerFactoryConfig getConfig();
 }

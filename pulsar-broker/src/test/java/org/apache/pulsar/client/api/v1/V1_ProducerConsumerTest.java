@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,19 +20,19 @@ package org.apache.pulsar.client.api.v1;
 
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
+
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,13 +48,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+
 import lombok.Cleanup;
-import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.cache.EntryCache;
-import org.apache.bookkeeper.mledger.impl.cache.EntryCacheManager;
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
@@ -73,10 +70,11 @@ import org.apache.pulsar.client.api.TypedMessageBuilder;
 import org.apache.pulsar.client.impl.ConsumerImpl;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.TypedMessageBuilderImpl;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.protocol.Commands;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.awaitility.Awaitility;
+import org.powermock.reflect.Whitebox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.Assert;
@@ -139,7 +137,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
 
         Message<String> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = msg.getValue();
@@ -169,7 +167,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                 .enableBatching(batchMessageDelayMs != 0)
                 .create();
 
-        List<Future<MessageId>> futures = new ArrayList<>();
+        List<Future<MessageId>> futures = Lists.newArrayList();
 
         // Asynchronously produce messages
         for (int i = 0; i < 10; i++) {
@@ -184,7 +182,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -227,7 +225,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                 .enableBatching(batchMessageDelayMs != 0)
                 .create();
 
-        List<Future<MessageId>> futures = new ArrayList<>();
+        List<Future<MessageId>> futures = Lists.newArrayList();
 
         // Asynchronously produce messages
         for (int i = 0; i < numMessages; i++) {
@@ -613,20 +611,6 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
     }
 
-    @Override
-    protected void beforePulsarStart(PulsarService pulsar) throws Exception {
-        super.beforePulsarStart(pulsar);
-        doAnswer(i0 -> {
-            ManagedLedgerFactory factory = (ManagedLedgerFactory) spy(i0.callRealMethod());
-            doAnswer(i1 -> {
-                EntryCacheManager manager = (EntryCacheManager) spy(i1.callRealMethod());
-                doAnswer(i2 -> spy(i2.callRealMethod())).when(manager).getEntryCache(any());
-                return manager;
-            }).when(factory).getEntryCacheManager();
-            return factory;
-        }).when(pulsar).getDefaultManagedLedgerFactory();
-    }
-
     /**
      * Usecase 1: Only 1 Active Subscription - 1 subscriber - Produce Messages - EntryCache should cache messages -
      * EntryCache should be cleaned : Once active subscription consumes messages
@@ -667,9 +651,10 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         PersistentTopic topicRef = (PersistentTopic) pulsar.getBrokerService().getTopicReference(topic).get();
         ManagedLedgerImpl ledger = (ManagedLedgerImpl) topicRef.getManagedLedger();
 
-        EntryCache entryCache = (EntryCache) FieldUtils.readField(ledger, "entryCache", true);
+        EntryCache entryCache = spy((EntryCache) Whitebox.getInternalState(ledger, "entryCache"));
+        Whitebox.setInternalState(ledger, "entryCache", entryCache);
 
-        Message<byte[]> msg = null;
+        Message<byte[]>msg = null;
         // 2. Produce messages
         for (int i = 0; i < 30; i++) {
             String message = "my-message-" + i;
@@ -698,7 +683,6 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                 .topic("persistent://my-property/use/my-ns/" + topicName)
                 .subscriptionName(sub2)
                 .subscriptionType(SubscriptionType.Shared)
-                .receiverQueueSize(1)
                 .subscribe();
         // Produce messages
         final int moreMessages = 10;
@@ -742,8 +726,8 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         log.info("-- Starting {} test --", methodName);
 
         final int totalMsg = 100;
-        final Set<String> produceMsgs = new HashSet<>();
-        final Set<String> consumeMsgs = new HashSet<>();
+        final Set<String> produceMsgs = Sets.newHashSet();
+        final Set<String> consumeMsgs = Sets.newHashSet();
 
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic("persistent://my-property/use/my-ns/my-topic1")
@@ -786,8 +770,8 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         log.info("-- Starting {} test --", methodName);
 
         final int totalMsg = 100;
-        final Set<String> produceMsgs = new HashSet<>();
-        final Set<String> consumeMsgs = new HashSet<>();
+        final Set<String> produceMsgs = Sets.newHashSet();
+        final Set<String> consumeMsgs = Sets.newHashSet();
 
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic("persistent://my-property/use/my-ns/my-topic1")
@@ -879,8 +863,8 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
 
         Message<byte[]>msg = null;
-        Set<Message<byte[]>> consumerMsgSet1 = new HashSet<>();
-        Set<Message<byte[]>> consumerMsgSet2 = new HashSet<>();
+        Set<Message<byte[]>> consumerMsgSet1 = Sets.newHashSet();
+        Set<Message<byte[]>> consumerMsgSet2 = Sets.newHashSet();
         for (int i = 0; i < 5; i++) {
             msg = consumer1.receive();
             consumerMsgSet1.add(msg);
@@ -951,7 +935,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
     /**
      * Verify: Consumer stops receiving msg when reach unack-msg limit and starts receiving once acks messages 1.
      * Produce X (600) messages 2. Consumer has receive size (10) and receive message without acknowledging 3. Consumer
-     * will stop receiving message after unAckThreshold = 500 4. Consumer acks messages and starts consuming remaining
+     * will stop receiving message after unAckThreshold = 500 4. Consumer acks messages and starts consuming remanining
      * messages This testcase enables checksum sending while producing message and broker verifies the checksum for the
      * message.
      *
@@ -987,7 +971,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
             // (2) try to consume messages: but will be able to consume number of messages = unAckedMessagesBufferSize
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages = new ArrayList<>();
+            List<Message<byte[]>> messages = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1075,7 +1059,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             for (int j = 0; j < totalReceiveIteration; j++) {
 
                 Message<byte[]>msg = null;
-                List<Message<byte[]>> messages = new ArrayList<>();
+                List<Message<byte[]>> messages = Lists.newArrayList();
                 for (int i = 0; i < totalProducedMsgs; i++) {
                     msg = consumer.receive(1, TimeUnit.SECONDS);
                     if (msg != null) {
@@ -1157,7 +1141,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             // (2) Consumer1: consume without ack:
             // try to consume messages: but will be able to consume number of messages = maxUnackedMessages
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages = new ArrayList<>();
+            List<Message<byte[]>> messages = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer1.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1311,7 +1295,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
             // (2) try to consume messages: but will be able to consume number of messages = unAckedMessagesBufferSize
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages = new ArrayList<>();
+            List<Message<byte[]>> messages = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1377,7 +1361,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                     .batchingMaxMessages(5)
                     .create();
 
-            List<CompletableFuture<MessageId>> futures = new ArrayList<>();
+            List<CompletableFuture<MessageId>> futures = Lists.newArrayList();
             // (1) Produced Messages
             for (int i = 0; i < totalProducedMsgs; i++) {
                 String message = "my-message-" + i;
@@ -1389,7 +1373,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             // (2) Consumer1: consume without ack:
             // try to consume messages: but will be able to consume number of messages = maxUnackedMessages
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages = new ArrayList<>();
+            List<Message<byte[]>> messages = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer1.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1475,7 +1459,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             // (2) Consumer1: consume without ack:
             // try to consume messages: but will be able to consume number of messages = maxUnackedMessages
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages = new ArrayList<>();
+            List<Message<byte[]>> messages = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer1.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1558,7 +1542,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
 
         Message<byte[]>msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalMsg; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -1574,7 +1558,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
     /**
      * It verifies that redelivery-of-specific messages: that redelivers all those messages even when consumer gets
-     * blocked due to unacked messages
+     * blocked due to unacked messsages
      *
      * Usecase: produce message with 10ms interval: so, consumer can consume only 10 messages without acking
      *
@@ -1611,7 +1595,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
             // (2) try to consume messages: but will be able to consume number of messages = unAckedMessagesBufferSize
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages1 = new ArrayList<>();
+            List<Message<byte[]>> messages1 = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1632,7 +1616,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             consumer.redeliverUnacknowledgedMessages(Sets.newHashSet(redeliveryMessages));
             Thread.sleep(1000);
 
-            Set<MessageIdImpl> messages2 = new HashSet<>();
+            Set<MessageIdImpl> messages2 = Sets.newHashSet();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1659,7 +1643,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
     /**
      * It verifies that redelivery-of-specific messages: that redelivers all those messages even when consumer gets
-     * blocked due to unacked messages
+     * blocked due to unacked messsages
      *
      * Usecase: Consumer starts consuming only after all messages have been produced. So, consumer consumes total
      * receiver-queue-size number messages => ask for redelivery and receives all messages again.
@@ -1707,7 +1691,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
             // (2) try to consume messages: but will be able to consume number of messages = unAckedMessagesBufferSize
             Message<byte[]>msg = null;
-            List<Message<byte[]>> messages1 = new ArrayList<>();
+            List<Message<byte[]>> messages1 = Lists.newArrayList();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1728,7 +1712,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             consumer.redeliverUnacknowledgedMessages(Sets.newHashSet(redeliveryMessages));
             Thread.sleep(1000);
 
-            Set<MessageIdImpl> messages2 = new HashSet<>();
+            Set<MessageIdImpl> messages2 = Sets.newHashSet();
             for (int i = 0; i < totalProducedMsgs; i++) {
                 msg = consumer.receive(1, TimeUnit.SECONDS);
                 if (msg != null) {
@@ -1784,7 +1768,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         Producer<byte[]> producer = pulsarClient.newProducer()
                 .topic("persistent://my-property/use/my-ns/my-topic2")
                 .create();
-        List<Future<MessageId>> futures = new ArrayList<>();
+        List<Future<MessageId>> futures = Lists.newArrayList();
 
         // Asynchronously produce messages
         for (int i = 0; i < 15; i++) {
@@ -1859,7 +1843,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                 .topic("persistent://my-property/use/my-ns/my-topic2")
                 .enableBatching(false)
                 .create();
-        List<Future<MessageId>> futures = new ArrayList<>();
+        List<Future<MessageId>> futures = Lists.newArrayList();
 
         // Asynchronously produce messages
         final int totalPublishMessages = 500;
@@ -1874,7 +1858,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
             future.get();
         }
 
-        List<Message<byte[]>> messages = new ArrayList<>();
+        List<Message<byte[]>> messages = Lists.newArrayList();
 
         // let consumer1 and consumer2 cosume messages up to the queue will be full
         for (int i = 0; i < totalPublishMessages; i++) {
@@ -1987,7 +1971,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         }
         // (1.a) consume first consumeMsgInParts msgs and trigger redeliver
         Message<byte[]> msg = null;
-        List<Message<byte[]>> messages1 = new ArrayList<>();
+        List<Message<byte[]>> messages1 = Lists.newArrayList();
         for (int i = 0; i < consumeMsgInParts; i++) {
             msg = consumer.receive(1, TimeUnit.SECONDS);
             if (msg != null) {
@@ -2123,7 +2107,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
         final int totalMsg = 10;
 
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic("persistent://my-property/use/my-ns/myecdsa-topic1")
                 .subscriptionName("my-subscriber-name")
@@ -2199,7 +2183,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
 
         final int totalMsg = 10;
 
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic("persistent://my-property/use/my-ns/myrsa-topic1")
                 .subscriptionName("my-subscriber-name")
@@ -2281,7 +2265,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
         final int totalMsg = 10;
 
         Message<String> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
                 .topic("persistent://my-property/use/my-ns/myenc-topic1")
                 .subscriptionName("my-subscriber-name")
@@ -2296,7 +2280,7 @@ public class V1_ProducerConsumerTest extends V1_ProducerConsumerBase {
                 .addEncryptionKey("client-non-existant-rsa.pem")
                 .cryptoKeyReader(new EncKeyReader())
                 .create();
-            Assert.fail("Producer creation should not succeed if failing to read key");
+            Assert.fail("Producer creation should not suceed if failing to read key");
         } catch (Exception e) {
             // ok
         }

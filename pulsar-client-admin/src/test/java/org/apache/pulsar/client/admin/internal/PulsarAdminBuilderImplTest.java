@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import lombok.Cleanup;
 import lombok.SneakyThrows;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminBuilder;
@@ -35,8 +34,6 @@ import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.EncodedAuthenticationParameterSupport;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.auth.AuthenticationDisabled;
-import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
-import org.testng.Assert;
 import org.testng.annotations.Test;
 
 /**
@@ -56,26 +53,6 @@ public class PulsarAdminBuilderImplTest {
     public void testBuildFailsWhenServiceUrlNotSet() {
         assertThatIllegalArgumentException().isThrownBy(() -> PulsarAdmin.builder().build())
                         .withMessageContaining("Service URL needs to be specified");
-    }
-
-    @Test
-    public void testGetPropertiesFromConf() throws Exception {
-        Map<String, Object> config = new HashMap<>();
-        config.put("serviceUrl", "pulsar://localhost:6650");
-        config.put("requestTimeoutMs", 10);
-        config.put("autoCertRefreshSeconds", 20);
-        config.put("connectionTimeoutMs", 30);
-        config.put("readTimeoutMs", 40);
-        config.put("maxConnectionsPerHost", 50);
-        PulsarAdminBuilder adminBuilder = PulsarAdmin.builder().loadConf(config);
-        @Cleanup
-        PulsarAdminImpl admin = (PulsarAdminImpl) adminBuilder.build();
-        ClientConfigurationData clientConfigData = admin.getClientConfigData();
-        Assert.assertEquals(clientConfigData.getRequestTimeoutMs(), 10);
-        Assert.assertEquals(clientConfigData.getAutoCertRefreshSeconds(), 20);
-        Assert.assertEquals(clientConfigData.getConnectionTimeoutMs(), 30);
-        Assert.assertEquals(clientConfigData.getReadTimeoutMs(), 40);
-        Assert.assertEquals(clientConfigData.getConnectionsPerBroker(), 50);
     }
 
     @Test
@@ -225,5 +202,4 @@ public class PulsarAdminBuilderImplTest {
             return secret;
         }
     }
-
 }

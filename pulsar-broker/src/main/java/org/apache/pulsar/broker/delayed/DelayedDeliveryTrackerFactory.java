@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,8 +19,9 @@
 package org.apache.pulsar.broker.delayed;
 
 import com.google.common.annotations.Beta;
-import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.service.persistent.AbstractPersistentDispatcherMultipleConsumers;
+import java.io.IOException;
+import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.service.persistent.PersistentDispatcherMultipleConsumers;
 
 /**
  * Factory of InMemoryDelayedDeliveryTracker objects. This is the entry point for implementations.
@@ -32,9 +33,9 @@ public interface DelayedDeliveryTrackerFactory extends AutoCloseable {
     /**
      * Initialize the factory implementation from the broker service configuration.
      *
-     * @param pulsarService the broker service
+     * @param config the broker service config object
      */
-    void initialize(PulsarService pulsarService) throws Exception;
+    void initialize(ServiceConfiguration config) throws IOException;
 
     /**
      * Create a new tracker instance.
@@ -42,10 +43,10 @@ public interface DelayedDeliveryTrackerFactory extends AutoCloseable {
      * @param dispatcher
      *            a multi-consumer dispatcher instance
      */
-    DelayedDeliveryTracker newTracker(AbstractPersistentDispatcherMultipleConsumers dispatcher);
+    DelayedDeliveryTracker newTracker(PersistentDispatcherMultipleConsumers dispatcher);
 
     /**
      * Close the factory and release all the resources.
      */
-    void close() throws Exception;
+    void close() throws IOException;
 }

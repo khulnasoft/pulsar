@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,7 @@ package org.apache.pulsar.broker.transaction;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-
+import com.google.common.collect.Lists;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -31,17 +31,16 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import lombok.Cleanup;
+import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-
-import lombok.Cleanup;
 import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
+import org.apache.pulsar.broker.authorization.AllowSystemTransactionTopicLookupAuthorizationProvider;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminBuilder;
 import org.apache.pulsar.client.api.AuthenticationFactory;
@@ -75,7 +74,6 @@ import org.testng.annotations.Test;
 public class AuthenticatedTransactionProducerConsumerTest extends TransactionTestBase {
 
     private static final String TOPIC = NAMESPACE1 + "/txn-auth";
-
     private final String ADMIN_TOKEN;
     private final String TOKEN_PUBLIC_KEY;
     private final KeyPair kp;
@@ -122,9 +120,11 @@ public class AuthenticatedTransactionProducerConsumerTest extends TransactionTes
         conf.setProperties(properties);
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
         conf.setBrokerClientAuthenticationParameters("token:" + ADMIN_TOKEN);
+        conf.setAuthorizationProvider(AllowSystemTransactionTopicLookupAuthorizationProvider.class.getName());
         setBrokerCount(1);
         internalSetup();
         setUpBase(1, 1, TOPIC, 1);
+
 
         grantTxnLookupToRole("client");
         admin.namespaces().grantPermissionOnNamespace(NAMESPACE1, "client",
@@ -158,6 +158,39 @@ public class AuthenticatedTransactionProducerConsumerTest extends TransactionTes
     @AfterMethod(alwaysRun = true)
     protected void cleanup() {
         super.internalCleanup();
+    }
+
+    @Test
+    public void testProduceAndConsume() throws Exception {
+        @Cleanup final PulsarClient pulsarClient = PulsarClient.builder()
+                .serviceUrl(pulsarServiceList.get(0).getBrokerServiceUrl())
+                .authentication(AuthenticationFactory.token(generateToken(kp, "client")))
+                .enableTransaction(true)
+                .build();
+
+        Transaction transaction = pulsarClient.newTransaction()
+                .withTransactionTimeout(60, TimeUnit.SECONDS).build().get();
+
+        @Cleanup final Consumer<String> consumer = pulsarClient
+                .newConsumer(Schema.STRING)
+                .subscriptionName("test")
+                .topic(TOPIC)
+                .subscribe();
+
+
+        @Cleanup final Producer<String> producer = pulsarClient
+                .newProducer(Schema.STRING)
+                .sendTimeout(60, TimeUnit.SECONDS)
+                .topic(TOPIC)
+                .create();
+
+        producer.newMessage().value("message").send();
+        consumer.acknowledgeAsync(consumer.receive(5, TimeUnit.SECONDS).getMessageId(), transaction)
+                .get(5, TimeUnit.SECONDS);
+
+        producer.newMessage(transaction).value("message2").send();
+        transaction.commit();
+        Assert.assertEquals(consumer.receive(5, TimeUnit.SECONDS).getValue(), "message2");
     }
 
     @DataProvider(name = "actors")
@@ -250,13 +283,13 @@ public class AuthenticatedTransactionProducerConsumerTest extends TransactionTes
         }
 
         final Throwable ex = syncGetException(((PulsarClientImpl) pulsarClientOther)
-                .getTcClient().addPublishPartitionToTxnAsync(transaction.getTxnID(), List.of(TOPIC)));
+                .getTcClient().addPublishPartitionToTxnAsync(transaction.getTxnID(), Lists.newArrayList(TOPIC)));
 
         final TxnMeta txnMeta = pulsarServiceList.get(0).getTransactionMetadataStoreService()
                 .getTxnMeta(transaction.getTxnID()).get();
         if (actor.equals("client") || actor.equals("admin")) {
             Assert.assertNull(ex);
-            Assert.assertEquals(txnMeta.producedPartitions(), List.of(TOPIC));
+            Assert.assertEquals(txnMeta.producedPartitions(), Lists.newArrayList(TOPIC));
         } else {
             Assert.assertNotNull(ex);
             Assert.assertTrue(ex instanceof TransactionCoordinatorClientException);

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,7 +20,7 @@ package org.apache.pulsar.client.impl.schema;
 
 import static com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import static com.google.protobuf.DescriptorProtos.FileDescriptorSet;
-import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.Descriptors;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,7 +28,6 @@ import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.client.api.SchemaSerializationException;
 import org.apache.pulsar.common.protocol.schema.ProtobufNativeSchemaData;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +56,7 @@ public class ProtobufNativeSchemaUtils {
             ProtobufNativeSchemaData schemaData = ProtobufNativeSchemaData.builder()
                     .fileDescriptorSet(fileDescriptorSet)
                     .rootFileDescriptorName(rootFileDescriptorName).rootMessageTypeName(rootMessageTypeName).build();
-            schemaDataBytes = ObjectMapperFactory.getMapperWithIncludeAlways().writer().writeValueAsBytes(schemaData);
+            schemaDataBytes = new ObjectMapper().writeValueAsBytes(schemaData);
             logger.debug("descriptor '{}' serialized to '{}'.", descriptor.getFullName(), schemaDataBytes);
         } catch (Exception e) {
             e.printStackTrace();
@@ -85,13 +84,11 @@ public class ProtobufNativeSchemaUtils {
         }
     }
 
-    private static final ObjectReader PROTOBUF_NATIVE_SCHEMADATA_READER = ObjectMapperFactory.getMapper().reader()
-            .forType(ProtobufNativeSchemaData.class);
-
     public static Descriptors.Descriptor deserialize(byte[] schemaDataBytes) {
         Descriptors.Descriptor descriptor;
         try {
-            ProtobufNativeSchemaData schemaData = PROTOBUF_NATIVE_SCHEMADATA_READER.readValue(schemaDataBytes);
+            ProtobufNativeSchemaData schemaData = new ObjectMapper()
+                    .readValue(schemaDataBytes, ProtobufNativeSchemaData.class);
 
             Map<String, FileDescriptorProto> fileDescriptorProtoCache = new HashMap<>();
             Map<String, Descriptors.FileDescriptor> fileDescriptorCache = new HashMap<>();

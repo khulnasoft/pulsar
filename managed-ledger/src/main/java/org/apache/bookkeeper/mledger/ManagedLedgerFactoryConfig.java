@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -39,12 +39,13 @@ public class ManagedLedgerFactoryConfig {
      */
     private double cacheEvictionWatermark = 0.90;
 
+    private int numManagedLedgerWorkerThreads = Runtime.getRuntime().availableProcessors();
     private int numManagedLedgerSchedulerThreads = Runtime.getRuntime().availableProcessors();
 
     /**
-     * Interval of cache eviction triggering. Default is 10 ms times.
+     * Frequency of cache eviction triggering. Default is 100 times per second.
      */
-    private long cacheEvictionIntervalMs = 10;
+    private double cacheEvictionFrequency = 100;
 
     /**
      * All entries that have stayed in cache for more than the configured time, will be evicted.
@@ -92,29 +93,7 @@ public class ManagedLedgerFactoryConfig {
     private String managedLedgerInfoCompressionType = MLDataFormats.CompressionType.NONE.name();
 
     /**
-     * ManagedLedgerInfo compression threshold. If the origin metadata size below configuration.
-     * compression will not apply.
-     */
-    private long managedLedgerInfoCompressionThresholdInBytes = 0;
-
-    /**
      * ManagedCursorInfo compression type. If the compression type is null or invalid, don't compress data.
      */
     private String managedCursorInfoCompressionType = MLDataFormats.CompressionType.NONE.name();
-
-    /**
-     * ManagedCursorInfo compression threshold. If the origin metadata size below configuration.
-     * compression will not apply.
-     */
-    private long managedCursorInfoCompressionThresholdInBytes = 0;
-
-    public MetadataCompressionConfig getCompressionConfigForManagedLedgerInfo() {
-        return new MetadataCompressionConfig(managedLedgerInfoCompressionType,
-                managedLedgerInfoCompressionThresholdInBytes);
-    }
-
-    public MetadataCompressionConfig getCompressionConfigForManagedCursorInfo() {
-        return new MetadataCompressionConfig(managedCursorInfoCompressionType,
-                managedCursorInfoCompressionThresholdInBytes);
-    }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,14 +18,17 @@
  */
 package org.apache.pulsar.testclient;
 
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.util.concurrent.RateLimiter;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
@@ -43,11 +46,8 @@ import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.testclient.utils.PaddingDecimalFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
 
-@Command(name = "read", description = "Test pulsar reader performance.")
-public class PerformanceReader extends PerformanceTopicListArguments {
+public class PerformanceReader {
     private static final LongAdder messagesReceived = new LongAdder();
     private static final LongAdder bytesReceived = new LongAdder();
     private static final DecimalFormat intFormat = new PaddingDecimalFormat("0", 7);
@@ -59,63 +59,110 @@ public class PerformanceReader extends PerformanceTopicListArguments {
     private static Recorder recorder = new Recorder(TimeUnit.DAYS.toMillis(10), 5);
     private static Recorder cumulativeRecorder = new Recorder(TimeUnit.DAYS.toMillis(10), 5);
 
-    @Option(names = {"-r", "--rate"}, description = "Simulate a slow message reader (rate in msg/s)")
-    public double rate = 0;
+    @Parameters(commandDescription = "Test pulsar reader performance.")
+    static class Arguments extends PerformanceBaseArguments {
 
-    @Option(names = {"-m",
-            "--start-message-id"}, description = "Start message id. This can be either 'earliest', "
-            + "'latest' or a specific message id by using 'lid:eid'")
-    public String startMessageId = "earliest";
 
-    @Option(names = {"-q", "--receiver-queue-size"}, description = "Size of the receiver queue")
-    public int receiverQueueSize = 1000;
+        @Parameter(description = "persistent://prop/ns/my-topic", required = true)
+        public List<String> topic;
 
-    @Option(names = {"-n",
-            "--num-messages"}, description = "Number of messages to consume in total. If <= 0, "
-            + "it will keep consuming")
-    public long numMessages = 0;
+        @Parameter(names = { "-t", "--num-topics" }, description = "Number of topics",
+                validateWith = PositiveNumberParameterValidator.class)
+        public int numTopics = 1;
 
-    @Option(names = {
-            "--use-tls"}, description = "Use TLS encryption on the connection", descriptionKey = "useTls")
-    public boolean useTls;
+        @Parameter(names = { "-r", "--rate" }, description = "Simulate a slow message reader (rate in msg/s)")
+        public double rate = 0;
 
-    @Option(names = {"-time",
-            "--test-duration"}, description = "Test duration in secs. If <= 0, it will keep consuming")
-    public long testTime = 0;
-    public PerformanceReader() {
-        super("read");
-    }
+        @Parameter(names = { "-m",
+                "--start-message-id" }, description = "Start message id. This can be either 'earliest', "
+                + "'latest' or a specific message id by using 'lid:eid'")
+        public String startMessageId = "earliest";
 
-    @Override
-    public void validate() throws Exception {
-        super.validate();
-        if (startMessageId != "earliest" && startMessageId != "latest"
-                && (startMessageId.split(":")).length != 2) {
-            String errMsg = String.format("invalid start message ID '%s', must be either either 'earliest', "
-                    + "'latest' or a specific message id by using 'lid:eid'", startMessageId);
-            throw new Exception(errMsg);
+        @Parameter(names = { "-q", "--receiver-queue-size" }, description = "Size of the receiver queue")
+        public int receiverQueueSize = 1000;
+
+        @Parameter(names = {"-n",
+                "--num-messages"}, description = "Number of messages to consume in total. If <= 0, "
+                + "it will keep consuming")
+        public long numMessages = 0;
+
+        @Parameter(names = {
+                "--use-tls" }, description = "Use TLS encryption on the connection")
+        public boolean useTls;
+
+        @Parameter(names = { "-time",
+                "--test-duration" }, description = "Test duration in secs. If <= 0, it will keep consuming")
+        public long testTime = 0;
+
+        @Override
+        public void fillArgumentsFromProperties(Properties prop) {
+            if (!useTls) {
+                useTls = Boolean.parseBoolean(prop.getProperty("useTls"));
+            }
         }
     }
 
-    @Override
-    public void run() throws Exception {
+    public static void main(String[] args) throws Exception {
+        final Arguments arguments = new Arguments();
+        JCommander jc = new JCommander(arguments);
+        jc.setProgramName("pulsar-perf read");
+
+        try {
+            jc.parse(args);
+        } catch (ParameterException e) {
+            System.out.println(e.getMessage());
+            jc.usage();
+            PerfClientUtils.exit(-1);
+        }
+
+        if (arguments.help) {
+            jc.usage();
+            PerfClientUtils.exit(-1);
+        }
+
+        if (arguments.topic != null && arguments.topic.size() != arguments.numTopics) {
+            // keep compatibility with the previous version
+            if (arguments.topic.size() == 1) {
+                String prefixTopicName = arguments.topic.get(0);
+                List<String> defaultTopics = new ArrayList<>();
+                for (int i = 0; i < arguments.numTopics; i++) {
+                    defaultTopics.add(String.format("%s-%d", prefixTopicName, i));
+                }
+                arguments.topic = defaultTopics;
+            } else {
+                System.out.println("The size of topics list should be equal to --num-topics");
+                jc.usage();
+                PerfClientUtils.exit(-1);
+            }
+        }
+        arguments.fillArgumentsFromProperties();
+
         // Dump config variables
         PerfClientUtils.printJVMInformation(log);
         ObjectMapper m = new ObjectMapper();
         ObjectWriter w = m.writerWithDefaultPrettyPrinter();
-        log.info("Starting Pulsar performance reader with config: {}", w.writeValueAsString(this));
+        log.info("Starting Pulsar performance reader with config: {}", w.writeValueAsString(arguments));
 
-        final RateLimiter limiter = this.rate > 0 ? RateLimiter.create(this.rate) : null;
+        final RateLimiter limiter = arguments.rate > 0 ? RateLimiter.create(arguments.rate) : null;
+        long startTime = System.nanoTime();
+        long testEndTime = startTime + (long) (arguments.testTime * 1e9);
         ReaderListener<byte[]> listener = (reader, msg) -> {
+            if (arguments.testTime > 0) {
+                if (System.nanoTime() > testEndTime) {
+                    log.info("------------- DONE (reached the maximum duration: [{} seconds] of consumption) "
+                            + "--------------", arguments.testTime);
+                    PerfClientUtils.exit(0);
+                }
+            }
             messagesReceived.increment();
             bytesReceived.add(msg.getData().length);
 
             totalMessagesReceived.increment();
             totalBytesReceived.add(msg.getData().length);
 
-            if (this.numMessages > 0 && totalMessagesReceived.sum() >= this.numMessages) {
+            if (arguments.numMessages > 0 && totalMessagesReceived.sum() >= arguments.numMessages) {
                 log.info("------------- DONE (reached the maximum number: [{}] of consumption) --------------",
-                        this.numMessages);
+                        arguments.numMessages);
                 PerfClientUtils.exit(0);
             }
 
@@ -130,56 +177,43 @@ public class PerformanceReader extends PerformanceTopicListArguments {
             }
         };
 
-        ClientBuilder clientBuilder = PerfClientUtils.createClientBuilderFromArguments(this)
-                .enableTls(this.useTls);
+        ClientBuilder clientBuilder = PerfClientUtils.createClientBuilderFromArguments(arguments)
+                .enableTls(arguments.useTls);
 
         PulsarClient pulsarClient = clientBuilder.build();
 
         List<CompletableFuture<Reader<byte[]>>> futures = new ArrayList<>();
 
         MessageId startMessageId;
-        if ("earliest".equals(this.startMessageId)) {
+        if ("earliest".equals(arguments.startMessageId)) {
             startMessageId = MessageId.earliest;
-        } else if ("latest".equals(this.startMessageId)) {
+        } else if ("latest".equals(arguments.startMessageId)) {
             startMessageId = MessageId.latest;
         } else {
-            String[] parts = this.startMessageId.split(":");
+            String[] parts = arguments.startMessageId.split(":");
             startMessageId = new MessageIdImpl(Long.parseLong(parts[0]), Long.parseLong(parts[1]), -1);
         }
 
         ReaderBuilder<byte[]> readerBuilder = pulsarClient.newReader() //
                 .readerListener(listener) //
-                .receiverQueueSize(this.receiverQueueSize) //
+                .receiverQueueSize(arguments.receiverQueueSize) //
                 .startMessageId(startMessageId);
 
-        for (int i = 0; i < this.numTopics; i++) {
-            final TopicName topicName = TopicName.get(this.topics.get(i));
+        for (int i = 0; i < arguments.numTopics; i++) {
+            final TopicName topicName = TopicName.get(arguments.topic.get(i));
 
             futures.add(readerBuilder.clone().topic(topicName.toString()).createAsync());
         }
 
         FutureUtil.waitForAll(futures).get();
 
-        log.info("Start reading from {} topics", this.numTopics);
+        log.info("Start reading from {} topics", arguments.numTopics);
 
         final long start = System.nanoTime();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             printAggregatedThroughput(start);
             printAggregatedStats();
         }));
-
-        if (this.testTime > 0) {
-            TimerTask timoutTask = new TimerTask() {
-                @Override
-                public void run() {
-                    log.info("------------- DONE (reached the maximum duration: [{} seconds] of consumption) "
-                            + "--------------", testTime);
-                    PerfClientUtils.exit(0);
-                }
-            };
-            Timer timer = new Timer();
-            timer.schedule(timoutTask, this.testTime * 1000);
-        }
 
         long oldTime = System.nanoTime();
         Histogram reportHistogram = null;
@@ -213,6 +247,7 @@ public class PerformanceReader extends PerformanceTopicListArguments {
 
         pulsarClient.close();
     }
+
     private static void printAggregatedThroughput(long start) {
         double elapsed = (System.nanoTime() - start) / 1e9;
         double rate = totalMessagesReceived.sum() / elapsed;

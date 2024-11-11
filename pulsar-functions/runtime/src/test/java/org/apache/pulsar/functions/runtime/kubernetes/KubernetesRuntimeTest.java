@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,22 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime.kubernetes;
 
 import static org.apache.pulsar.functions.runtime.RuntimeUtils.FUNCTIONS_INSTANCE_CLASSPATH;
 import static org.apache.pulsar.functions.utils.FunctionCommon.roundDecimal;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotEquals;
@@ -43,9 +35,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.protobuf.util.JsonFormat;
 import io.kubernetes.client.custom.Quantity;
-import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.AppsV1Api;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
+import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.models.V1Container;
 import io.kubernetes.client.openapi.models.V1PodList;
 import io.kubernetes.client.openapi.models.V1PodSpec;
@@ -63,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Collectors;
 import okhttp3.Call;
 import okhttp3.Response;
@@ -92,6 +85,25 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import static org.apache.pulsar.functions.runtime.RuntimeUtils.FUNCTIONS_INSTANCE_CLASSPATH;
+import static org.apache.pulsar.functions.utils.FunctionCommon.roundDecimal;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotEquals;
+import static org.testng.Assert.assertThrows;
+import static org.testng.Assert.assertTrue;
+
 /**
  * Unit test of {@link ThreadRuntime}.
  */
@@ -107,8 +119,8 @@ public class KubernetesRuntimeTest {
     private static final String narExtractionDirectory = "/tmp/foo";
 
     static {
-        topicsToSerDeClassName.put("test_src", "");
-        topicsToSchema.put("test_src",
+        topicsToSerDeClassName.put("persistent://sample/standalone/ns1/test_src", "");
+        topicsToSchema.put("persistent://sample/standalone/ns1/test_src",
                 ConsumerSpec.newBuilder().setSerdeClassName("").setIsRegexPattern(false).build());
     }
 
@@ -128,6 +140,11 @@ public class KubernetesRuntimeTest {
     }
 
     class TestSecretProviderConfigurator implements SecretsProviderConfigurator {
+
+        @Override
+        public void init(Map<String, String> config) {
+
+        }
 
         @Override
         public String getSecretsProviderClassName(FunctionDetails functionDetails) {
@@ -164,6 +181,10 @@ public class KubernetesRuntimeTest {
             return null;
         }
 
+        @Override
+        public void doAdmissionChecks(AppsV1Api appsV1Api, CoreV1Api coreV1Api, String jobNamespace, String jobName, FunctionDetails functionDetails) {
+
+        }
     }
 
     private KubernetesRuntimeFactory factory;
@@ -245,7 +266,7 @@ public class KubernetesRuntimeTest {
         kubernetesRuntimeFactoryConfig.setNarExtractionDirectory(narExtractionDirectory);
         workerConfig.setFunctionRuntimeFactoryClassName(KubernetesRuntimeFactory.class.getName());
         workerConfig.setFunctionRuntimeFactoryConfigs(
-                ObjectMapperFactory.getMapper().getObjectMapper().convertValue(kubernetesRuntimeFactoryConfig, Map.class));
+                ObjectMapperFactory.getThreadLocal().convertValue(kubernetesRuntimeFactoryConfig, Map.class));
         workerConfig.setFunctionInstanceMinResources(null);
         workerConfig.setStateStorageServiceUrl(stateStorageServiceUrl);
         workerConfig.setAuthenticationEnabled(false);
@@ -441,14 +462,14 @@ public class KubernetesRuntimeTest {
         if (null != depsDir) {
             extraDepsEnv = " -Dpulsar.functions.extra.dependencies.dir=" + depsDir;
             classpath = classpath + ":" + depsDir + "/*";
-            totalArgs = 52;
-            portArg = 39;
-            metricsPortArg = 41;
+            totalArgs = 46;
+            portArg = 33;
+            metricsPortArg = 35;
         } else {
             extraDepsEnv = "";
-            portArg = 38;
-            metricsPortArg = 40;
-            totalArgs = 51;
+            portArg = 32;
+            metricsPortArg = 34;
+            totalArgs = 45;
         }
         if (secretsAttached) {
             totalArgs += 4;
@@ -478,13 +499,8 @@ public class KubernetesRuntimeTest {
                 + " -Dlog4j.configurationFile=kubernetes_instance_log4j2.xml "
                 + "-Dpulsar.function.log.dir=" + logDirectory + "/" + FunctionCommon.getFullyQualifiedName(config.getFunctionDetails())
                 + " -Dpulsar.function.log.file=" + config.getFunctionDetails().getName() + "-$SHARD_ID"
-                + " -Dio.netty.tryReflectionSetAccessible=true"
-                + " -Dorg.apache.pulsar.shade.io.netty.tryReflectionSetAccessible=true"
-                + " -Dio.grpc.netty.shaded.io.netty.tryReflectionSetAccessible=true"
-                + " --add-opens java.base/java.nio=ALL-UNNAMED"
-                + " --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
-                + " --add-opens java.base/java.util.zip=ALL-UNNAMED"
-                + " -Xmx" + RESOURCES.getRam()
+                + " -Dio.netty.tryReflectionSetAccessible=true -Xmx" + String.valueOf(RESOURCES.getRam())
+                + " --add-opens java.base/sun.net=ALL-UNNAMED"
                 + " org.apache.pulsar.functions.instance.JavaInstanceMain"
                 + " --jar " + jarLocation
                 + " --transform_function_jar " + jarLocation
@@ -505,7 +521,6 @@ public class KubernetesRuntimeTest {
         }
         expectedArgs += " --cluster_name standalone --nar_extraction_directory " + narExtractionDirectory;
 
-        assertEquals(String.join(" ", args), expectedArgs);
 
         // check padding and xmx
         long heap = Long.parseLong(args.stream().filter(s -> s.startsWith("-Xmx")).collect(Collectors.toList()).get(0).replace("-Xmx", ""));
@@ -566,7 +581,7 @@ public class KubernetesRuntimeTest {
 
         assertEquals(args.size(), totalArgs,
                 "Actual args : " + StringUtils.join(args, " "));
-        String expectedArgs = pythonPath + "exec python3 " + pythonInstanceFile
+        String expectedArgs = pythonPath + "exec python " + pythonInstanceFile
                 + " --py " + pulsarRootDir + "/" + userJarFile
                 + " --logging_directory " + logDirectory
                 + " --logging_file " + config.getFunctionDetails().getName()
@@ -984,7 +999,7 @@ public class KubernetesRuntimeTest {
         assertEquals(goInstanceConfig.get("killAfterIdleMs"), 0);
         assertEquals(goInstanceConfig.get("parallelism"), 0);
         assertEquals(goInstanceConfig.get("className"), "");
-        assertEquals(goInstanceConfig.get("sourceSpecsTopic"), "test_src");
+        assertEquals(goInstanceConfig.get("sourceSpecsTopic"), "persistent://sample/standalone/ns1/test_src");
         assertEquals(goInstanceConfig.get("sourceSchemaType"), "");
         assertEquals(goInstanceConfig.get("sinkSpecsTopic"), TEST_NAME + "-output");
         assertEquals(goInstanceConfig.get("clusterName"), "standalone");
@@ -1010,14 +1025,6 @@ public class KubernetesRuntimeTest {
         assertEquals(goInstanceConfig.get("expectedHealthCheckInterval"), 0);
         assertEquals(goInstanceConfig.get("deadLetterTopic"), "");
         assertEquals(goInstanceConfig.get("metricsPort"), 4331);
-        assertEquals(goInstanceConfig.get("functionDetails"), "{\"tenant\":\"tenant\",\"namespace\":\"namespace\","
-                + "\"name\":\"container\",\"className\":\"org.apache.pulsar.functions.utils.functioncache"
-                + ".AddFunction\",\"logTopic\":\"container-log\",\"runtime\":\"GO\",\"source\":{\"className\":\"org"
-                + ".pulsar.pulsar.TestSource\",\"subscriptionType\":\"FAILOVER\",\"typeClassName\":\"java.lang"
-                + ".String\",\"inputSpecs\":{\"test_src\":{}}},\"sink\":{\"className\":\"org.pulsar.pulsar"
-                + ".TestSink\",\"topic\":\"container-output\",\"serDeClassName\":\"org.apache.pulsar.functions"
-                + ".runtime.serde.Utf8Serializer\",\"typeClassName\":\"java.lang.String\"},\"resources\":{\"cpu\":1"
-                + ".0,\"ram\":\"1000\",\"disk\":\"10000\"}}");
 
         // check padding and xmx
         V1Container containerSpec = container.getFunctionContainer(Collections.emptyList(), RESOURCES);
@@ -1091,7 +1098,7 @@ public class KubernetesRuntimeTest {
         kubernetesRuntimeFactoryConfig.setNarExtractionDirectory(narExtractionDirectory);
         workerConfig.setFunctionRuntimeFactoryClassName(KubernetesRuntimeFactory.class.getName());
         workerConfig.setFunctionRuntimeFactoryConfigs(
-                ObjectMapperFactory.getMapper().getObjectMapper().convertValue(kubernetesRuntimeFactoryConfig, Map.class));
+                ObjectMapperFactory.getThreadLocal().convertValue(kubernetesRuntimeFactoryConfig, Map.class));
         workerConfig.setFunctionInstanceMinResources(null);
         workerConfig.setStateStorageServiceUrl(stateStorageServiceUrl);
         workerConfig.setAuthenticationEnabled(false);
@@ -1320,6 +1327,20 @@ public class KubernetesRuntimeTest {
     }
 
     @Test
+    public void testSanitizingJarFileName() throws Exception {
+        String originalCodeFileName = "code(1).jar";
+        String originalTransformFunctionFileName = "transform(1).jar";
+        KubernetesRuntime kubernetesRuntime =
+                createKubernetesRuntimeFactory(null, 10, 1.0, 1.0, Optional.empty(), "/download", null, null)
+                        .createContainer(createJavaInstanceConfig(FunctionDetails.Runtime.JAVA, false),
+                                "/test/code", originalCodeFileName, "/test/transforms",
+                                originalTransformFunctionFileName,
+                                Long.MIN_VALUE);
+        List<String> processArgs = kubernetesRuntime.getProcessArgs();
+        assertThat(processArgs).contains("/download/code_1_.jar", "/download/transform_1_.jar");
+    }
+
+    @Test
     public void testDeleteStatefulSetWithTranslatedKubernetesLabelChars() throws Exception {
         InstanceConfig config = createJavaInstanceConfig(FunctionDetails.Runtime.JAVA, false);
         config.setFunctionDetails(createFunctionDetails(FunctionDetails.Runtime.JAVA, false,
@@ -1359,24 +1380,12 @@ public class KubernetesRuntimeTest {
 
         when(coreApi.listNamespacedPod(anyString(), isNull(), isNull(), isNull(), isNull(),
                 eq(expectedLabels), isNull(), isNull(), isNull(), isNull(), isNull())).thenReturn(podList);
-        KubernetesRuntime kr = factory.createContainer(config, "/test/code", "code.yml", "/test/transforms", "transform.yml", Long.MIN_VALUE);
+        KubernetesRuntime kr = factory.createContainer(config, "/test/code", "code.yml",
+                null, null,
+                Long.MIN_VALUE);
         kr.deleteStatefulSet();
 
         verify(coreApi).listNamespacedPod(anyString(), isNull(), isNull(), isNull(), isNull(),
                 eq(expectedLabels), isNull(), isNull(), isNull(), isNull(), isNull());
-    }
-
-    @Test
-    public void testSanitizingJarFileName() throws Exception {
-        String originalCodeFileName = "code(1).jar";
-        String originalTransformFunctionFileName = "transform(1).jar";
-        KubernetesRuntime kubernetesRuntime =
-                createKubernetesRuntimeFactory(null, 10, 1.0, 1.0, Optional.empty(), "/download", null, null)
-                        .createContainer(createJavaInstanceConfig(FunctionDetails.Runtime.JAVA, false),
-                                "/test/code", originalCodeFileName, "/test/transforms",
-                                originalTransformFunctionFileName,
-                                Long.MIN_VALUE);
-        List<String> processArgs = kubernetesRuntime.getProcessArgs();
-        assertThat(processArgs).contains("/download/code_1_.jar", "/download/transform_1_.jar");
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,23 +18,38 @@
  */
 package org.apache.pulsar.client.api;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.FileSource;
+import com.github.tomakehurst.wiremock.extension.Parameters;
+import com.github.tomakehurst.wiremock.extension.ResponseTransformer;
+import com.github.tomakehurst.wiremock.http.Request;
+import com.github.tomakehurst.wiremock.http.Response;
 import com.google.common.collect.Sets;
-import java.net.MalformedURLException;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.impl.DefaultJwtBuilder;
+import io.jsonwebtoken.security.Keys;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyPair;
+import java.security.PrivateKey;
 import java.time.Duration;
-import java.util.HashMap;
+import java.util.Base64;
+import java.util.Date;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import org.apache.pulsar.broker.auth.MockOIDCIdentityProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.ProducerImpl;
@@ -42,13 +57,10 @@ import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationFactoryOAuth2;
 import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
-import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -62,28 +74,53 @@ import org.testng.annotations.Test;
 public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsumerBase {
     private static final Logger log = LoggerFactory.getLogger(TokenOauth2AuthenticatedProducerConsumerTest.class);
 
-    private MockOIDCIdentityProvider server;
+    private WireMockServer server;
+
+    private final String ADMIN_ROLE = "Xd23RHsUnvUlP7wchjNYOaIfazgeHd9x@clients";
 
     // Credentials File, which contains "client_id" and "client_secret"
     private final String CREDENTIALS_FILE = "./src/test/resources/authentication/token/credentials_file.json";
-    private final String audience = "my-pulsar-cluster";
-
-    @BeforeClass(alwaysRun = true)
-    protected void setupClass() {
-        String clientSecret = "super-secret-client-secret";
-        server = new MockOIDCIdentityProvider(clientSecret, audience, 3000);
-    }
+    private final String AUDIENCE = "https://dev-kt-aa9ne.us.auth0.com/api/v2/";
 
     @BeforeMethod(alwaysRun = true)
     @Override
     protected void setup() throws Exception {
+        // Create the token key pair
+        KeyPair keyPair = Keys.keyPairFor(SignatureAlgorithm.RS256);
+
+        // Start mocked OAuth2 server
+        server = new WireMockServer(wireMockConfig().port(0).extensions(new OAuth2Transformer(keyPair, 3000)));
+        server.start();
+
+        // Set up a correct openid-configuration that points to the next stub
+        server.stubFor(
+                get(urlEqualTo("/.well-known/openid-configuration"))
+                        .willReturn(aResponse()
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(String.format("{\n" +
+                                        "    \"issuer\": \"%s\",\n" +
+                                        "    \"token_endpoint\": \"%s/oauth/token\"\n" +
+                                        "}", server.baseUrl(), server.baseUrl()))));
+
+
+        // Only respond when the client sends the expected request body
+        server.stubFor(
+                post(urlEqualTo("/oauth/token"))
+                        .withRequestBody(
+                                equalTo("audience=https%3A%2F%2Fdev-kt-aa9ne.us.auth0.com%2Fapi%2Fv2%2F&"
+                                        + "client_id=Xd23RHsUnvUlP7wchjNYOaIfazgeHd9x&"
+                                        + "client_secret=rT7ps7WY8uhdVuBTKWZkttwLdQotmdEliaM5rLfmgNibvqziZ-g07ZH52N"
+                                        + "_poGAb&grant_type=client_credentials"))
+                        .willReturn(aResponse()
+                                .withTransformers("o-auth-token-transformer")
+                                .withStatus(200)));
+
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationRefreshCheckSeconds(1);
 
         Set<String> superUserRoles = new HashSet<>();
-        // Matches the role in th credentials file
-        superUserRoles.add("my-admin-role");
+        superUserRoles.add(ADMIN_ROLE);
         conf.setSuperUserRoles(superUserRoles);
 
         Set<String> providers = new HashSet<>();
@@ -91,18 +128,18 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         conf.setAuthenticationProviders(providers);
 
         conf.setBrokerClientAuthenticationPlugin(AuthenticationOAuth2.class.getName());
-        final Map<String, String> oauth2Param = new HashMap<>();
-        oauth2Param.put("privateKey", CREDENTIALS_FILE);
-        oauth2Param.put("issuerUrl", server.getIssuer());
-        oauth2Param.put("audience", audience);
-        conf.setBrokerClientAuthenticationParameters(ObjectMapperFactory
-                .getMapper().getObjectMapper().writeValueAsString(oauth2Param));
+        conf.setBrokerClientAuthenticationParameters("{\n"
+                + "  \"privateKey\": \"" + CREDENTIALS_FILE + "\",\n"
+                + "  \"issuerUrl\": \"" + server.baseUrl() + "\",\n"
+                + "  \"audience\": \"" + AUDIENCE + "\",\n"
+                + "}\n");
 
         conf.setClusterName("test");
 
         // Set provider domain name
         Properties properties = new Properties();
-        properties.setProperty("tokenPublicKey", "data:;base64," + server.getBase64EncodedPublicKey());
+        properties.setProperty("tokenPublicKey", "data:;base64,"
+                + Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
 
         conf.setProperties(properties);
         super.init();
@@ -113,32 +150,26 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         Path path = Paths.get(CREDENTIALS_FILE).toAbsolutePath();
         log.info("Credentials File path: {}", path.toString());
 
-        closeAdmin();
+        // AuthenticationOAuth2
+        Authentication authentication = AuthenticationFactoryOAuth2.clientCredentials(
+                new URL(server.baseUrl()),
+                path.toUri().toURL(),  // key file path
+                "https://dev-kt-aa9ne.us.auth0.com/api/v2/"
+        );
+
         admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString())
-                .authentication(createAuthentication(path))
+                .authentication(authentication)
                 .build());
 
         replacePulsarClient(PulsarClient.builder().serviceUrl(new URI(pulsar.getBrokerServiceUrl()).toString())
                 .statsInterval(0, TimeUnit.SECONDS)
-                .authentication(createAuthentication(path)));
-    }
-
-    private Authentication createAuthentication(Path path) throws MalformedURLException {
-        return AuthenticationFactoryOAuth2.clientCredentials(
-                new URL(server.getIssuer()),
-                path.toUri().toURL(),  // key file path
-                audience
-        );
+                .authentication(authentication));
     }
 
     @AfterMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
-    }
-
-    @AfterClass(alwaysRun = true)
-    protected void cleanupAfterClass() {
         server.stop();
     }
 
@@ -160,7 +191,7 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         }
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -212,7 +243,7 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         }
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -248,7 +279,7 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         }
 
         msg = null;
-        messageSet = new HashSet<>();
+        messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -259,5 +290,51 @@ public class TokenOauth2AuthenticatedProducerConsumerTest extends ProducerConsum
         // Acknowledge the consumption of all messages at once
         consumer.acknowledgeCumulative(msg);
         consumer.close();
+    }
+
+    class OAuth2Transformer extends ResponseTransformer {
+
+        private final PrivateKey privateKey;
+        private final long tokenTTL;
+
+        OAuth2Transformer(KeyPair key, long tokenTTLMillis) {
+            this.privateKey = key.getPrivate();
+            this.tokenTTL = tokenTTLMillis;
+        }
+
+        @Override
+        public Response transform(Request request, Response response, FileSource files, Parameters parameters) {
+            return Response.Builder.like(response).but().body(String.format("{\n" +
+                    "    \"access_token\": \"%s\",\n" +
+                    "    \"expires_in\": %d,\n" +
+                    "    \"token_type\":\"Bearer\"\n" +
+                    "}", generateToken(), TimeUnit.MILLISECONDS.toSeconds(tokenTTL))).build();
+        }
+
+
+        @Override
+        public String getName() {
+            return "o-auth-token-transformer";
+        }
+
+        @Override
+        public boolean applyGlobally() {
+            return false;
+        }
+
+        private String generateToken() {
+            long now = System.currentTimeMillis();
+            DefaultJwtBuilder defaultJwtBuilder = new DefaultJwtBuilder();
+            defaultJwtBuilder.setHeaderParam("typ", "JWT");
+            defaultJwtBuilder.setHeaderParam("alg", "RS256");
+            defaultJwtBuilder.setIssuer(server.baseUrl());
+            defaultJwtBuilder.setSubject(ADMIN_ROLE);
+            defaultJwtBuilder.setAudience(AUDIENCE);
+            defaultJwtBuilder.setIssuedAt(new Date(now));
+            defaultJwtBuilder.setNotBefore(new Date(now));
+            defaultJwtBuilder.setExpiration(new Date(now + tokenTTL));
+            defaultJwtBuilder.signWith(privateKey);
+            return defaultJwtBuilder.compact();
+        }
     }
 }

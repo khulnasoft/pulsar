@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,7 +22,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
-import java.util.List;
+
+import java.util.Collections;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -38,7 +39,7 @@ public class AbstractSubscriptionTest {
         subscription = spy(AbstractSubscription.class);
 
         when(subscription.getDispatcher()).thenReturn(dispatcher);
-        when(dispatcher.getConsumers()).thenReturn(List.of(consumer));
+        when(dispatcher.getConsumers()).thenReturn(Collections.singletonList(consumer));
     }
 
     @Test

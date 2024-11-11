@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,41 +25,28 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
+
 import io.netty.buffer.ByteBuf;
-import io.netty.util.concurrent.DefaultThreadFactory;
+
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicReference;
+
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.client.api.PulsarClientException.LookupException;
 import org.apache.pulsar.client.impl.BinaryProtoLookupService.LookupDataResult;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
-import org.apache.pulsar.client.impl.metrics.InstrumentProvider;
-import org.apache.pulsar.common.api.proto.BaseCommand;
-import org.apache.pulsar.common.api.proto.BaseCommand.Type;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.protocol.Commands;
-import org.awaitility.Awaitility;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 public class BinaryProtoLookupServiceTest {
     private BinaryProtoLookupService lookup;
     private TopicName topicName;
-    private ExecutorService internalExecutor;
-
-    @AfterMethod
-    public void cleanup() throws Exception {
-        internalExecutor.shutdown();
-        lookup.close();
-    }
 
     @BeforeMethod
     public void setup() throws Exception {
@@ -82,30 +69,22 @@ public class BinaryProtoLookupServiceTest {
         doReturn(0).when(clientConfig).getMaxLookupRedirects();
 
         PulsarClientImpl client = mock(PulsarClientImpl.class);
-        doReturn(InstrumentProvider.NOOP).when(client).instrumentProvider();
         doReturn(cnxPool).when(client).getCnxPool();
         doReturn(clientConfig).when(client).getConfiguration();
         doReturn(1L).when(client).newRequestId();
-        ClientConfigurationData data = new ClientConfigurationData();
-        doReturn(data).when(client).getConfiguration();
-        internalExecutor =
-                Executors.newSingleThreadExecutor(new DefaultThreadFactory("pulsar-client-test-internal-executor"));
-        doReturn(internalExecutor).when(client).getInternalExecutorService();
 
-        lookup = spy(new BinaryProtoLookupService(client, "pulsar://localhost:6650", null, false,
-                mock(ExecutorService.class), internalExecutor));
-
+        lookup = spy(
+                new BinaryProtoLookupService(client, "pulsar://localhost:6650", false, mock(ExecutorService.class)));
         topicName = TopicName.get("persistent://tenant1/ns1/t1");
     }
 
     @Test(invocationTimeOut = 3000)
     public void maxLookupRedirectsTest1() throws Exception {
-        LookupTopicResult lookupResult = lookup.getBroker(topicName).get();
-        assertEquals(lookupResult.getLogicalAddress(), InetSocketAddress
+        Pair<InetSocketAddress, InetSocketAddress> addressPair = lookup.getBroker(topicName).get();
+        assertEquals(addressPair.getLeft(), InetSocketAddress
                 .createUnresolved("broker2.pulsar.apache.org" ,6650));
-        assertEquals(lookupResult.getPhysicalAddress(), InetSocketAddress
+        assertEquals(addressPair.getRight(), InetSocketAddress
                 .createUnresolved("broker2.pulsar.apache.org" ,6650));
-        assertEquals(lookupResult.isUseProxy(), false);
     }
 
     @Test(invocationTimeOut = 3000)
@@ -114,12 +93,11 @@ public class BinaryProtoLookupServiceTest {
         field.setAccessible(true);
         field.set(lookup, 2);
 
-        LookupTopicResult lookupResult = lookup.getBroker(topicName).get();
-        assertEquals(lookupResult.getLogicalAddress(), InetSocketAddress
+        Pair<InetSocketAddress, InetSocketAddress> addressPair = lookup.getBroker(topicName).get();
+        assertEquals(addressPair.getLeft(), InetSocketAddress
                 .createUnresolved("broker2.pulsar.apache.org" ,6650));
-        assertEquals(lookupResult.getPhysicalAddress(), InetSocketAddress
+        assertEquals(addressPair.getRight(), InetSocketAddress
                 .createUnresolved("broker2.pulsar.apache.org" ,6650));
-        assertEquals(lookupResult.isUseProxy(), false);
     }
 
     @Test(invocationTimeOut = 3000)
@@ -136,37 +114,6 @@ public class BinaryProtoLookupServiceTest {
             assertTrue(cause instanceof LookupException);
             assertEquals(cause.getMessage(), "Too many redirects: 1");
         }
-    }
-
-    @Test
-    public void testCommandUnChangedInDifferentThread() throws Exception {
-        BaseCommand successCommand = Commands.newSuccessCommand(10000);
-        lookup.getBroker(topicName).get();
-        assertEquals(successCommand.getType(), Type.SUCCESS);
-        lookup.getPartitionedTopicMetadata(topicName, true, true).get();
-        assertEquals(successCommand.getType(), Type.SUCCESS);
-    }
-
-    @Test
-    public void testCommandChangedInSameThread() throws Exception {
-        AtomicReference<BaseCommand> successCommand = new AtomicReference<>();
-        internalExecutor.execute(() -> successCommand.set(Commands.newSuccessCommand(10000)));
-        Awaitility.await().untilAsserted(() -> {
-            BaseCommand baseCommand = successCommand.get();
-            assertNotNull(baseCommand);
-            assertEquals(baseCommand.getType(), Type.SUCCESS);
-        });
-        lookup.getBroker(topicName).get();
-        assertEquals(successCommand.get().getType(), Type.LOOKUP);
-
-        internalExecutor.execute(() -> successCommand.set(Commands.newSuccessCommand(10000)));
-        Awaitility.await().untilAsserted(() -> {
-            BaseCommand baseCommand = successCommand.get();
-            assertNotNull(baseCommand);
-            assertEquals(baseCommand.getType(), Type.SUCCESS);
-        });
-        lookup.getPartitionedTopicMetadata(topicName, true, true).get();
-        assertEquals(successCommand.get().getType(), Type.PARTITIONED_METADATA);
     }
 
     private static LookupDataResult createLookupDataResult(String brokerUrl, boolean redirect) throws Exception {

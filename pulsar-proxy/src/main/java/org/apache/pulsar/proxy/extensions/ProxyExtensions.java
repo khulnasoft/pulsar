@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,7 +24,6 @@ import io.netty.channel.socket.SocketChannel;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -50,9 +49,6 @@ public class ProxyExtensions implements AutoCloseable {
      * @return the collection of extensions
      */
     public static ProxyExtensions load(ProxyConfiguration conf) throws IOException {
-        if (conf.getProxyExtensions().isEmpty()) {
-            return new ProxyExtensions(Collections.emptyMap());
-        }
         ExtensionsDefinitions definitions =
                 ProxyExtensionsUtils.searchForExtensions(
                         conf.getProxyExtensionsDirectory(), conf.getNarExtractionDirectory());

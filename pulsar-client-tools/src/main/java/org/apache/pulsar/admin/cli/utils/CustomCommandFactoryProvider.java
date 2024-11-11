@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -77,7 +77,7 @@ public class CustomCommandFactoryProvider {
     private static CustomCommandFactoryDefinitions searchForCustomCommandFactories(String directory,
                                                                        String narExtractionDirectory)
             throws IOException {
-        Path path = Paths.get(directory).toAbsolutePath().normalize();
+        Path path = Paths.get(directory).toAbsolutePath();
         log.debug("Searching for command factories  in {}", path);
 
         CustomCommandFactoryDefinitions customCommandFactoryDefinitions = new CustomCommandFactoryDefinitions();
@@ -134,7 +134,7 @@ public class CustomCommandFactoryProvider {
             configStr = ncl.getServiceDefinition(COMMAND_FACTORY_ENTRY + ".yml");
         }
 
-        return ObjectMapperFactory.getYamlMapper().reader().readValue(
+        return ObjectMapperFactory.getThreadLocalYaml().readValue(
                 configStr, CustomCommandFactoryDefinition.class
         );
     }
@@ -142,7 +142,7 @@ public class CustomCommandFactoryProvider {
     private static CustomCommandFactory load(CustomCommandFactoryMetaData metadata,
                                                    String narExtractionDirectory)
             throws IOException {
-        final File narFile = metadata.getArchivePath().toAbsolutePath().normalize().toFile();
+        final File narFile = metadata.getArchivePath().toAbsolutePath().toFile();
         NarClassLoader ncl = NarClassLoaderBuilder.builder()
                 .narFile(narFile)
                 .parentClassLoader(CustomCommandFactory.class.getClassLoader())

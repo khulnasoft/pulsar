@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,9 +21,7 @@ package org.apache.pulsar.io.redis.sink;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.functions.instance.SinkRecord;
-import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.redis.EmbeddedRedisUtils;
-import org.mockito.Mockito;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -68,8 +66,7 @@ public class RedisSinkTest {
         Record<byte[]> record = build("fakeTopic", "fakeKey", "fakeValue");
 
         // open should success
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        sink.open(configs, sinkContext);
+        sink.open(configs, null);
 
         // write should success.
         sink.write(record);
@@ -83,6 +80,10 @@ public class RedisSinkTest {
     private Record<byte[]> build(String topic, String key, String value) {
         // prepare a SinkRecord
         SinkRecord<byte[]> record = new SinkRecord<>(new Record<byte[]>() {
+            @Override
+            public Optional<String> getKey() {
+                return Optional.empty();
+            }
 
             @Override
             public byte[] getValue() {

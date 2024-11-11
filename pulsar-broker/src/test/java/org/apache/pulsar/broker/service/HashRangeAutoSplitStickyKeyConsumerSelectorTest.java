@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -37,8 +37,7 @@ public class HashRangeAutoSplitStickyKeyConsumerSelectorTest {
 
     @Test
     public void testGetConsumerKeyHashRanges() throws BrokerServiceException.ConsumerAssignException {
-        HashRangeAutoSplitStickyKeyConsumerSelector selector =
-                new HashRangeAutoSplitStickyKeyConsumerSelector(2 << 5, false);
+        HashRangeAutoSplitStickyKeyConsumerSelector selector = new HashRangeAutoSplitStickyKeyConsumerSelector(2 << 5);
         List<String> consumerName = Arrays.asList("consumer1", "consumer2", "consumer3", "consumer4");
         List<Consumer> consumers = new ArrayList<>();
         for (String s : consumerName) {
@@ -62,8 +61,7 @@ public class HashRangeAutoSplitStickyKeyConsumerSelectorTest {
 
     @Test
     public void testGetConsumerKeyHashRangesWithSameConsumerName() throws Exception {
-        HashRangeAutoSplitStickyKeyConsumerSelector selector =
-                new HashRangeAutoSplitStickyKeyConsumerSelector(2 << 5, false);
+        HashRangeAutoSplitStickyKeyConsumerSelector selector = new HashRangeAutoSplitStickyKeyConsumerSelector(2 << 5);
         final String consumerName = "My-consumer";
         List<Consumer> consumers = new ArrayList<>();
         for (int i = 0; i < 3; i++) {

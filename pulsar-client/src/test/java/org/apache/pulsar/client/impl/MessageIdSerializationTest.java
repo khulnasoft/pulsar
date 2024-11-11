@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -43,7 +43,8 @@ public class MessageIdSerializationTest {
 
     @Test
     public void testBatchSizeNotSet() throws Exception {
-        MessageId id = new BatchMessageIdImpl(1L, 2L, 3, 4, -1, null);
+        MessageId id = new BatchMessageIdImpl(1L, 2L, 3, 4, -1,
+                BatchMessageAckerDisabled.INSTANCE);
         byte[] serialized = id.toByteArray();
         assertEquals(MessageId.fromByteArray(serialized), id);
         assertEquals(MessageId.fromByteArrayWithTopic(serialized, "my-topic"), id);

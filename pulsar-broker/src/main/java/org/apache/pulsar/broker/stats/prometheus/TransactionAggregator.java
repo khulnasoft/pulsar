@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,7 @@
  */
 package org.apache.pulsar.broker.stats.prometheus;
 
-import static org.apache.pulsar.common.naming.SystemTopicNames.isEventSystemTopic;
+import static org.apache.pulsar.common.events.EventsTopicNames.checkTopicIsEventsNames;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.ManagedLedger;
@@ -36,7 +36,7 @@ import org.apache.pulsar.transaction.coordinator.impl.TransactionMetadataStoreSt
 public class TransactionAggregator {
 
     private static final FastThreadLocal<AggregatedTransactionCoordinatorStats> localTransactionCoordinatorStats =
-            new FastThreadLocal<>() {
+            new FastThreadLocal<AggregatedTransactionCoordinatorStats>() {
                 @Override
                 protected AggregatedTransactionCoordinatorStats initialValue() {
                     return new AggregatedTransactionCoordinatorStats();
@@ -44,7 +44,7 @@ public class TransactionAggregator {
             };
 
     private static final FastThreadLocal<ManagedLedgerStats> localManageLedgerStats =
-            new FastThreadLocal<>() {
+            new FastThreadLocal<ManagedLedgerStats>() {
                 @Override
                 protected ManagedLedgerStats initialValue() {
                     return new ManagedLedgerStats();
@@ -56,14 +56,14 @@ public class TransactionAggregator {
 
         if (includeTopicMetrics) {
 
-            pulsar.getBrokerService().getMultiLayerTopicsMap().forEach((namespace, bundlesMap) ->
+            pulsar.getBrokerService().getMultiLayerTopicMap().forEach((namespace, bundlesMap) ->
                     bundlesMap.forEach((bundle, topicsMap) -> topicsMap.forEach((name, topic) -> {
                         if (topic instanceof PersistentTopic) {
                             topic.getSubscriptions().values().forEach(subscription -> {
                                 try {
                                     localManageLedgerStats.get().reset();
-                                    if (!isEventSystemTopic(TopicName.get(subscription.getTopic().getName()))
-                                            && subscription instanceof PersistentSubscription
+                                    if (!checkTopicIsEventsNames(TopicName.get(subscription.getTopic().getName()))
+                                            && subscription instanceof  PersistentSubscription
                                             && ((PersistentSubscription) subscription).checkIfPendingAckStoreInit()) {
                                         ManagedLedger managedLedger = ((PersistentSubscription) subscription)
                                                 .getPendingAckManageLedger().get();
@@ -241,15 +241,15 @@ public class TransactionAggregator {
                                                  long coordinatorId) {
         writeMetric(stream, "pulsar_txn_active_count", stats.actives, cluster,
                 coordinatorId);
-        writeMetric(stream, "pulsar_txn_committed_total", stats.committedCount, cluster,
+        writeMetric(stream, "pulsar_txn_committed_count", stats.committedCount, cluster,
                 coordinatorId);
-        writeMetric(stream, "pulsar_txn_aborted_total", stats.abortedCount, cluster,
+        writeMetric(stream, "pulsar_txn_aborted_count", stats.abortedCount, cluster,
                 coordinatorId);
-        writeMetric(stream, "pulsar_txn_created_total", stats.createdCount, cluster,
+        writeMetric(stream, "pulsar_txn_created_count", stats.createdCount, cluster,
                 coordinatorId);
-        writeMetric(stream, "pulsar_txn_timeout_total", stats.timeoutCount, cluster,
+        writeMetric(stream, "pulsar_txn_timeout_count", stats.timeoutCount, cluster,
                 coordinatorId);
-        writeMetric(stream, "pulsar_txn_append_log_total", stats.appendLogCount, cluster,
+        writeMetric(stream, "pulsar_txn_append_log_count", stats.appendLogCount, cluster,
                 coordinatorId);
         long[] latencyBuckets = stats.executionLatency;
         writeMetric(stream, "pulsar_txn_execution_latency_le_10", latencyBuckets[0], cluster, coordinatorId);

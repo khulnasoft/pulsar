@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,26 +26,20 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import javax.naming.AuthenticationException;
 import javax.net.ssl.SSLSession;
-import org.apache.pulsar.PulsarVersion;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
-import org.apache.pulsar.client.impl.ClientBuilderImpl;
 import org.apache.pulsar.common.api.AuthData;
-import org.apache.pulsar.common.policies.data.PublisherStats;
-import org.apache.pulsar.common.policies.data.TopicStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.testng.Assert.assertEquals;
 
 /**
  * Test Mutual Authentication.
@@ -188,14 +182,14 @@ public class MutualAuthenticationTest extends ProducerConsumerBase {
         }
     }
 
-    @BeforeClass(alwaysRun = true)
+    @BeforeMethod(alwaysRun = true)
     @Override
     protected void setup() throws Exception {
         mutualAuth = new MutualAuthentication();
         Set<String> superUserRoles = new HashSet<>();
         superUserRoles.add("admin");
         conf.setSuperUserRoles(superUserRoles);
-        conf.setTopicLevelPoliciesEnabled(false);
+
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
         Set<String> providersClassNames = Sets.newHashSet(MutualAuthenticationProvider.class.getName());
@@ -211,7 +205,7 @@ public class MutualAuthenticationTest extends ProducerConsumerBase {
         clientBuilder.authentication(mutualAuth);
     }
 
-    @AfterClass(alwaysRun = true)
+    @AfterMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         internalCleanup();
@@ -220,13 +214,12 @@ public class MutualAuthenticationTest extends ProducerConsumerBase {
     @Test
     public void testAuthentication() throws Exception {
         log.info("-- Starting {} test --", methodName);
-        String topic = "persistent://my-property/my-ns/test-authentication";
 
-        Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topic)
+        Consumer<byte[]> consumer = pulsarClient.newConsumer().topic("persistent://my-property/my-ns/my-topic1")
             .subscriptionName("my-subscriber-name")
             .subscribe();
         Producer<byte[]> producer = pulsarClient.newProducer(Schema.BYTES)
-            .topic(topic)
+            .topic("persistent://my-property/my-ns/my-topic1")
             .create();
 
         for (int i = 0; i < 10; i++) {
@@ -234,7 +227,7 @@ public class MutualAuthenticationTest extends ProducerConsumerBase {
             producer.send(message.getBytes());
         }
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = consumer.receive(5, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -245,34 +238,5 @@ public class MutualAuthenticationTest extends ProducerConsumerBase {
         consumer.acknowledgeCumulative(msg);
 
         log.info("-- Exiting {} test --", methodName);
-    }
-
-    @Test
-    public void testClientVersion() throws Exception {
-        String defaultClientVersion = "Pulsar-Java-v" + PulsarVersion.getVersion();
-        String topic = "persistent://my-property/my-ns/test-client-version";
-
-        Producer<byte[]> producer1 = pulsarClient.newProducer()
-                .topic(topic)
-                .create();
-        TopicStats stats = admin.topics().getStats(topic);
-        assertEquals(stats.getPublishers().size(), 1);
-        assertEquals(stats.getPublishers().get(0).getClientVersion(), defaultClientVersion);
-
-        PulsarClient client = ((ClientBuilderImpl) PulsarClient.builder())
-                .description("my-java-client")
-                .serviceUrl(lookupUrl.toString())
-                .authentication(mutualAuth)
-                .build();
-        Producer<byte[]> producer2 = client.newProducer().topic(topic).create();
-        stats = admin.topics().getStats(topic);
-        assertEquals(stats.getPublishers().size(), 2);
-
-        assertEquals(stats.getPublishers().stream().map(PublisherStats::getClientVersion).collect(Collectors.toSet()),
-                Sets.newHashSet(defaultClientVersion, defaultClientVersion + "-my-java-client"));
-
-        producer1.close();
-        producer2.close();
-        client.close();
     }
 }

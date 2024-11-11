@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -41,9 +41,7 @@ public class EndToEndTest extends BaseMetadataStoreTest {
     @Test(dataProvider = "impl")
     public void testBasic(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
-        BKCluster bktc = BKCluster.builder()
-                .metadataServiceUri(urlSupplier.get())
-                .build();
+        BKCluster bktc = new BKCluster(urlSupplier.get(), 1, true);
 
         @Cleanup
         BookKeeper bkc = bktc.newClient();
@@ -87,10 +85,7 @@ public class EndToEndTest extends BaseMetadataStoreTest {
     @Test(dataProvider = "impl")
     public void testWithLedgerRecovery(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
-        BKCluster bktc = BKCluster.builder()
-                .metadataServiceUri(urlSupplier.get())
-                .numBookies(3)
-                .build();
+        BKCluster bktc = new BKCluster(urlSupplier.get(), 3, true);
 
         @Cleanup
         BookKeeper bkc = bktc.newClient();

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,8 +18,6 @@
  */
 package org.apache.pulsar.tests.integration.io.sources.debezium;
 
-import com.google.common.base.Preconditions;
-import java.util.Map;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -28,14 +26,18 @@ import org.apache.pulsar.tests.integration.containers.PulsarContainer;
 import org.apache.pulsar.tests.integration.docker.ContainerExecResult;
 import org.apache.pulsar.tests.integration.io.sources.SourceTester;
 import org.apache.pulsar.tests.integration.topologies.PulsarCluster;
-import org.testng.Assert;
+import org.junit.Assert;
+import org.testcontainers.shaded.com.google.common.base.Preconditions;
 import org.testng.util.Strings;
+
+import java.io.Closeable;
+import java.util.Map;
 
 /**
  * A tester for testing Debezium Microsoft SQl Server source.
  */
 @Slf4j
-public class DebeziumMsSqlSourceTester extends SourceTester<DebeziumMsSqlContainer> {
+public class DebeziumMsSqlSourceTester extends SourceTester<DebeziumMsSqlContainer> implements Closeable {
 
     private static final String NAME = "debezium-mssql";
 
@@ -54,15 +56,18 @@ public class DebeziumMsSqlSourceTester extends SourceTester<DebeziumMsSqlContain
 
         pulsarServiceUrl = "pulsar://pulsar-proxy:" + PulsarContainer.BROKER_PORT;
 
+        sourceConfig.put("connector.class", "io.debezium.connector.sqlserver.SqlServerConnector");
         sourceConfig.put("database.hostname", DebeziumMsSqlContainer.NAME);
         sourceConfig.put("database.port", "1433");
         sourceConfig.put("database.user", "sa");
         sourceConfig.put("database.password", DebeziumMsSqlContainer.SA_PASSWORD);
         sourceConfig.put("database.server.name", "mssql");
-        sourceConfig.put("database.dbname", "TestDB");
-        sourceConfig.put("snapshot.mode", "schema_only");
-        sourceConfig.put("database.history.pulsar.service.url", pulsarServiceUrl);
+        sourceConfig.put("database.names", "TestDB");
+        sourceConfig.put("schema.history.internal.pulsar.service.url", pulsarServiceUrl);
         sourceConfig.put("topic.namespace", "debezium/mssql");
+        sourceConfig.put("topic.prefix", "mssql");
+        sourceConfig.put("database.encrypt", "false");
+        sourceConfig.put("task.id", "1");
     }
 
     @Override
@@ -100,7 +105,7 @@ public class DebeziumMsSqlSourceTester extends SourceTester<DebeziumMsSqlContain
         log.info("Executing \"{}\"", cmd);
         ContainerExecResult response = this.debeziumMsSqlContainer
                 .execCmd("/bin/bash", "-c",
-                "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \""
+                "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \""
                         + DebeziumMsSqlContainer.SA_PASSWORD + "\" -Q \""
                         + (useTestDb ? "USE TestDB; " : "")
                         + cmd
@@ -145,21 +150,18 @@ public class DebeziumMsSqlSourceTester extends SourceTester<DebeziumMsSqlContain
 
     @Override
     public String keyContains() {
-        return "mssql.dbo.customers.Key";
+        return "mssql.TestDB.dbo.customers.Key";
     }
 
     @Override
     public String valueContains() {
-        return "mssql.dbo.customers.Value";
+        return "mssql.TestDB.dbo.customers.Value";
     }
 
     @Override
     public void close() {
         if (pulsarCluster != null) {
-            if (debeziumMsSqlContainer != null) {
-                PulsarCluster.stopService(DebeziumMsSqlContainer.NAME, debeziumMsSqlContainer);
-                debeziumMsSqlContainer = null;
-            }
+            PulsarCluster.stopService(DebeziumMsSqlContainer.NAME, debeziumMsSqlContainer);
         }
     }
 

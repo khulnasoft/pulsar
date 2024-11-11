@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -28,11 +28,10 @@ import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Collection;
-import java.util.Map;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import lombok.AccessLevel;
@@ -43,12 +42,10 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.description.type.TypeList;
 import net.bytebuddy.pool.TypePool;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.pulsar.client.api.CompressionType;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.MessageIdImpl;
-import org.apache.pulsar.client.impl.auth.AuthenticationDataBasic;
+import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.Utils;
 import org.apache.pulsar.functions.api.Function;
@@ -78,13 +75,13 @@ public class FunctionCommon {
     public static int findAvailablePort() {
         // The logic here is a little flaky. There is no guarantee that this
         // port returned will be available later on when the instance starts
-        // TODO:- Fix this.
+        // TODO(sanjeev):- Fix this
         try {
             ServerSocket socket = new ServerSocket(0);
             int port = socket.getLocalPort();
             socket.close();
             return port;
-        } catch (IOException ex) {
+        } catch (IOException ex){
             throw new RuntimeException("No free port found", ex);
         }
     }
@@ -184,9 +181,7 @@ public class FunctionCommon {
 
     public static org.apache.pulsar.functions.proto.Function.ProcessingGuarantees convertProcessingGuarantee(
             FunctionConfig.ProcessingGuarantees processingGuarantees) {
-        for (org.apache.pulsar.functions.proto.Function.ProcessingGuarantees type :
-                org.apache.pulsar.functions.proto.Function.ProcessingGuarantees
-                .values()) {
+        for (org.apache.pulsar.functions.proto.Function.ProcessingGuarantees type : org.apache.pulsar.functions.proto.Function.ProcessingGuarantees.values()) {
             if (type.name().equals(processingGuarantees.name())) {
                 return type;
             }
@@ -235,15 +230,8 @@ public class FunctionCommon {
     }
 
     public static void downloadFromHttpUrl(String destPkgUrl, File targetFile) throws IOException {
-        final URL url = new URL(destPkgUrl);
-        final URLConnection connection = url.openConnection();
-        if (StringUtils.isNotEmpty(url.getUserInfo())) {
-            final AuthenticationDataBasic authBasic = new AuthenticationDataBasic(url.getUserInfo());
-            for (Map.Entry<String, String> header : authBasic.getHttpHeaders()) {
-                connection.setRequestProperty(header.getKey(), header.getValue());
-            }
-        }
-        try (InputStream in = connection.getInputStream()) {
+        URL website = new URL(destPkgUrl);
+        try (InputStream in = website.openStream()) {
             log.info("Downloading function package from {} to {} ...", destPkgUrl, targetFile.getAbsoluteFile());
             Files.copy(in, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
@@ -268,8 +256,7 @@ public class FunctionCommon {
             downloadFromHttpUrl(destPkgUrl, tempFile);
             return tempFile;
         } else {
-            throw new IllegalArgumentException("Unsupported url protocol "
-                    + destPkgUrl + ", supported url protocols: [file/http/https]");
+            throw new IllegalArgumentException("Unsupported url protocol "+ destPkgUrl +", supported url protocols: [file/http/https]");
         }
     }
 
@@ -287,7 +274,9 @@ public class FunctionCommon {
     }
 
     public static final long getSequenceId(MessageId messageId) {
-        MessageIdAdv msgId = (MessageIdAdv) messageId;
+        MessageIdImpl msgId = (MessageIdImpl) ((messageId instanceof TopicMessageIdImpl)
+                ? ((TopicMessageIdImpl) messageId).getInnerMessageId()
+                : messageId);
         long ledgerId = msgId.getLedgerId();
         long entryId = msgId.getEntryId();
 
@@ -319,13 +308,11 @@ public class FunctionCommon {
      */
     public static String getStateNamespace(String tenant, String namespace) {
         return String.format("%s_%s", tenant, namespace)
-                .replace("-", "_");
+            .replace("-", "_");
     }
 
-    public static String getFullyQualifiedName(
-            org.apache.pulsar.functions.proto.Function.FunctionDetails functionDetails) {
-        return getFullyQualifiedName(functionDetails.getTenant(), functionDetails.getNamespace(),
-                functionDetails.getName());
+    public static String getFullyQualifiedName(org.apache.pulsar.functions.proto.Function.FunctionDetails FunctionDetails) {
+        return getFullyQualifiedName(FunctionDetails.getTenant(), FunctionDetails.getNamespace(), FunctionDetails.getName());
 
     }
 
@@ -393,44 +380,6 @@ public class FunctionCommon {
             return SubscriptionInitialPosition.Earliest;
         } else {
             return SubscriptionInitialPosition.Latest;
-        }
-    }
-
-    public static CompressionType convertFromFunctionDetailsCompressionType(
-            org.apache.pulsar.functions.proto.Function.CompressionType compressionType) {
-        if (compressionType == null) {
-            return CompressionType.LZ4;
-        }
-        switch (compressionType) {
-            case NONE:
-                return CompressionType.NONE;
-            case ZLIB:
-                return CompressionType.ZLIB;
-            case ZSTD:
-                return CompressionType.ZSTD;
-            case SNAPPY:
-                return CompressionType.SNAPPY;
-            default:
-                return CompressionType.LZ4;
-        }
-    }
-
-    public static org.apache.pulsar.functions.proto.Function.CompressionType convertFromCompressionType(
-       CompressionType compressionType) {
-        if (compressionType == null) {
-            return org.apache.pulsar.functions.proto.Function.CompressionType.LZ4;
-        }
-        switch (compressionType) {
-            case NONE:
-                return org.apache.pulsar.functions.proto.Function.CompressionType.NONE;
-            case ZLIB:
-                return org.apache.pulsar.functions.proto.Function.CompressionType.ZLIB;
-            case ZSTD:
-                return org.apache.pulsar.functions.proto.Function.CompressionType.ZSTD;
-            case SNAPPY:
-                return org.apache.pulsar.functions.proto.Function.CompressionType.SNAPPY;
-            default:
-                return org.apache.pulsar.functions.proto.Function.CompressionType.LZ4;
         }
     }
 }

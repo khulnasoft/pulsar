@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,10 +18,7 @@
  */
 package org.apache.pulsar.broker.service;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import org.apache.pulsar.broker.qos.AsyncTokenBucket;
+import static org.testng.Assert.assertTrue;
 import org.testng.annotations.Test;
 
 public class PublishRateLimiterDisableTest {
@@ -29,9 +26,7 @@ public class PublishRateLimiterDisableTest {
     // GH issue #10603
     @Test
     void shouldAlwaysAllowAcquire() {
-        PublishRateLimiter publishRateLimiter = new PublishRateLimiterImpl(AsyncTokenBucket.DEFAULT_SNAPSHOT_CLOCK);
-        Producer producer = mock(Producer.class);
-        publishRateLimiter.handlePublishThrottling(producer, Integer.MAX_VALUE, Long.MAX_VALUE);
-        verify(producer, never()).incrementThrottleCount();
+        PublishRateLimiterDisable publishRateLimiter = PublishRateLimiterDisable.DISABLED_RATE_LIMITER;
+        assertTrue(publishRateLimiter.tryAcquire(Integer.MAX_VALUE, Long.MAX_VALUE));
     }
 }

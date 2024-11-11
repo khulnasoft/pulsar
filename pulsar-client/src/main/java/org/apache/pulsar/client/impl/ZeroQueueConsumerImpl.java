@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang.NotImplementedException;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -54,20 +53,6 @@ public class ZeroQueueConsumerImpl<T> extends ConsumerImpl<T> {
         super(client, topic, conf, executorProvider, partitionIndex, hasParentConsumer, false, subscribeFuture,
                 startMessageId, 0 /* startMessageRollbackDurationInSec */, schema, interceptors,
                 createTopicIfDoesNotExist);
-    }
-
-    @Override
-    public int minReceiverQueueSize() {
-        return 0;
-    }
-
-    @Override
-    public void initReceiverQueueSize() {
-        if (conf.isAutoScaledReceiverQueueSizeEnabled()) {
-            throw new NotImplementedException("AutoScaledReceiverQueueSize is not supported in ZeroQueueConsumerImpl");
-        } else {
-            CURRENT_RECEIVER_QUEUE_SIZE_UPDATER.set(this, 0);
-        }
     }
 
     @Override
@@ -174,8 +159,6 @@ public class ZeroQueueConsumerImpl<T> extends ConsumerImpl<T> {
                 }
                 waitingOnListenerForZeroQueueSize = true;
                 trackMessage(message);
-                unAckedMessageTracker.add(
-                        MessageIdAdvUtils.discardBatch(message.getMessageId()), message.getRedeliveryCount());
                 listener.received(ZeroQueueConsumerImpl.this, beforeConsume(message));
             } catch (Throwable t) {
                 log.error("[{}][{}] Message listener error in processing unqueued message: {}", topic, subscription,
@@ -207,11 +190,5 @@ public class ZeroQueueConsumerImpl<T> extends ConsumerImpl<T> {
                                     subscription, consumerName)));
             return null;
         });
-    }
-
-    @Override
-    protected void setCurrentReceiverQueueSize(int newSize) {
-        //receiver queue size is fixed as 0.
-        throw new NotImplementedException("Receiver queue size can't be changed in ZeroQueueConsumerImpl");
     }
 }

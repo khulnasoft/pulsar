@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -28,6 +28,7 @@ import java.nio.file.Paths;
 import java.util.TreeMap;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.common.functions.FunctionDefinition;
 import org.apache.pulsar.common.nar.NarClassLoader;
@@ -56,7 +57,7 @@ public class FunctionUtils {
         String filename = "META-INF/services/" + PULSAR_IO_SERVICE_NAME;
         byte[] configEntry = ZipUtil.unpackEntry(narFile, filename);
         if (configEntry != null) {
-            return ObjectMapperFactory.getYamlMapper().reader().readValue(configEntry, valueType);
+            return ObjectMapperFactory.getThreadLocalYaml().reader().readValue(configEntry, valueType);
         } else {
             return null;
         }
@@ -71,14 +72,14 @@ public class FunctionUtils {
     }
 
     public static <T> T getPulsarIOServiceConfig(NarClassLoader narClassLoader, Class<T> valueType) throws IOException {
-        return ObjectMapperFactory.getYamlMapper().reader()
+        return ObjectMapperFactory.getThreadLocalYaml().reader()
                 .readValue(narClassLoader.getServiceDefinition(PULSAR_IO_SERVICE_NAME), valueType);
     }
 
     public static TreeMap<String, FunctionArchive> searchForFunctions(String functionsDirectory,
                                                                       String narExtractionDirectory,
                                                                       boolean enableClassloading) throws IOException {
-        Path path = Paths.get(functionsDirectory).toAbsolutePath().normalize();
+        Path path = Paths.get(functionsDirectory).toAbsolutePath();
         log.info("Searching for functions in {}", path);
 
         TreeMap<String, FunctionArchive> functions = new TreeMap<>();

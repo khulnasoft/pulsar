@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,10 +18,10 @@
  */
 package org.apache.pulsar.client.impl;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import lombok.Cleanup;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.ServiceUrlProvider;
 import org.asynchttpclient.Request;
@@ -31,12 +31,11 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @Test(groups = "broker-impl")
 public class ControlledClusterFailoverTest {
     @Test
-    public void testBuildControlledClusterFailoverInstance() throws Exception {
+    public void testBuildControlledClusterFailoverInstance() throws IOException {
         String defaultServiceUrl = "pulsar://localhost:6650";
         String urlProvider = "http://localhost:8080/test";
         String keyA = "key-a";
@@ -47,7 +46,6 @@ public class ControlledClusterFailoverTest {
         Map<String, String> header = new HashMap<>();
         header.put(keyA, valueA);
         header.put(keyB, valueB);
-        @Cleanup
         ServiceUrlProvider provider = ControlledClusterFailover.builder()
             .defaultServiceUrl(defaultServiceUrl)
             .urlProvider(urlProvider)
@@ -66,7 +64,7 @@ public class ControlledClusterFailoverTest {
     }
 
     @Test
-    public void testControlledClusterFailoverSwitch() throws Exception {
+    public void testControlledClusterFailoverSwitch() throws IOException {
         String defaultServiceUrl = "pulsar+ssl://localhost:6651";
         String backupServiceUrl = "pulsar+ssl://localhost:6661";
         String urlProvider = "http://localhost:8080";
@@ -82,7 +80,6 @@ public class ControlledClusterFailoverTest {
         controlledConfiguration.setAuthPluginClassName(authPluginClassName);
         controlledConfiguration.setAuthParamsString(authParamsString);
 
-        @Cleanup
         ServiceUrlProvider provider = ControlledClusterFailover.builder()
             .defaultServiceUrl(defaultServiceUrl)
             .urlProvider(urlProvider)
@@ -91,8 +88,6 @@ public class ControlledClusterFailoverTest {
 
         ControlledClusterFailover controlledClusterFailover = Mockito.spy((ControlledClusterFailover) provider);
         PulsarClientImpl pulsarClient = mock(PulsarClientImpl.class);
-        ConnectionPool connectionPool = mock(ConnectionPool.class);
-        when(pulsarClient.getCnxPool()).thenReturn(connectionPool);
 
         controlledClusterFailover.initialize(pulsarClient);
 

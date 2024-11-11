@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -37,12 +37,12 @@ import static org.testng.Assert.fail;
 @Test(groups = "broker-api")
 public class MemoryLimitTest extends ProducerConsumerBase {
 
-    @DataProvider(name = "batchingAndMemoryLimit")
+    @DataProvider(name = "batching")
     public Object[][] provider() {
         return new Object[][] {
-                // "Batching, memoryLimit in kilo bytes"
-                {false, 100},
-                {true, 201} // batching need n(batches)*1024(allocated size) capacity, that is 100+101*1024 bytes
+                // "Batching"
+                { false },
+                { true },
         };
     }
 
@@ -59,14 +59,14 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         super.internalCleanup();
     }
 
-    @Test(dataProvider = "batchingAndMemoryLimit")
-    public void testRejectMessages(boolean batching, int memoryLimit)
+    @Test
+    public void testRejectMessages()
             throws Exception {
         String topic = newTopicName();
 
         ClientBuilder clientBuilder = PulsarClient.builder()
                 .serviceUrl(pulsar.getBrokerServiceUrl())
-                .memoryLimit(memoryLimit, SizeUnit.KILO_BYTES);
+                .memoryLimit(100, SizeUnit.KILO_BYTES);
 
         @Cleanup
         PulsarTestClient client = PulsarTestClient.create(clientBuilder);
@@ -74,10 +74,6 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         @Cleanup
         ProducerImpl<byte[]> producer = (ProducerImpl<byte[]>) client.newProducer()
                 .topic(topic)
-                .enableBatching(batching)
-                .batchingMaxMessages(1)
-                .batchingMaxPublishDelay(1, TimeUnit.HOURS)
-                .batchingMaxBytes(Integer.MAX_VALUE)
                 .blockIfQueueFull(false)
                 .sendTimeout(5, TimeUnit.SECONDS)
                 .create();
@@ -92,12 +88,7 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         Awaitility.await()
                 .atMost(Duration.ofSeconds(5))
                 .until(() -> producer.getPendingQueueSize() == n);
-        if (batching) {
-            // BatchMessageContainerImpl allocated buffer size is 1024, so we need add n(batches)*1024
-            assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024 + n * 1024);
-        } else {
-            assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024);
-        }
+        assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024);
 
         try {
             producer.send(new byte[1024]);
@@ -116,14 +107,14 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         producer.send(new byte[1024]);
     }
 
-    @Test(dataProvider = "batchingAndMemoryLimit")
-    public void testRejectMessagesOnMultipleTopics(boolean batching, int memoryLimit) throws Exception {
+    @Test
+    public void testRejectMessagesOnMultipleTopics() throws Exception {
         String t1 = newTopicName();
         String t2 = newTopicName();
 
         ClientBuilder clientBuilder = PulsarClient.builder()
                 .serviceUrl(pulsar.getBrokerServiceUrl())
-                .memoryLimit(memoryLimit, SizeUnit.KILO_BYTES);
+                .memoryLimit(100, SizeUnit.KILO_BYTES);
 
         @Cleanup
         PulsarTestClient client = PulsarTestClient.create(clientBuilder);
@@ -131,10 +122,6 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         @Cleanup
         ProducerImpl<byte[]> p1 = (ProducerImpl<byte[]>) client.newProducer()
                 .topic(t1)
-                .enableBatching(batching)
-                .batchingMaxMessages(1)
-                .batchingMaxPublishDelay(1, TimeUnit.HOURS)
-                .batchingMaxBytes(Integer.MAX_VALUE)
                 .blockIfQueueFull(false)
                 .sendTimeout(5, TimeUnit.SECONDS)
                 .create();
@@ -142,10 +129,6 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         @Cleanup
         ProducerImpl<byte[]> p2 = (ProducerImpl<byte[]>) client.newProducer()
                 .topic(t2)
-                .enableBatching(batching)
-                .batchingMaxMessages(1)
-                .batchingMaxPublishDelay(1, TimeUnit.HOURS)
-                .batchingMaxBytes(Integer.MAX_VALUE)
                 .blockIfQueueFull(false)
                 .sendTimeout(5, TimeUnit.SECONDS)
                 .create();
@@ -163,12 +146,7 @@ public class MemoryLimitTest extends ProducerConsumerBase {
         Awaitility.await()
                 .atMost(Duration.ofSeconds(5))
                 .until(() -> (p1.getPendingQueueSize() + p2.getPendingQueueSize()) == n);
-        if (batching) {
-            // BatchMessageContainerImpl allocated buffer size is 1024, so we need add n(batches)*1024
-            assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024 + n * 1024);
-        } else {
-            assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024);
-        }
+        assertEquals(client.getMemoryLimitController().currentUsage(), n * 1024);
 
         try {
             p1.send(new byte[1024]);

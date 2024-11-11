@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,20 +21,6 @@ package org.apache.pulsar.tests.integration;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
-import java.io.IOException;
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.security.Security;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.CompressionType;
@@ -43,6 +29,7 @@ import org.apache.pulsar.client.api.ConsumerCryptoFailureAction;
 import org.apache.pulsar.client.api.CryptoKeyReader;
 import org.apache.pulsar.client.api.EncryptionKeyInfo;
 import org.apache.pulsar.client.api.Message;
+import org.apache.pulsar.client.api.MessageCrypto;
 import org.apache.pulsar.client.api.MessageRoutingMode;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
@@ -68,6 +55,21 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.Security;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
 public class SimpleProducerConsumerTest extends TestRetrySupport {
     private static final Logger log = LoggerFactory.getLogger(SimpleProducerConsumerTest.class);
 
@@ -87,13 +89,13 @@ public class SimpleProducerConsumerTest extends TestRetrySupport {
                 .build();
         lookupUrl = new URI(pulsarContainer.getPlainTextPulsarBrokerUrl());
 
-        @Cleanup
         PulsarAdmin admin = PulsarAdmin.builder().serviceHttpUrl(pulsarContainer.getPulsarAdminUrl()).build();
         admin.tenants().createTenant("my-property",
                 TenantInfo.builder().adminRoles(new HashSet<>(Arrays.asList("appid1", "appid2")))
                 .allowedClusters(Collections.singleton("standalone")).build());
         admin.namespaces().createNamespace("my-property/my-ns");
         admin.namespaces().setNamespaceReplicationClusters("my-property/my-ns", Collections.singleton("standalone"));
+        admin.close();
     }
 
     @Override
@@ -322,7 +324,7 @@ public class SimpleProducerConsumerTest extends TestRetrySupport {
 
         // Consuming from consumer 2 and 3
         // no message should be returned since they can't decrypt the message
-        Message<byte[]> m = consumer2.receive(3, TimeUnit.SECONDS);
+        Message m = consumer2.receive(3, TimeUnit.SECONDS);
         assertNull(m);
         m = consumer3.receive(3, TimeUnit.SECONDS);
         assertNull(m);
@@ -562,7 +564,7 @@ public class SimpleProducerConsumerTest extends TestRetrySupport {
 
         ByteBuffer payloadBuf = ByteBuffer.wrap(msg.getData());
         // try to decrypt use default MessageCryptoBc
-        MessageCryptoBc crypto = new MessageCryptoBc("test", false);
+        MessageCrypto crypto = new MessageCryptoBc("test", false);
         MessageMetadata msgMetadata = new MessageMetadata()
                 .setEncryptionParam(encrParam)
                 .setProducerName("test")

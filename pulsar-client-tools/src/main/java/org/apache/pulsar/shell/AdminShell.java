@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,22 +18,19 @@
  */
 package org.apache.pulsar.shell;
 
-import com.google.common.annotations.VisibleForTesting;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameters;
 import java.util.Properties;
 import org.apache.pulsar.admin.cli.PulsarAdminTool;
-import org.apache.pulsar.internal.ShellCommandsProvider;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
 
 /**
  * Pulsar Admin tool extension for Pulsar shell.
  */
-@Command(description = "Admin console")
+@Parameters(commandDescription = "Admin console")
 public class AdminShell extends PulsarAdminTool implements ShellCommandsProvider {
 
     public AdminShell(Properties properties) throws Exception {
         super(properties);
-        setCommandName(getName());
     }
 
     @Override
@@ -48,16 +45,30 @@ public class AdminShell extends PulsarAdminTool implements ShellCommandsProvider
 
     @Override
     public String getAdminUrl() {
-        return super.getAdminUrl();
+        return rootParams.getServiceUrl();
     }
 
     @Override
-    public CommandLine getCommander() {
-        return commander;
+    public void setupState(Properties properties) {
+        getJCommander().setProgramName(getName());
+        setupCommands();
     }
 
-    @VisibleForTesting
-    boolean runCommand(String[] args) {
+    @Override
+    public JCommander getJCommander() {
+        return jcommander;
+    }
+
+    @Override
+    public void cleanupState(Properties properties) {
+        rootParams = new RootParams();
+        initRootParamsFromProperties(properties);
+        initJCommander();
+    }
+
+
+    @Override
+    public boolean runCommand(String[] args) throws Exception {
         return run(args);
     }
 }

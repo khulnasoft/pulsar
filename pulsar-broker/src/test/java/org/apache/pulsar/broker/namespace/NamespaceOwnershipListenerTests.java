@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,8 +19,10 @@
 package org.apache.pulsar.broker.namespace;
 
 import com.google.common.collect.Sets;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.pulsar.broker.service.BrokerTestBase;
+import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.naming.NamespaceBundle;
@@ -29,14 +31,11 @@ import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
-
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertTrue;
 
 @Test(groups = "broker")
@@ -101,30 +100,11 @@ public class NamespaceOwnershipListenerTests extends BrokerTestBase {
         Assert.assertTrue(onLoad.get());
         Assert.assertTrue(unLoad.get());
         admin.topics().delete(topic);
-        deleteNamespaceWithRetry(namespace, false);
+        admin.namespaces().deleteNamespace(namespace);
     }
 
     @Test
-    public void testAddNamespaceBundleOwnershipListenerBeforeLBStart() {
-        NamespaceService namespaceService = spy(new NamespaceService(pulsar));
-        doThrow(new IllegalStateException("The LM is not initialized"))
-                .when(namespaceService).getOwnedServiceUnits();
-        namespaceService.addNamespaceBundleOwnershipListener(new NamespaceBundleOwnershipListener() {
-            @Override
-            public void onLoad(NamespaceBundle bundle) {}
-
-            @Override
-            public void unLoad(NamespaceBundle bundle) {}
-
-            @Override
-            public boolean test(NamespaceBundle namespaceBundle) {
-                return false;
-            }
-        });
-    }
-
-    @Test
-    public void testGetAllPartitions() throws Exception {
+    public void testGetAllPartitions() throws PulsarAdminException, ExecutionException, InterruptedException {
         final String namespace = "prop/" + UUID.randomUUID().toString();
         admin.namespaces().createNamespace(namespace, Sets.newHashSet("test"));
         assertTrue(admin.namespaces().getNamespaces("prop").contains(namespace));
@@ -141,11 +121,11 @@ public class NamespaceOwnershipListenerTests extends BrokerTestBase {
         }
 
         admin.topics().deletePartitionedTopic(topicName);
-        deleteNamespaceWithRetry(namespace, false);
+        admin.namespaces().deleteNamespace(namespace);
     }
 
     @Test
-    public void testNamespaceBundleLookupOnwershipListener() throws Exception,
+    public void testNamespaceBundleLookupOnwershipListener() throws PulsarAdminException, InterruptedException,
             PulsarClientException {
         final CountDownLatch countDownLatch = new CountDownLatch(2);
         final AtomicInteger onLoad = new AtomicInteger(0);
@@ -191,6 +171,6 @@ public class NamespaceOwnershipListenerTests extends BrokerTestBase {
         Assert.assertEquals(onLoad.get(), 1);
         Assert.assertEquals(unLoad.get(), 1);
         admin.topics().delete(topic);
-        deleteNamespaceWithRetry(namespace, false);
+        admin.namespaces().deleteNamespace(namespace);
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,14 +19,6 @@
 package org.apache.pulsar.functions.worker.rest.api;
 
 import com.google.gson.Gson;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import javax.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationParameters;
 import org.apache.pulsar.common.functions.FunctionConfig;
@@ -43,6 +35,15 @@ import org.apache.pulsar.functions.worker.PulsarWorkerService;
 import org.apache.pulsar.functions.worker.service.api.Functions;
 import org.apache.pulsar.functions.worker.service.api.FunctionsV2;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+
+import javax.ws.rs.core.Response;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class FunctionsImplV2 implements FunctionsV2<PulsarWorkerService> {
@@ -224,8 +225,8 @@ public class FunctionsImplV2 implements FunctionsV2<PulsarWorkerService> {
     private InstanceCommunication.FunctionStatus toProto(
             org.apache.pulsar.common.policies.data.FunctionStatus.FunctionInstanceStatus.FunctionInstanceStatusData
                     functionInstanceStatus, String instanceId) {
-        List<InstanceCommunication.FunctionStatus.ExceptionInformation> latestSysExceptions =
-                functionInstanceStatus.getLatestSystemExceptions()
+        List<InstanceCommunication.FunctionStatus.ExceptionInformation> latestSysExceptions
+                = functionInstanceStatus.getLatestSystemExceptions()
                 .stream()
                 .map(exceptionInformation -> InstanceCommunication.FunctionStatus.ExceptionInformation.newBuilder()
                         .setExceptionString(exceptionInformation.getExceptionString())
@@ -233,8 +234,8 @@ public class FunctionsImplV2 implements FunctionsV2<PulsarWorkerService> {
                         .build())
                 .collect(Collectors.toList());
 
-        List<InstanceCommunication.FunctionStatus.ExceptionInformation> latestUserExceptions =
-                functionInstanceStatus.getLatestUserExceptions()
+        List<InstanceCommunication.FunctionStatus.ExceptionInformation> latestUserExceptions
+                = functionInstanceStatus.getLatestUserExceptions()
                 .stream()
                 .map(exceptionInformation -> InstanceCommunication.FunctionStatus.ExceptionInformation.newBuilder()
                         .setExceptionString(exceptionInformation.getExceptionString())

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,17 +16,16 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime.process;
 
-import static org.apache.pulsar.functions.auth.FunctionAuthUtils.getFunctionAuthData;
 import com.google.common.annotations.VisibleForTesting;
-import java.nio.file.Paths;
-import java.util.Optional;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.pulsar.functions.auth.FunctionAuthProvider;
 import org.apache.pulsar.functions.instance.AuthenticationConfig;
 import org.apache.pulsar.functions.instance.InstanceConfig;
@@ -38,6 +37,11 @@ import org.apache.pulsar.functions.utils.functioncache.FunctionCacheEntry;
 import org.apache.pulsar.functions.worker.ConnectorsManager;
 import org.apache.pulsar.functions.worker.FunctionsManager;
 import org.apache.pulsar.functions.worker.WorkerConfig;
+
+import java.nio.file.Paths;
+import java.util.Optional;
+
+import static org.apache.pulsar.functions.auth.FunctionAuthUtils.getFunctionAuthData;
 
 /**
  * Thread based function container factory implementation.
@@ -212,10 +216,8 @@ public class ProcessRuntimeFactory implements RuntimeFactory {
 
         // configure auth if necessary
         if (authenticationEnabled) {
-            authProvider
-                    .ifPresent(functionAuthProvider -> functionAuthProvider.configureAuthenticationConfig(authConfig,
-                            Optional.ofNullable(getFunctionAuthData(
-                                    Optional.ofNullable(instanceConfig.getFunctionAuthenticationSpec())))));
+            authProvider.ifPresent(functionAuthProvider -> functionAuthProvider.configureAuthenticationConfig(authConfig,
+                    Optional.ofNullable(getFunctionAuthData(Optional.ofNullable(instanceConfig.getFunctionAuthenticationSpec())))));
         }
 
         return new ProcessRuntime(

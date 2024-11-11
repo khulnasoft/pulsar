@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,7 +19,6 @@
 package org.apache.pulsar.testclient;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import java.lang.management.ManagementFactory;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +31,6 @@ import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SizeUnit;
-import org.apache.pulsar.common.util.DirectMemoryUtils;
 import org.slf4j.Logger;
 
 /**
@@ -59,7 +57,7 @@ public class PerfClientUtils {
     public static void printJVMInformation(Logger log) {
         log.info("JVM args {}", ManagementFactory.getRuntimeMXBean().getInputArguments());
         log.info("Netty max memory (PlatformDependent.maxDirectMemory()) {}",
-                FileUtils.byteCountToDisplaySize(DirectMemoryUtils.jvmMaxDirectMemory()));
+                FileUtils.byteCountToDisplaySize(io.netty.util.internal.PlatformDependent.maxDirectMemory()));
         log.info("JVM max heap memory (Runtime.getRuntime().maxMemory()) {}",
                 FileUtils.byteCountToDisplaySize(Runtime.getRuntime().maxMemory()));
     }
@@ -68,26 +66,17 @@ public class PerfClientUtils {
             throws PulsarClientException.UnsupportedAuthenticationException {
 
         ClientBuilder clientBuilder = PulsarClient.builder()
-                .memoryLimit(arguments.memoryLimit, SizeUnit.BYTES)
+                .memoryLimit(0, SizeUnit.BYTES)
                 .serviceUrl(arguments.serviceURL)
                 .connectionsPerBroker(arguments.maxConnections)
                 .ioThreads(arguments.ioThreads)
                 .statsInterval(arguments.statsIntervalSeconds, TimeUnit.SECONDS)
                 .enableBusyWait(arguments.enableBusyWait)
                 .listenerThreads(arguments.listenerThreads)
-                .tlsTrustCertsFilePath(arguments.tlsTrustCertsFilePath)
-                .maxLookupRequests(arguments.maxLookupRequest)
-                .proxyServiceUrl(arguments.proxyServiceURL, arguments.proxyProtocol)
-                .openTelemetry(AutoConfiguredOpenTelemetrySdk.builder()
-                        .build().getOpenTelemetrySdk());
+                .tlsTrustCertsFilePath(arguments.tlsTrustCertsFilePath);
 
         if (isNotBlank(arguments.authPluginClassName)) {
             clientBuilder.authentication(arguments.authPluginClassName, arguments.authParams);
-        }
-
-        if (isNotBlank(arguments.sslfactoryPlugin)) {
-            clientBuilder.sslFactoryPlugin(arguments.sslfactoryPlugin)
-                    .sslFactoryPluginParams(arguments.sslFactoryPluginParams);
         }
 
         if (arguments.tlsAllowInsecureConnection != null) {
@@ -116,11 +105,6 @@ public class PerfClientUtils {
             pulsarAdminBuilder.authentication(arguments.authPluginClassName, arguments.authParams);
         }
 
-        if (isNotBlank(arguments.sslfactoryPlugin)) {
-            pulsarAdminBuilder.sslFactoryPlugin(arguments.sslfactoryPlugin)
-                    .sslFactoryPluginParams(arguments.sslFactoryPluginParams);
-        }
-
         if (arguments.tlsAllowInsecureConnection != null) {
             pulsarAdminBuilder.allowTlsInsecureConnection(arguments.tlsAllowInsecureConnection);
         }
@@ -131,5 +115,6 @@ public class PerfClientUtils {
 
         return pulsarAdminBuilder;
     }
+
 
 }

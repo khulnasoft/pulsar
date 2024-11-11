@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,8 @@
  */
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -26,15 +28,13 @@ import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.util.function.Supplier;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
 
-@Command(description = "Operations to collect Proxy statistics")
+@Parameters(commandDescription = "Operations to collect Proxy statistics")
 public class CmdProxyStats extends CmdBase {
 
-    @Command(description = "dump connections metrics for Monitoring")
+    @Parameters(commandDescription = "dump connections metrics for Monitoring")
     private class CmdConnectionMetrics extends CliCommand {
-        @Option(names = {"-i", "--indent"}, description = "Indent JSON output", required = false)
+        @Parameter(names = { "-i", "--indent" }, description = "Indent JSON output", required = false)
         private boolean indent = false;
 
         @Override
@@ -45,9 +45,9 @@ public class CmdProxyStats extends CmdBase {
         }
     }
 
-    @Command(description = "dump topics metrics for Monitoring")
+    @Parameters(commandDescription = "dump topics metrics for Monitoring")
     private class CmdTopicsMetrics extends CliCommand {
-        @Option(names = {"-i", "--indent"}, description = "Indent JSON output", required = false)
+        @Parameter(names = { "-i", "--indent" }, description = "Indent JSON output", required = false)
         private boolean indent = false;
 
         @Override
@@ -66,7 +66,7 @@ public class CmdProxyStats extends CmdBase {
 
     public CmdProxyStats(Supplier<PulsarAdmin> admin) {
         super("proxy-stats", admin);
-        addCommand("connections", new CmdConnectionMetrics());
-        addCommand("topics", new CmdTopicsMetrics());
+        jcommander.addCommand("connections", new CmdConnectionMetrics());
+        jcommander.addCommand("topics", new CmdTopicsMetrics());
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -33,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -184,7 +185,7 @@ public abstract class AbstractFunctionsResourceTest {
 
         // worker config
         List<String> urlPatterns =
-                List.of("http://localhost.*", "file:.*", "https://repo1.maven.org/maven2/org/apache/pulsar/.*");
+                Arrays.asList("http://localhost.*", "file:.*", "https://repo1.maven.org/maven2/org/apache/pulsar/.*");
         WorkerConfig workerConfig = new WorkerConfig()
                 .setWorkerId("test")
                 .setWorkerPort(8080)
@@ -192,8 +193,7 @@ public abstract class AbstractFunctionsResourceTest {
                 .setNumFunctionPackageReplicas(3)
                 .setPulsarServiceUrl("pulsar://localhost:6650/")
                 .setAdditionalEnabledFunctionsUrlPatterns(urlPatterns)
-                .setAdditionalEnabledConnectorUrlPatterns(urlPatterns)
-                .setFunctionsWorkerEnablePackageManagement(true);
+                .setAdditionalEnabledConnectorUrlPatterns(urlPatterns);
         customizeWorkerConfig(workerConfig, method);
         tempDirectory = PulsarFunctionTestTemporaryDirectory.create(getClass().getSimpleName());
         tempDirectory.useTemporaryDirectoriesForWorkerConfig(workerConfig);

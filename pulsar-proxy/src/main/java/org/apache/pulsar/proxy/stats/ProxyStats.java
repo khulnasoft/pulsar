@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -46,6 +46,8 @@ import org.apache.pulsar.broker.web.AuthenticationFilter;
 import org.apache.pulsar.proxy.server.ProxyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+
 
 @Path("/")
 @Api(value = "/proxy-stats", description = "Stats for proxy", tags = "proxy-stats", hidden = true)

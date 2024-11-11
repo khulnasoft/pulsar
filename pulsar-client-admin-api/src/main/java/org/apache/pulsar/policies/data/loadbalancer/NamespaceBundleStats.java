@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,12 +20,10 @@ package org.apache.pulsar.policies.data.loadbalancer;
 
 import java.io.Serializable;
 import lombok.EqualsAndHashCode;
-import lombok.ToString;
 
 /**
  */
 @EqualsAndHashCode
-@ToString
 public class NamespaceBundleStats implements Comparable<NamespaceBundleStats>, Serializable {
 
     public double msgRateIn;

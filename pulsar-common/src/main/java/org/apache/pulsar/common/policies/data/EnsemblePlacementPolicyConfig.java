@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,8 +19,6 @@
 package org.apache.pulsar.common.policies.data;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectReader;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
@@ -70,8 +68,8 @@ public class EnsemblePlacementPolicyConfig {
 
     public byte[] encode() throws ParseEnsemblePlacementPolicyConfigException {
         try {
-            return ObjectMapperFactory.getMapper()
-                .writer().withDefaultPrettyPrinter()
+            return ObjectMapperFactory.getThreadLocal()
+                .writerWithDefaultPrettyPrinter()
                 .writeValueAsString(this)
                 .getBytes(StandardCharsets.UTF_8);
         } catch (JsonProcessingException e) {
@@ -79,13 +77,11 @@ public class EnsemblePlacementPolicyConfig {
         }
     }
 
-    private static final ObjectReader ENSEMBLE_PLACEMENT_CONFIG_READER = ObjectMapperFactory.getMapper()
-            .reader().forType(EnsemblePlacementPolicyConfig.class);
-
     public static EnsemblePlacementPolicyConfig decode(byte[] data) throws ParseEnsemblePlacementPolicyConfigException {
         try {
-            return ENSEMBLE_PLACEMENT_CONFIG_READER.readValue(data);
-        } catch (IOException e) {
+            return ObjectMapperFactory.getThreadLocal()
+                .readValue(new String(data, StandardCharsets.UTF_8), EnsemblePlacementPolicyConfig.class);
+        } catch (JsonProcessingException e) {
             throw new ParseEnsemblePlacementPolicyConfigException("Failed to decode from json", e);
         }
     }

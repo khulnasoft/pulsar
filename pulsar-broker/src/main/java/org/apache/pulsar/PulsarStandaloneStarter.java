@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,67 +19,51 @@
 package org.apache.pulsar;
 
 import static org.apache.commons.lang3.StringUtils.isBlank;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
 import java.io.FileInputStream;
 import java.util.Arrays;
-import lombok.AccessLevel;
-import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
-import org.apache.pulsar.docs.tools.CmdGenerateDocs;
-import picocli.CommandLine;
-import picocli.CommandLine.Option;
+import org.apache.pulsar.common.util.CmdGenerateDocs;
+import org.apache.pulsar.metadata.impl.ZKMetadataStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Slf4j
 public class PulsarStandaloneStarter extends PulsarStandalone {
-
-    private static final String PULSAR_CONFIG_FILE = "pulsar.config.file";
-
-    @Option(names = {"-g", "--generate-docs"}, description = "Generate docs")
+    @Parameter(names = {"-g", "--generate-docs"}, description = "Generate docs")
     private boolean generateDocs = false;
-    private Thread shutdownThread;
-    @Setter(AccessLevel.PACKAGE)
-    private boolean testMode;
+
+    private static final Logger log = LoggerFactory.getLogger(PulsarStandaloneStarter.class);
 
     public PulsarStandaloneStarter(String[] args) throws Exception {
 
-        CommandLine commander = new CommandLine(this);
-
+        JCommander jcommander = new JCommander();
         try {
-            commander.parseArgs(args);
-            if (this.isHelp()) {
-                commander.usage(commander.getOut());
-                exit(0);
-            }
-            if (Strings.isNullOrEmpty(this.getConfigFile())) {
-                String configFile = System.getProperty(PULSAR_CONFIG_FILE);
-                if (Strings.isNullOrEmpty(configFile)) {
-                    throw new IllegalArgumentException(
-                            "Config file not specified. Please use -c, --config-file or -Dpulsar.config.file to "
-                                    + "specify the config file.");
-                }
-                this.setConfigFile(configFile);
+            jcommander.addObject(this);
+            jcommander.parse(args);
+            if (this.isHelp() || isBlank(this.getConfigFile())) {
+                jcommander.usage();
+                return;
             }
             if (this.generateDocs) {
                 CmdGenerateDocs cmd = new CmdGenerateDocs("pulsar");
                 cmd.addCommand("standalone", this);
                 cmd.run(null);
-                exit(0);
+                System.exit(0);
             }
 
             if (this.isNoBroker() && this.isOnlyBroker()) {
                 log.error("Only one option is allowed between '--no-broker' and '--only-broker'");
-                commander.usage(commander.getOut());
+                jcommander.usage();
                 return;
             }
         } catch (Exception e) {
-            commander.usage(commander.getOut());
+            jcommander.usage();
             log.error(e.getMessage());
-            exit(1);
+            return;
         }
 
         try (FileInputStream inputStream = new FileInputStream(this.getConfigFile())) {
@@ -87,9 +71,12 @@ public class PulsarStandaloneStarter extends PulsarStandalone {
                     inputStream, ServiceConfiguration.class);
         }
 
+        String zkServers = "127.0.0.1";
+
         if (this.getAdvertisedAddress() != null) {
             // Use advertised address from command line
             config.setAdvertisedAddress(this.getAdvertisedAddress());
+            zkServers = this.getAdvertisedAddress();
         } else if (isBlank(config.getAdvertisedAddress()) && isBlank(config.getAdvertisedListeners())) {
             // Use advertised address as local hostname
             config.setAdvertisedAddress("localhost");
@@ -114,65 +101,42 @@ public class PulsarStandaloneStarter extends PulsarStandalone {
                 }
             }
         }
-    }
 
-    @Override
-    public synchronized void start() throws Exception {
-        registerShutdownHook();
-        super.start();
-    }
+        final String metadataStoreUrl =
+                ZKMetadataStore.ZK_SCHEME_IDENTIFIER + zkServers + ":" + this.getZkPort();
+        config.setMetadataStoreUrl(metadataStoreUrl);
+        config.setConfigurationMetadataStoreUrl(metadataStoreUrl);
 
-    protected void registerShutdownHook() {
-        if (shutdownThread != null) {
-            throw new IllegalStateException("Shutdown hook already registered");
-        }
-        shutdownThread = new Thread(() -> {
-            try {
-                doClose(false);
-            } catch (Exception e) {
-                log.error("Shutdown failed: {}", e.getMessage(), e);
-            } finally {
-                if (!testMode) {
+        config.setRunningStandalone(true);
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                try {
+                    if (fnWorkerService != null) {
+                        fnWorkerService.stop();
+                    }
+
+                    if (broker != null) {
+                        broker.close();
+                    }
+
+                    if (bkEnsemble != null) {
+                        bkEnsemble.stop();
+                    }
+
                     LogManager.shutdown();
+                } catch (Exception e) {
+                    log.error("Shutdown failed: {}", e.getMessage(), e);
                 }
             }
         });
-        Runtime.getRuntime().addShutdownHook(shutdownThread);
-    }
-
-    // simulate running the shutdown hook, for testing
-    @VisibleForTesting
-    void runShutdownHook() {
-        if (!testMode) {
-            throw new IllegalStateException("Not in test mode");
-        }
-        Runtime.getRuntime().removeShutdownHook(shutdownThread);
-        shutdownThread.run();
-        shutdownThread = null;
-    }
-
-    @Override
-    public void close() {
-        doClose(true);
-    }
-
-    private synchronized void doClose(boolean removeShutdownHook) {
-        super.close();
-        if (shutdownThread != null && removeShutdownHook) {
-            Runtime.getRuntime().removeShutdownHook(shutdownThread);
-            shutdownThread = null;
-        }
-    }
-
-    protected void exit(int status) {
-        System.exit(status);
     }
 
     private static boolean argsContains(String[] args, String arg) {
         return Arrays.asList(args).contains(arg);
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String args[]) throws Exception {
         // Start standalone
         PulsarStandaloneStarter standalone = new PulsarStandaloneStarter(args);
         try {

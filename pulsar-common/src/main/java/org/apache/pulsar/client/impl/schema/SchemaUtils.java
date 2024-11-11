@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,7 +19,7 @@
 package org.apache.pulsar.client.impl.schema;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
@@ -210,7 +210,7 @@ public final class SchemaUtils {
     }
 
     /**
-     * Jsonify the schema info with version.
+     * Jsonify the schema info with verison.
      *
      * @param schemaInfoWithVersion the schema info
      * @return the jsonified schema info with version
@@ -339,13 +339,13 @@ public final class SchemaUtils {
      */
     public static String convertKeyValueSchemaInfoDataToString(
             KeyValue<SchemaInfo, SchemaInfo> kvSchemaInfo) throws IOException {
-        ObjectReader objectReader = ObjectMapperFactory.getMapper().reader();
+        ObjectMapper objectMapper = ObjectMapperFactory.create();
         KeyValue<Object, Object> keyValue = new KeyValue<>(
                 SchemaType.isPrimitiveType(kvSchemaInfo.getKey().getType()) ? ""
-                        : objectReader.readTree(kvSchemaInfo.getKey().getSchema()),
+                        : objectMapper.readTree(kvSchemaInfo.getKey().getSchema()),
                 SchemaType.isPrimitiveType(kvSchemaInfo.getValue().getType()) ? ""
-                        : objectReader.readTree(kvSchemaInfo.getValue().getSchema()));
-        return ObjectMapperFactory.getMapper().writer().writeValueAsString(keyValue);
+                        : objectMapper.readTree(kvSchemaInfo.getValue().getSchema()));
+        return objectMapper.writeValueAsString(keyValue);
     }
 
     private static byte[] getKeyOrValueSchemaBytes(JsonElement jsonElement) {
@@ -359,7 +359,8 @@ public final class SchemaUtils {
      * @param keyValueSchemaInfoDataJsonBytes the key/value schema info data json bytes
      * @return the key/value schema info data bytes
      */
-    public static byte[] convertKeyValueDataStringToSchemaInfoSchema(byte[] keyValueSchemaInfoDataJsonBytes) {
+    public static byte[] convertKeyValueDataStringToSchemaInfoSchema(
+            byte[] keyValueSchemaInfoDataJsonBytes) throws IOException {
         JsonObject jsonObject = (JsonObject) toJsonElement(new String(keyValueSchemaInfoDataJsonBytes, UTF_8));
         byte[] keyBytes = getKeyOrValueSchemaBytes(jsonObject.get("key"));
         byte[] valueBytes = getKeyOrValueSchemaBytes(jsonObject.get("value"));

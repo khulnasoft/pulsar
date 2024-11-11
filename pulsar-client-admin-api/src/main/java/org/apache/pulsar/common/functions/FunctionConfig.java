@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -41,8 +41,7 @@ public class FunctionConfig {
     public enum ProcessingGuarantees {
         ATLEAST_ONCE,
         ATMOST_ONCE,
-        EFFECTIVELY_ONCE,
-        MANUAL
+        EFFECTIVELY_ONCE
     }
 
     /**
@@ -72,7 +71,6 @@ public class FunctionConfig {
      * A generalized way of specifying inputs.
      */
     private Map<String, ConsumerConfig> inputSpecs;
-    private String inputTypeClassName;
 
     private String output;
 
@@ -84,7 +82,6 @@ public class FunctionConfig {
      * implementation.
      */
     private String outputSchemaType;
-    private String outputTypeClassName;
 
     private String outputSerdeClassName;
     private String logTopic;
@@ -105,8 +102,6 @@ public class FunctionConfig {
     // SecretProviderConfigurator.getSecretObjectType() method.
     private Map<String, Object> secrets;
     private Runtime runtime;
-    // Deprecated since, see https://github.com/apache/pulsar/issues/15560
-    @Deprecated
     private Boolean autoAck;
     private Integer maxMessageRetries;
     private String deadLetterTopic;
@@ -131,8 +126,6 @@ public class FunctionConfig {
     private Integer maxPendingAsyncRequests;
     // Whether the pulsar admin client exposed to function context, default is disabled.
     private Boolean exposePulsarAdminClientEnabled;
-    // Whether the consumer should skip to latest position in case of failure recovery
-    private Boolean skipToLatest;
 
     @Builder.Default
     private SubscriptionInitialPosition subscriptionPosition = SubscriptionInitialPosition.Latest;

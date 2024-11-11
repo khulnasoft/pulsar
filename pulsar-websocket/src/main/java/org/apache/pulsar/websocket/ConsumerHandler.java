@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,7 +19,6 @@
 package org.apache.pulsar.websocket;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Enums;
 import com.google.common.base.Splitter;
@@ -29,13 +28,11 @@ import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.LongAdder;
 import javax.servlet.http.HttpServletRequest;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSubscription;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.ConsumerCryptoFailureAction;
@@ -44,13 +41,12 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.PulsarClientException.AlreadyClosedException;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionMode;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.ConsumerBuilderImpl;
-import org.apache.pulsar.common.policies.data.TopicOperation;
 import org.apache.pulsar.common.util.Codec;
 import org.apache.pulsar.common.util.DateFormatter;
+import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.websocket.data.ConsumerCommand;
 import org.apache.pulsar.websocket.data.ConsumerMessage;
 import org.apache.pulsar.websocket.data.EndOfTopicResponse;
@@ -73,7 +69,7 @@ import org.slf4j.LoggerFactory;
  */
 public class ConsumerHandler extends AbstractWebSocketHandler {
 
-    protected String subscription = null;
+    private String subscription = null;
     private SubscriptionType subscriptionType;
     private SubscriptionMode subscriptionMode;
     private Consumer<byte[]> consumer;
@@ -86,10 +82,6 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
     private final LongAdder numBytesDelivered;
     private final LongAdder numMsgsAcked;
     private volatile long msgDeliveredCounter = 0;
-
-    protected String topicsPattern;
-
-    protected String topics;
     private static final AtomicLongFieldUpdater<ConsumerHandler> MSG_DELIVERED_COUNTER_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ConsumerHandler.class, "msgDeliveredCounter");
 
@@ -125,14 +117,7 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
                 return;
             }
 
-            if (topicsPattern != null) {
-                this.consumer = builder.topicsPattern(topicsPattern).subscriptionName(subscription).subscribe();
-            } else if (topics != null) {
-                this.consumer = builder.topics(Splitter.on(",").splitToList(topics))
-                        .subscriptionName(subscription).subscribe();
-            } else {
-                this.consumer = builder.topic(topic.toString()).subscriptionName(subscription).subscribe();
-            }
+            this.consumer = builder.topic(topic.toString()).subscriptionName(subscription).subscribe();
             if (!this.service.addConsumer(this)) {
                 log.warn("[{}:{}] Failed to add consumer handler for topic {}", request.getRemoteAddr(),
                         request.getRemotePort(), topic);
@@ -181,28 +166,25 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
 
             try {
                 getSession().getRemote()
-                        .sendString(objectWriter().writeValueAsString(dm),
-                                new WriteCallback() {
-                                    @Override
-                                    public void writeFailed(Throwable th) {
-                                        log.warn("[{}/{}] Failed to deliver msg to {} {}", consumer.getTopic(),
-                                                subscription,
-                                                getRemote().getInetSocketAddress().toString(), th.getMessage());
-                                        pendingMessages.decrementAndGet();
-                                        // schedule receive as one of the delivery failed
-                                        service.getExecutor().execute(() -> receiveMessage());
-                                    }
+                        .sendString(ObjectMapperFactory.getThreadLocal().writeValueAsString(dm), new WriteCallback() {
+                            @Override
+                            public void writeFailed(Throwable th) {
+                                log.warn("[{}/{}] Failed to deliver msg to {} {}", consumer.getTopic(), subscription,
+                                        getRemote().getInetSocketAddress().toString(), th.getMessage());
+                                pendingMessages.decrementAndGet();
+                                // schedule receive as one of the delivery failed
+                                service.getExecutor().execute(() -> receiveMessage());
+                            }
 
-                                    @Override
-                                    public void writeSuccess() {
-                                        if (log.isDebugEnabled()) {
-                                            log.debug("[{}/{}] message is delivered successfully to {} ",
-                                                    consumer.getTopic(),
-                                                    subscription, getRemote().getInetSocketAddress().toString());
-                                        }
-                                        updateDeliverMsgStat(msgSize);
-                                    }
-                                });
+                            @Override
+                            public void writeSuccess() {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}/{}] message is delivered successfully to {} ", consumer.getTopic(),
+                                            subscription, getRemote().getInetSocketAddress().toString());
+                                }
+                                updateDeliverMsgStat(msgSize);
+                            }
+                        });
             } catch (JsonProcessingException e) {
                 close(WebSocketError.FailedToSerializeToJSON);
             }
@@ -238,7 +220,7 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
         super.onWebSocketText(message);
 
         try {
-            ConsumerCommand command = consumerCommandReader.readValue(message);
+            ConsumerCommand command = ObjectMapperFactory.getThreadLocal().readValue(message, ConsumerCommand.class);
             if ("permit".equals(command.type)) {
                 handlePermit(command);
             } else if ("unsubscribe".equals(command.type)) {
@@ -263,7 +245,7 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
                     subscription, getRemote().getInetSocketAddress().toString());
         }
         try {
-            String msg = objectWriter().writeValueAsString(
+            String msg = ObjectMapperFactory.getThreadLocal().writeValueAsString(
                     new EndOfTopicResponse(consumer.hasReachedEndOfTopic()));
             getSession().getRemote()
             .sendString(msg, new WriteCallback() {
@@ -308,7 +290,8 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
 
     private void handleAck(ConsumerCommand command) throws IOException {
         // We should have received an ack
-        MessageId msgId = MessageId.fromByteArray(Base64.getDecoder().decode(command.messageId));
+        MessageId msgId = MessageId.fromByteArrayWithTopic(Base64.getDecoder().decode(command.messageId),
+                topic.toString());
         if (log.isDebugEnabled()) {
             log.debug("[{}/{}] Received ack request of message {} from {} ", consumer.getTopic(),
                     subscription, msgId, getRemote().getInetSocketAddress().toString());
@@ -432,14 +415,6 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
             builder.subscriptionMode(SubscriptionMode.valueOf(queryParams.get("subscriptionMode")));
         }
 
-        if (queryParams.containsKey("subscriptionInitialPosition")) {
-            final String subscriptionInitialPosition = queryParams.get("subscriptionInitialPosition");
-            checkArgument(
-                    Enums.getIfPresent(SubscriptionInitialPosition.class, subscriptionInitialPosition).isPresent(),
-                    "Invalid subscriptionInitialPosition %s", subscriptionInitialPosition);
-            builder.subscriptionInitialPosition(SubscriptionInitialPosition.valueOf(subscriptionInitialPosition));
-        }
-
         if (queryParams.containsKey("receiverQueueSize")) {
             builder.receiverQueueSize(Math.min(Integer.parseInt(queryParams.get("receiverQueueSize")), 1000));
         }
@@ -479,34 +454,16 @@ public class ConsumerHandler extends AbstractWebSocketHandler {
             }
         }
 
-        if (service.getCryptoKeyReader().isPresent()) {
-            builder.cryptoKeyReader(service.getCryptoKeyReader().get());
-        } else {
-            // If users want to decrypt messages themselves, they should set "cryptoFailureAction" to "CONSUME".
-        }
         return builder;
     }
 
     @Override
     protected Boolean isAuthorized(String authRole, AuthenticationDataSource authenticationData) throws Exception {
-        try {
-            AuthenticationDataSubscription subscription = new AuthenticationDataSubscription(authenticationData,
-                    this.subscription);
-            return service.getAuthorizationService()
-                    .allowTopicOperationAsync(topic, TopicOperation.CONSUME, authRole, subscription)
-                    .get(service.getConfig().getMetadataStoreOperationTimeoutSeconds(), SECONDS);
-        } catch (TimeoutException e) {
-            log.warn("Time-out {} sec while checking authorization on {} ",
-                    service.getConfig().getMetadataStoreOperationTimeoutSeconds(), topic);
-            throw e;
-        } catch (Exception e) {
-            log.warn("Consumer-client  with Role - {} failed to get permissions for topic - {}. {}", authRole, topic,
-                    e.getMessage());
-            throw e;
-        }
+        return service.getAuthorizationService().canConsume(topic, authRole, authenticationData,
+                this.subscription);
     }
 
-    public String extractSubscription(HttpServletRequest request) {
+    public static String extractSubscription(HttpServletRequest request) {
         String uri = request.getRequestURI();
         List<String> parts = Splitter.on("/").splitToList(uri);
 

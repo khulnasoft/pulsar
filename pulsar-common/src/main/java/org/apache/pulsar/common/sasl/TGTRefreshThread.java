@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.common.sasl;
 
 import java.util.Date;
@@ -97,7 +98,7 @@ public class TGTRefreshThread extends Thread {
     @Override
     public void run() {
         log.info("TGT refresh thread started.");
-        while (!Thread.currentThread().isInterrupted()) {
+        while (true) {
             // renewal thread's main loop. if it exits from here, thread will exit.
             KerberosTicket tgt = getTGT();
             long now = System.currentTimeMillis();

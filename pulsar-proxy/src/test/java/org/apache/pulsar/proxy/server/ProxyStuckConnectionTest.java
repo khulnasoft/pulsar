@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,13 +23,12 @@ import static org.mockito.Mockito.doReturn;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import org.apache.pulsar.broker.BrokerTestUtil;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.KeySharedPolicy;
 import org.apache.pulsar.client.api.Message;
@@ -39,7 +38,6 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Range;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.client.impl.BinaryProtoLookupService;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
 import org.mockito.Mockito;
@@ -58,11 +56,10 @@ public class ProxyStuckConnectionTest extends MockedPulsarServiceBaseTest {
 
     private ProxyService proxyService;
     private ProxyConfiguration proxyConfig;
-    private Authentication proxyClientAuthentication;
     private SocatContainer socatContainer;
 
-    private String brokerServiceUriSocat;
-    private volatile boolean useBrokerSocatProxy = true;
+    private static String brokerServiceUriSocat;
+    private static volatile boolean useBrokerSocatProxy = true;
 
     @Override
     @BeforeMethod
@@ -82,11 +79,7 @@ public class ProxyStuckConnectionTest extends MockedPulsarServiceBaseTest {
         proxyConfig.setServicePort(Optional.ofNullable(0));
         proxyConfig.setBrokerProxyAllowedTargetPorts("*");
         proxyConfig.setBrokerServiceURL(pulsar.getBrokerServiceUrl());
-        proxyConfig.setClusterName(configClusterName);
-
-        proxyClientAuthentication = AuthenticationFactory.create(proxyConfig.getBrokerClientAuthenticationPlugin(),
-                proxyConfig.getBrokerClientAuthenticationParameters());
-        proxyClientAuthentication.start();
+        proxyConfig.setLookupHandler(TestLookupProxyHandler.class.getName());
 
         startProxyService();
         // use the same port for subsequent restarts
@@ -95,15 +88,9 @@ public class ProxyStuckConnectionTest extends MockedPulsarServiceBaseTest {
 
     private void startProxyService() throws Exception {
         proxyService = Mockito.spy(new ProxyService(proxyConfig, new AuthenticationService(
-                PulsarConfigurationLoader.convertFrom(proxyConfig)), proxyClientAuthentication) {
-            @Override
-            protected LookupProxyHandler newLookupProxyHandler(ProxyConnection proxyConnection) {
-                return new TestLookupProxyHandler(this, proxyConnection);
-            }
-        });
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeper))).when(proxyService).createLocalMetadataStore();
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal))).when(proxyService)
-                .createConfigurationMetadataStore();
+                PulsarConfigurationLoader.convertFrom(proxyConfig))));
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(proxyService).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeperGlobal)).when(proxyService).createConfigurationMetadataStore();
         proxyService.start();
     }
 
@@ -114,22 +101,17 @@ public class ProxyStuckConnectionTest extends MockedPulsarServiceBaseTest {
         if (proxyService != null) {
             proxyService.close();
         }
-        if (proxyClientAuthentication != null) {
-            proxyClientAuthentication.close();
-        }
         if (socatContainer != null) {
             socatContainer.close();
         }
     }
 
-    private final class TestLookupProxyHandler extends LookupProxyHandler {
-        public TestLookupProxyHandler(ProxyService proxy, ProxyConnection proxyConnection) {
-            super(proxy, proxyConnection);
-        }
-
+    private static final class TestLookupProxyHandler extends DefaultLookupProxyHandler {
         @Override
-        protected String resolveBrokerUrlFromLookupDataResult(BinaryProtoLookupService.LookupDataResult r) {
-            return useBrokerSocatProxy ? brokerServiceUriSocat : super.resolveBrokerUrlFromLookupDataResult(r);
+        protected CompletableFuture<String> performLookup(long clientRequestId, String topic, String brokerServiceUrl,
+                                                          boolean authoritative, int numberOfRetries) {
+            return super.performLookup(clientRequestId, topic, brokerServiceUrl, authoritative, numberOfRetries)
+                    .thenApply(url -> useBrokerSocatProxy ? brokerServiceUriSocat : url);
         }
     }
 

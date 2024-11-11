@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,15 +19,17 @@
 package org.apache.pulsar.broker.loadbalance.impl;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.TimeAverageMessageData;
 import org.apache.pulsar.broker.loadbalance.BundleSplitStrategy;
 import org.apache.pulsar.broker.loadbalance.LoadData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.NamespaceBundleStats;
-import org.apache.pulsar.policies.data.loadbalancer.TimeAverageMessageData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +38,7 @@ import org.slf4j.LoggerFactory;
  */
 public class BundleSplitterTask implements BundleSplitStrategy {
     private static final Logger log = LoggerFactory.getLogger(BundleSplitStrategy.class);
-    private final Map<String, String> bundleCache;
+    private final Set<String> bundleCache;
 
     private final Map<String, Integer> namespaceBundleCount;
 
@@ -46,7 +48,7 @@ public class BundleSplitterTask implements BundleSplitStrategy {
      *
      */
     public BundleSplitterTask() {
-        bundleCache = new HashMap<>();
+        bundleCache = new HashSet<>();
         namespaceBundleCount = new HashMap<>();
     }
 
@@ -59,10 +61,10 @@ public class BundleSplitterTask implements BundleSplitStrategy {
      * @param pulsar
      *            Service to use.
      * @return All bundles who have exceeded configured thresholds in number of topics, number of sessions, total
-     *         message rates, or total throughput and the brokers on which they reside.
+     *         message rates, or total throughput.
      */
     @Override
-    public Map<String, String> findBundlesToSplit(final LoadData loadData, final PulsarService pulsar) {
+    public Set<String> findBundlesToSplit(final LoadData loadData, final PulsarService pulsar) {
         bundleCache.clear();
         namespaceBundleCount.clear();
         final ServiceConfiguration conf = pulsar.getConfiguration();
@@ -106,15 +108,13 @@ public class BundleSplitterTask implements BundleSplitStrategy {
                                     maxBundleSessions, totalMessageRate, maxBundleMsgRate,
                                     totalMessageThroughput / LoadManagerShared.MIBI,
                                     maxBundleBandwidth / LoadManagerShared.MIBI);
-                            bundleCache.put(bundle, broker);
+                            bundleCache.add(bundle);
                             int bundleNum = namespaceBundleCount.getOrDefault(namespace, 0);
                             namespaceBundleCount.put(namespace, bundleNum + 1);
                         } else {
-                            if (log.isDebugEnabled()) {
-                                log.debug(
-                                        "Could not split namespace bundle {} because namespace {} has too many bundles:"
-                                                + "{}", bundle, namespace, bundleCount);
-                            }
+                            log.warn(
+                                    "Could not split namespace bundle {} because namespace {} has too many bundles: {}",
+                                    bundle, namespace, bundleCount);
                         }
                     } catch (Exception e) {
                         log.warn("Error while getting bundle count for namespace {}", namespace, e);

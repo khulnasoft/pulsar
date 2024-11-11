@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,19 +26,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.PulsarVersion;
 import org.apache.pulsar.client.impl.ClientCnx;
 import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
-import org.apache.pulsar.client.impl.metrics.InstrumentProvider;
 import org.apache.pulsar.common.api.AuthData;
 import org.apache.pulsar.common.api.proto.CommandAuthChallenge;
 import org.apache.pulsar.common.protocol.Commands;
-import org.apache.pulsar.common.util.netty.NettyChannelUtil;
 
-@Slf4j
 /**
  * Channel handler for Pulsar proxy's Pulsar broker client connections for lookup requests.
  * <p>
  * Please see {@link org.apache.pulsar.common.protocol.PulsarDecoder} javadoc for important details about handle*
  * method parameter instance lifecycle.
  */
+@Slf4j
 public class ProxyClientCnx extends ClientCnx {
     private final boolean forwardClientAuthData;
     private final String clientAuthMethod;
@@ -48,7 +46,7 @@ public class ProxyClientCnx extends ClientCnx {
     public ProxyClientCnx(ClientConfigurationData conf, EventLoopGroup eventLoopGroup, String clientAuthRole,
                           String clientAuthMethod, int protocolVersion,
                           boolean forwardClientAuthData, ProxyConnection proxyConnection) {
-        super(InstrumentProvider.NOOP, conf, eventLoopGroup, protocolVersion);
+        super(conf, eventLoopGroup, protocolVersion);
         this.clientAuthRole = clientAuthRole;
         this.clientAuthMethod = clientAuthMethod;
         this.forwardClientAuthData = forwardClientAuthData;
@@ -73,7 +71,7 @@ public class ProxyClientCnx extends ClientCnx {
         AuthData authData = authenticationDataProvider.authenticate(AuthData.INIT_AUTH_DATA);
         return Commands.newConnect(authentication.getAuthMethodName(), authData, protocolVersion,
                 proxyConnection.clientVersion, proxyToTargetBrokerAddress, clientAuthRole, clientAuthData,
-                clientAuthMethod, PulsarVersion.getVersion());
+                clientAuthMethod);
     }
 
     @Override
@@ -85,8 +83,7 @@ public class ProxyClientCnx extends ClientCnx {
         if (forwardClientAuthData && isRefresh) {
             proxyConnection.getValidClientAuthData()
                     .thenApplyAsync(authData -> {
-                        NettyChannelUtil.writeAndFlushWithVoidPromise(ctx,
-                                Commands.newAuthResponse(clientAuthMethod, authData, this.protocolVersion,
+                        ctx.writeAndFlush(Commands.newAuthResponse(clientAuthMethod, authData, this.protocolVersion,
                                         String.format("Pulsar-Java-v%s", PulsarVersion.getVersion())));
                         return null;
                         }, ctx.executor())

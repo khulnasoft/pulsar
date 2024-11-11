@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.util.SimpleTextOutputStream;
@@ -34,6 +35,7 @@ import org.apache.pulsar.common.util.SimpleTextOutputStream;
  * Format specification can be found at {@link https://prometheus.io/docs/instrumenting/exposition_formats/}
  */
 public class PrometheusMetricsGeneratorUtils {
+    private static final Pattern METRIC_LABEL_VALUE_SPECIAL_CHARACTERS = Pattern.compile("[\\\\\"\\n]");
 
     public static void generate(String cluster, OutputStream out,
                                 List<PrometheusRawMetricsProvider> metricsProviders)
@@ -60,7 +62,7 @@ public class PrometheusMetricsGeneratorUtils {
             Collector.MetricFamilySamples metricFamily = metricFamilySamples.nextElement();
 
             // Write type of metric
-            stream.write("# TYPE ").write(metricFamily.name).write(getTypeNameSuffix(metricFamily.type)).write(' ')
+            stream.write("# TYPE ").write(metricFamily.name).write(' ')
                     .write(getTypeStr(metricFamily.type)).write('\n');
 
             for (int i = 0; i < metricFamily.samples.size(); i++) {
@@ -68,17 +70,14 @@ public class PrometheusMetricsGeneratorUtils {
                 stream.write(sample.name);
                 stream.write("{");
                 if (!sample.labelNames.contains("cluster")) {
-                    stream.write("cluster=\"").write(cluster).write('"');
+                    stream.write("cluster=\"").write(writeEscapedLabelValue(cluster)).write('"');
                     // If label is empty, should not append ','.
                     if (!CollectionUtils.isEmpty(sample.labelNames)){
                         stream.write(",");
                     }
                 }
                 for (int j = 0; j < sample.labelNames.size(); j++) {
-                    String labelValue = sample.labelValues.get(j);
-                    if (labelValue != null && labelValue.indexOf('"') > -1) {
-                        labelValue = labelValue.replace("\"", "\\\"");
-                    }
+                    String labelValue = writeEscapedLabelValue(sample.labelValues.get(j));
                     if (j > 0) {
                         stream.write(",");
                     }
@@ -95,28 +94,56 @@ public class PrometheusMetricsGeneratorUtils {
         }
     }
 
-    static String getTypeNameSuffix(Collector.Type type) {
-        if (type.equals(Collector.Type.INFO)) {
-            return "_info";
-        }
-        return "";
-    }
-
     static String getTypeStr(Collector.Type type) {
         switch (type) {
             case COUNTER:
                 return "counter";
             case GAUGE:
-            case INFO:
                 return "gauge";
-            case SUMMARY:
+            case SUMMARY        :
                 return "summary";
             case HISTOGRAM:
                 return "histogram";
-            case UNKNOWN:
+            case UNTYPED:
             default:
-                return "unknown";
+                return "untyped";
         }
+    }
+
+
+    /**
+     * Write a label value to the writer, escaping backslashes, double quotes and newlines.
+     * See Promethues Exporter io.prometheus.client.exporter.common.TextFormat#writeEscapedLabelValue
+     */
+    public static String writeEscapedLabelValue(String s) {
+        if (s == null) {
+            return null;
+        }
+        if (!labelValueNeedsEscape(s)) {
+            return s;
+        }
+        StringBuilder writer = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\':
+                    writer.append("\\\\");
+                    break;
+                case '\"':
+                    writer.append("\\\"");
+                    break;
+                case '\n':
+                    writer.append("\\n");
+                    break;
+                default:
+                    writer.append(c);
+            }
+        }
+        return writer.toString();
+    }
+
+    static boolean labelValueNeedsEscape(String s) {
+        return METRIC_LABEL_VALUE_SPECIAL_CHARACTERS.matcher(s).find();
     }
 
 }

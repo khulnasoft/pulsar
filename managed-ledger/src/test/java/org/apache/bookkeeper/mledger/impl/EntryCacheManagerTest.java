@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -28,25 +28,22 @@ import static org.testng.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import lombok.Cleanup;
 import org.apache.bookkeeper.client.api.ReadHandle;
+import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactoryConfig;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.impl.cache.EntryCache;
 import org.apache.bookkeeper.mledger.impl.cache.EntryCacheDisabled;
 import org.apache.bookkeeper.mledger.impl.cache.EntryCacheManager;
-import org.apache.bookkeeper.mledger.proto.MLDataFormats;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -58,11 +55,13 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
 
     @Override
     protected void setUpTestCase() throws Exception {
+        OrderedScheduler executor = OrderedScheduler.newSchedulerBuilder().numThreads(1).build();
+
         ml1 = mock(ManagedLedgerImpl.class);
         when(ml1.getScheduledExecutor()).thenReturn(executor);
         when(ml1.getName()).thenReturn("cache1");
         when(ml1.getMbean()).thenReturn(new ManagedLedgerMBeanImpl(ml1));
-        when(ml1.getExecutor()).thenReturn(executor);
+        when(ml1.getExecutor()).thenReturn(super.executor);
         when(ml1.getFactory()).thenReturn(factory);
         when(ml1.getConfig()).thenReturn(new ManagedLedgerConfig());
 
@@ -124,7 +123,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         assertEquals(cache2.getSize(), 3);
 
         // Should remove 1 entry
-        cache2.invalidateEntries(PositionFactory.create(2, 1));
+        cache2.invalidateEntries(new PositionImpl(2, 1));
         assertEquals(cacheManager.getSize(), 2);
         assertEquals(cache2.getSize(), 2);
 
@@ -197,9 +196,9 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         }
 
         cacheManager.removeEntryCache(ml1.getName());
+        assertTrue(cacheManager.getSize() > 0);
         assertEquals(factory2.getMbean().getCacheInsertedEntriesCount(), 20);
         assertEquals(factory2.getMbean().getCacheEntriesCount(), 0);
-        assertEquals(0, cacheManager.getSize());
         assertEquals(factory2.getMbean().getCacheEvictedEntriesCount(), 20);
     }
 
@@ -282,7 +281,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         ManagedLedgerFactoryConfig config = new ManagedLedgerFactoryConfig();
         config.setMaxCacheSize(7 * 10);
         config.setCacheEvictionWatermark(0.8);
-        config.setCacheEvictionIntervalMs(1000);
+        config.setCacheEvictionFrequency(1);
 
         @Cleanup("shutdown")
         ManagedLedgerFactoryImpl factory2 = new ManagedLedgerFactoryImpl(metadataStore, bkc, config);
@@ -306,7 +305,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
 
         List<Entry> entries = c1.readEntries(10);
         assertEquals(entries.size(), 10);
-        entries.forEach(Entry::release);
+        entries.forEach(e -> e.release());
 
         factory2.getMbean().refreshStats(1, TimeUnit.SECONDS);
         assertEquals(factory2.getMbean().getCacheUsedSize(), 70);
@@ -334,9 +333,9 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         assertEquals(factory2.getMbean().getCacheHitsThroughput(), 70.0);
         assertEquals(factory2.getMbean().getNumberOfCacheEvictions(), 0);
 
-        Position pos = entries.get(entries.size() - 1).getPosition();
+        PositionImpl pos = (PositionImpl) entries.get(entries.size() - 1).getPosition();
         c2.setReadPosition(pos);
-        entries.forEach(Entry::release);
+        entries.forEach(e -> e.release());
 
         factory2.getMbean().refreshStats(1, TimeUnit.SECONDS);
         assertEquals(factory2.getMbean().getCacheUsedSize(), 0);
@@ -350,7 +349,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
     public void verifyTimeBasedEviction() throws Exception {
         ManagedLedgerFactoryConfig config = new ManagedLedgerFactoryConfig();
         config.setMaxCacheSize(1000);
-        config.setCacheEvictionIntervalMs(10);
+        config.setCacheEvictionFrequency(100);
         config.setCacheEvictionTimeThresholdMillis(100);
 
         @Cleanup("shutdown")
@@ -394,10 +393,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         EntryCache entryCache = cacheManager.getEntryCache(ml1);
 
         final CountDownLatch counter = new CountDownLatch(1);
-        when(ml1.getLastConfirmedEntry()).thenReturn(PositionFactory.create(1L, 1L));
-        when(ml1.getOptionalLedgerInfo(lh.getId())).thenReturn(Optional.of(mock(
-                MLDataFormats.ManagedLedgerInfo.LedgerInfo.class)));
-        entryCache.asyncReadEntry(lh, PositionFactory.create(1L,1L), new AsyncCallbacks.ReadEntryCallback() {
+        entryCache.asyncReadEntry(lh, new PositionImpl(1L,1L), new AsyncCallbacks.ReadEntryCallback() {
             public void readEntryComplete(Entry entry, Object ctx) {
                 Assert.assertNotEquals(entry, null);
                 entry.release();
@@ -411,7 +407,7 @@ public class EntryCacheManagerTest extends MockedBookKeeperTestCase {
         }, null);
         counter.await();
 
-        verify(lh).readUnconfirmedAsync(anyLong(), anyLong());
+        verify(lh).readAsync(anyLong(), anyLong());
     }
 
 }

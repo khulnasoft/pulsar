@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,7 +30,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.AllArgsConstructor;
@@ -55,8 +54,7 @@ public class LinuxInfoUtils {
     // NIC type
     private static final int ARPHRD_ETHER = 1;
     private static final String NIC_SPEED_TEMPLATE = "/sys/class/net/%s/speed";
-    private static final long errLogPrintedFrequencyInReadingNicLimits = 1000;
-    private static final AtomicLong failedCounterInReadingNicLimits = new AtomicLong(0);
+
     private static Object /*jdk.internal.platform.Metrics*/ metrics;
     private static Method getMetricsProviderMethod;
     private static Method getCpuQuotaMethod;
@@ -163,8 +161,7 @@ public class LinuxInfoUtils {
      * </pre>
      * <p>
      * Line is split in "words", filtering the first. The sum of all numbers give the amount of cpu cycles used this
-     * far. Real CPU usage should equal the sum substracting the idle cycles(that is idle+iowait), this would include
-     * cpu, user, nice, system, irq, softirq, steal, guest and guest_nice.
+     * far. Real CPU usage should equal the sum subtracting the idle cycles, this would include iowait, irq and steal.
      */
     public static ResourceUsage getCpuUsageForEntireHost() {
         try (Stream<String> stream = Files.lines(Paths.get(PROC_STAT_PATH))) {
@@ -178,7 +175,7 @@ public class LinuxInfoUtils {
                     .filter(s -> !s.contains("cpu"))
                     .mapToLong(Long::parseLong)
                     .sum();
-            long idle = Long.parseLong(words[4]) + Long.parseLong(words[5]);
+            long idle = Long.parseLong(words[4]);
             return ResourceUsage.builder()
                     .usage(total - idle)
                     .idle(idle)
@@ -200,20 +197,12 @@ public class LinuxInfoUtils {
                 return false;
             }
             // Check the type to make sure it's ethernet (type "1")
-            final Path nicTypePath = nicPath.resolve("type");
-            if (!Files.exists(nicTypePath)) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Failed to read NIC type, the expected linux type file does not exist."
-                              + " nic_type_path={}", nicTypePath);
-                }
-               return false;
-            }
+            String type = readTrimStringFromFile(nicPath.resolve("type"));
             // wireless NICs don't report speed, ignore them.
-            return Integer.parseInt(readTrimStringFromFile(nicTypePath)) == ARPHRD_ETHER;
-        } catch (Exception ex) {
-            if (log.isDebugEnabled()) {
-                log.debug("Failed to read NIC type. nic_path={}", nicPath, ex);
-            }
+            return Integer.parseInt(type) == ARPHRD_ETHER;
+        } catch (Exception e) {
+            log.warn("[LinuxInfo] Failed to read {} NIC type, the detail is: {}", nicPath, e.getMessage());
+            // Read type got error.
             return false;
         }
     }
@@ -253,15 +242,7 @@ public class LinuxInfoUtils {
             try {
                 return readDoubleFromFile(getReplacedNICPath(NIC_SPEED_TEMPLATE, nicPath));
             } catch (IOException e) {
-                // ERROR-level logs about NIC rate limiting reading failures are periodically printed but not
-                // continuously printed
-                if (failedCounterInReadingNicLimits.getAndIncrement() % errLogPrintedFrequencyInReadingNicLimits == 0) {
-                    log.error("[LinuxInfo] Failed to get the nic limit of {}.", nicPath, e);
-                } else {
-                    if (log.isDebugEnabled()) {
-                        log.debug("[LinuxInfo] Failed to get the nic limit of {}.", nicPath, e);
-                    }
-                }
+                log.error("[LinuxInfo] Failed to get total nic limit.", e);
                 return 0d;
             }
         }).sum(), BitRateUnit.Megabit);

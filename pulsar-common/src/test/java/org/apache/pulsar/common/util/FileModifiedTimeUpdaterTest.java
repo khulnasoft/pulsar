@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.common.util;
 
 import static org.testng.Assert.assertTrue;
@@ -48,11 +49,6 @@ public class FileModifiedTimeUpdaterTest {
             this.authParam = authParam;
         }
 
-        @Override
-        public boolean hasDataForTls() {
-            return true;
-        }
-
         public boolean hasDataFromCommand() {
             return true;
         }
@@ -65,7 +61,7 @@ public class FileModifiedTimeUpdaterTest {
             return true;
         }
 
-        public String getTlsCertificateFilePath() {
+        public String getTlsCerificateFilePath() {
             return certFilePath;
         }
 
@@ -112,17 +108,14 @@ public class FileModifiedTimeUpdaterTest {
         createFile(Paths.get(certFile));
         provider.certFilePath = certFile;
         provider.keyFilePath = certFile;
-        PulsarSslConfiguration pulsarSslConfiguration = PulsarSslConfiguration.builder()
-                .allowInsecureConnection(false).tlsTrustCertsFilePath(certFile).authData(provider).build();
-        try (PulsarSslFactory pulsarSslFactory = new DefaultPulsarSslFactory()) {
-            pulsarSslFactory.initialize(pulsarSslConfiguration);
-            Thread.sleep(5000);
-            Paths.get(certFile).toFile().delete();
-            // update the file
-            createFile(Paths.get(certFile));
-            Awaitility.await().atMost(30, TimeUnit.SECONDS).until(pulsarSslFactory::needsUpdate);
-            assertTrue(pulsarSslFactory.needsUpdate());
-        }
+        NettyClientSslContextRefresher refresher = new NettyClientSslContextRefresher(null, false, certFile,
+                provider, null, null, 1);
+        Thread.sleep(5000);
+        Paths.get(certFile).toFile().delete();
+        // update the file
+        createFile(Paths.get(certFile));
+        Awaitility.await().atMost(30, TimeUnit.SECONDS).until(()-> refresher.needUpdate());
+        assertTrue(refresher.needUpdate());
     }
 
 }

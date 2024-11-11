@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -37,6 +37,11 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 
 public class TlsProducerConsumerBase extends ProducerConsumerBase {
+    protected final String TLS_TRUST_CERT_FILE_PATH = "./src/test/resources/authentication/tls/cacert.pem";
+    protected final String TLS_CLIENT_CERT_FILE_PATH = "./src/test/resources/authentication/tls/client-cert.pem";
+    protected final String TLS_CLIENT_KEY_FILE_PATH = "./src/test/resources/authentication/tls/client-key.pem";
+    protected final String TLS_SERVER_CERT_FILE_PATH = "./src/test/resources/authentication/tls/broker-cert.pem";
+    protected final String TLS_SERVER_KEY_FILE_PATH = "./src/test/resources/authentication/tls/broker-key.pem";
     private final String clusterName = "use";
 
     @BeforeMethod(alwaysRun = true)
@@ -58,9 +63,9 @@ public class TlsProducerConsumerBase extends ProducerConsumerBase {
     protected void internalSetUpForBroker() throws Exception {
         conf.setBrokerServicePortTls(Optional.of(0));
         conf.setWebServicePortTls(Optional.of(0));
-        conf.setTlsCertificateFilePath(BROKER_CERT_FILE_PATH);
-        conf.setTlsKeyFilePath(BROKER_KEY_FILE_PATH);
-        conf.setTlsTrustCertsFilePath(CA_CERT_FILE_PATH);
+        conf.setTlsCertificateFilePath(TLS_SERVER_CERT_FILE_PATH);
+        conf.setTlsKeyFilePath(TLS_SERVER_KEY_FILE_PATH);
+        conf.setTlsTrustCertsFilePath(TLS_TRUST_CERT_FILE_PATH);
         conf.setClusterName(clusterName);
         conf.setTlsRequireTrustedClientCertOnConnect(true);
         Set<String> tlsProtocols = Sets.newConcurrentHashSet();
@@ -76,12 +81,12 @@ public class TlsProducerConsumerBase extends ProducerConsumerBase {
         }
 
         ClientBuilder clientBuilder = PulsarClient.builder().serviceUrl(lookupUrl)
-                .tlsTrustCertsFilePath(CA_CERT_FILE_PATH).enableTls(true).allowTlsInsecureConnection(false)
+                .tlsTrustCertsFilePath(TLS_TRUST_CERT_FILE_PATH).enableTls(true).allowTlsInsecureConnection(false)
                 .operationTimeout(1000, TimeUnit.MILLISECONDS);
         if (addCertificates) {
             Map<String, String> authParams = new HashMap<>();
-            authParams.put("tlsCertFile", getTlsFileForClient("admin.cert"));
-            authParams.put("tlsKeyFile", getTlsFileForClient("admin.key-pk8"));
+            authParams.put("tlsCertFile", TLS_CLIENT_CERT_FILE_PATH);
+            authParams.put("tlsKeyFile", TLS_CLIENT_KEY_FILE_PATH);
             clientBuilder.authentication(AuthenticationTls.class.getName(), authParams);
         }
         pulsarClient = clientBuilder.build();
@@ -89,13 +94,15 @@ public class TlsProducerConsumerBase extends ProducerConsumerBase {
 
     protected void internalSetUpForNamespace() throws Exception {
         Map<String, String> authParams = new HashMap<>();
-        authParams.put("tlsCertFile", getTlsFileForClient("admin.cert"));
-        authParams.put("tlsKeyFile", getTlsFileForClient("admin.key-pk8"));
+        authParams.put("tlsCertFile", TLS_CLIENT_CERT_FILE_PATH);
+        authParams.put("tlsKeyFile", TLS_CLIENT_KEY_FILE_PATH);
 
-        closeAdmin();
+        if (admin != null) {
+            admin.close();
+        }
 
         admin = spy(PulsarAdmin.builder().serviceHttpUrl(brokerUrlTls.toString())
-                .tlsTrustCertsFilePath(CA_CERT_FILE_PATH).allowTlsInsecureConnection(false)
+                .tlsTrustCertsFilePath(TLS_TRUST_CERT_FILE_PATH).allowTlsInsecureConnection(false)
                 .authentication(AuthenticationTls.class.getName(), authParams).build());
         admin.clusters().createCluster(clusterName, ClusterData.builder()
                 .serviceUrl(brokerUrl.toString())

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,52 +24,41 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicReference;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.api.ClientBuilder;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.io.ConnectorDefinition;
 import org.apache.pulsar.common.nar.NarClassLoader;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.functions.api.Context;
 import org.apache.pulsar.functions.api.Function;
-import org.apache.pulsar.functions.api.Record;
 import org.apache.pulsar.functions.api.SerDe;
-import org.apache.pulsar.functions.instance.stats.ComponentStatsManager;
 import org.apache.pulsar.functions.proto.Function.FunctionDetails;
 import org.apache.pulsar.functions.proto.Function.SinkSpec;
-import org.apache.pulsar.functions.proto.Function.SourceSpec;
 import org.apache.pulsar.functions.proto.InstanceCommunication;
+import org.mockito.Mockito;
 import org.apache.pulsar.functions.secretsprovider.EnvironmentBasedSecretsProvider;
-import org.apache.pulsar.io.core.Sink;
-import org.apache.pulsar.io.core.SinkContext;
-import org.apache.pulsar.io.core.Source;
-import org.apache.pulsar.io.core.SourceContext;
-import org.awaitility.Awaitility;
 import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-@Slf4j
+import java.lang.reflect.Method;
+import java.util.Map;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 public class JavaInstanceRunnableTest {
-    private final List<AutoCloseable> closeables = new ArrayList<>();
 
     static class IntegerSerDe implements SerDe<Integer> {
         @Override
@@ -83,52 +72,28 @@ public class JavaInstanceRunnableTest {
         }
     }
 
-    private static InstanceConfig createInstanceConfig(FunctionDetails functionDetails) {
+    private static InstanceConfig createInstanceConfig(String outputSerde) {
+        FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder();
+        if (outputSerde != null) {
+            functionDetailsBuilder.setSink(SinkSpec.newBuilder().setSerDeClassName(outputSerde).build());
+        }
         InstanceConfig instanceConfig = new InstanceConfig();
-        instanceConfig.setFunctionDetails(functionDetails);
+        instanceConfig.setFunctionDetails(functionDetailsBuilder.build());
         instanceConfig.setMaxBufferedTuples(1024);
         return instanceConfig;
     }
 
     private JavaInstanceRunnable createRunnable(String outputSerde) throws Exception {
-        FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder();
-        if (outputSerde != null) {
-            functionDetailsBuilder.setSink(SinkSpec.newBuilder().setSerDeClassName(outputSerde).build());
-        }
-        return createRunnable(functionDetailsBuilder.build());
-    }
-
-    private JavaInstanceRunnable createRunnable(FunctionDetails functionDetails) throws Exception {
+        InstanceConfig config = createInstanceConfig(outputSerde);
         ClientBuilder clientBuilder = mock(ClientBuilder.class);
         when(clientBuilder.build()).thenReturn(null);
-        InstanceConfig config = createInstanceConfig(functionDetails);
         JavaInstanceRunnable javaInstanceRunnable = new JavaInstanceRunnable(
                 config, clientBuilder, null, null, null, null, null, null, null, null);
         return javaInstanceRunnable;
     }
 
-    private JavaInstanceRunnable createRunnable(SourceSpec sourceSpec,
-                                                String functionClassName, SinkSpec sinkSpec)
-            throws PulsarClientException {
-        ClientBuilder clientBuilder = mock(ClientBuilder.class);
-        when(clientBuilder.build()).thenReturn(null);
-        FunctionDetails functionDetails = FunctionDetails.newBuilder()
-                .setSource(sourceSpec)
-                .setClassName(functionClassName)
-                .setSink(sinkSpec)
-                .build();
-        InstanceConfig config = createInstanceConfig(functionDetails);
-        config.setClusterName("test-cluster");
-        PulsarClient pulsarClient = PulsarClient.builder().serviceUrl("pulsar://test-cluster:6650").build();
-        registerCloseable(pulsarClient);
-        return new JavaInstanceRunnable(config, clientBuilder,
-                pulsarClient, null, null, null, null, null,
-                Thread.currentThread().getContextClassLoader(), null);
-    }
-
     private Method makeAccessible(JavaInstanceRunnable javaInstanceRunnable) throws Exception {
-        Method method =
-                javaInstanceRunnable.getClass().getDeclaredMethod("setupSerDe", Class[].class, ClassLoader.class);
+        Method method = javaInstanceRunnable.getClass().getDeclaredMethod("setupSerDe", Class[].class, ClassLoader.class);
         method.setAccessible(true);
         return method;
     }
@@ -174,53 +139,10 @@ public class JavaInstanceRunnableTest {
     }
 
     @Test
-    public void testFunctionResultNull() throws Exception {
-        JavaExecutionResult javaExecutionResult = new JavaExecutionResult();
-
-        // ProcessingGuarantees == MANUAL, not need ack.
-        Record record = mock(Record.class);
-        getJavaInstanceRunnable(true, org.apache.pulsar.functions.proto.Function.ProcessingGuarantees.MANUAL)
-                .handleResult(record, javaExecutionResult);
-        verify(record, times(0)).ack();
-
-        // ProcessingGuarantees == ATMOST_ONCE and autoAck == true, not need ack
-        clearInvocations(record);
-        getJavaInstanceRunnable(true, org.apache.pulsar.functions.proto.Function.ProcessingGuarantees.ATMOST_ONCE)
-                .handleResult(record, javaExecutionResult);
-        verify(record, times(0)).ack();
-
-        // other case, need ack
-        clearInvocations(record);
-        getJavaInstanceRunnable(true, org.apache.pulsar.functions.proto.Function.ProcessingGuarantees.ATLEAST_ONCE)
-                .handleResult(record, javaExecutionResult);
-        verify(record, times(1)).ack();
-        clearInvocations(record);
-        getJavaInstanceRunnable(true, org.apache.pulsar.functions.proto.Function.ProcessingGuarantees.EFFECTIVELY_ONCE)
-                .handleResult(record, javaExecutionResult);
-        verify(record, times(1)).ack();
-    }
-
-    @NotNull
-    private JavaInstanceRunnable getJavaInstanceRunnable(boolean autoAck,
-                                                         org.apache.pulsar.functions.proto.Function.ProcessingGuarantees processingGuarantees) throws Exception {
-        FunctionDetails functionDetails = FunctionDetails.newBuilder()
-                .setAutoAck(autoAck)
-                .setProcessingGuarantees(processingGuarantees).build();
-        JavaInstanceRunnable javaInstanceRunnable = createRunnable(functionDetails);
-
-        Field stats = JavaInstanceRunnable.class.getDeclaredField("stats");
-        stats.setAccessible(true);
-        stats.set(javaInstanceRunnable, mock(ComponentStatsManager.class));
-        stats.setAccessible(false);
-        return javaInstanceRunnable;
-    }
-
-    @Test
     public void testStatsManagerNull() throws Exception {
-        JavaInstanceRunnable javaInstanceRunnable = createRunnable((String) null);
+        JavaInstanceRunnable javaInstanceRunnable = createRunnable(null);
 
-        Assert.assertEquals(javaInstanceRunnable.getFunctionStatus().build(),
-                InstanceCommunication.FunctionStatus.newBuilder().build());
+        Assert.assertEquals(javaInstanceRunnable.getFunctionStatus().build(), InstanceCommunication.FunctionStatus.newBuilder().build());
 
         Assert.assertEquals(javaInstanceRunnable.getMetrics(), InstanceCommunication.MetricsData.newBuilder().build());
     }
@@ -278,15 +200,8 @@ public class JavaInstanceRunnableTest {
     @Test(dataProvider = "component")
     public void testInterpolatingEnvironmentVariables(FunctionDetails.ComponentType componentType) throws Exception {
         final Map<String, Object> parsedConfig = JavaInstanceRunnable.augmentAndFilterConnectorConfig(
-                """
-                        {
-                            "key": {
-                                "key1": "${TEST_JAVA_INSTANCE_PARSE_ENV_VAR}",
-                                "key2": "${unset-env-var}"
-                            },
-                            "key3": "${TEST_JAVA_INSTANCE_PARSE_ENV_VAR}"
-                        }
-                        """,
+                "{\"key\":{\"key1\":\"${TEST_JAVA_INSTANCE_PARSE_ENV_VAR}\",\"key2\":" +
+                        "\"${unset-env-var}\"},\"key3\":\"${TEST_JAVA_INSTANCE_PARSE_ENV_VAR}\"}",
                 new InstanceConfig(),
                 new EnvironmentBasedSecretsProvider(),
                 null,
@@ -329,7 +244,7 @@ public class JavaInstanceRunnableTest {
             connectorDefinition.setSourceConfigClass(ConnectorTestConfig1.class.getName());
         }
         when(narClassLoader.getServiceDefinition(any())).thenReturn(ObjectMapperFactory
-                .getMapper().writer().writeValueAsString(connectorDefinition));
+                .getThreadLocal().writeValueAsString(connectorDefinition));
         final InstanceConfig instanceConfig = new InstanceConfig();
         instanceConfig.setIgnoreUnknownConfigFields(ignoreUnknownConfigFields);
 
@@ -367,163 +282,5 @@ public class JavaInstanceRunnableTest {
         final List<String> beanProperties = JavaInstanceRunnable.BeanPropertiesReader
                 .getBeanProperties(ConnectorTestConfig2.class);
         Assert.assertEquals(new TreeSet<>(beanProperties), new TreeSet<>(Arrays.asList("field1", "withGetter")));
-    }
-
-    public static class TestSourceConnector implements Source<String> {
-
-        private LinkedBlockingQueue<Record<String>> queue;
-        private SourceContext context;
-
-        public void pushRecord(Record<String> record) throws Exception {
-            queue.put(record);
-        }
-
-        @Override
-        public void open(Map config, SourceContext sourceContext) throws Exception {
-            context = sourceContext;
-            queue = new LinkedBlockingQueue<>();
-        }
-
-        @Override
-        public Record<String> read() throws Exception {
-            return queue.take();
-        }
-
-        @Override
-        public void close() throws Exception {
-
-        }
-
-        public void fatalConnector() {
-            context.fatal(new Exception(FailComponentType.FAIL_SOURCE.toString()));
-        }
-    }
-
-    public static class TestFunction implements Function<String, CompletableFuture<String>> {
-        @Override
-        public CompletableFuture<String> process(String input, Context context) throws Exception {
-            CompletableFuture<String> future = new CompletableFuture<>();
-            new Thread(() -> {
-                if (FailComponentType.FAIL_FUNC.toString().equals(input)) {
-                    context.fatal(new Exception(FailComponentType.FAIL_FUNC.toString()));
-                } else {
-                    future.complete(input);
-                }
-            }).start();
-            return future;
-        }
-    }
-
-    public static class TestSinkConnector implements Sink<String> {
-        SinkContext context;
-
-        @Override
-        public void open(Map config, SinkContext sinkContext) throws Exception {
-            this.context = sinkContext;
-        }
-
-        @Override
-        public void write(Record<String> record) throws Exception {
-            new Thread(() -> {
-                if (FailComponentType.FAIL_SINK.toString().equals(record.getValue())) {
-                    context.fatal(new Exception(FailComponentType.FAIL_SINK.toString()));
-                }
-            }).start();
-        }
-
-        @Override
-        public void close() throws Exception {
-
-        }
-    }
-
-    private Object getPrivateField(JavaInstanceRunnable javaInstanceRunnable, String fieldName)
-            throws NoSuchFieldException, IllegalAccessException {
-        Field field = JavaInstanceRunnable.class.getDeclaredField(fieldName);
-        field.setAccessible(true);
-        return field.get(javaInstanceRunnable);
-    }
-
-    public enum FailComponentType {
-        FAIL_SOURCE,
-        FAIL_FUNC,
-        FAIL_SINK
-    }
-
-    @DataProvider(name = "failComponentType")
-    public Object[][] failType() {
-        return new Object[][]{{FailComponentType.FAIL_SOURCE}, {FailComponentType.FAIL_FUNC},
-                {FailComponentType.FAIL_SINK}};
-    }
-
-    @Test(dataProvider = "failComponentType")
-    public void testFatalTheInstance(FailComponentType failComponentType) throws Exception {
-        JavaInstanceRunnable javaInstanceRunnable = createRunnable(
-                SourceSpec.newBuilder()
-                        .setClassName(TestSourceConnector.class.getName()).build(),
-                TestFunction.class.getName(),
-                SinkSpec.newBuilder().setClassName(TestSinkConnector.class.getName()).build()
-        );
-
-        Thread fnThread = new Thread(javaInstanceRunnable);
-        fnThread.start();
-
-        // Wait for the setup to complete
-        AtomicReference<TestSourceConnector> source = new AtomicReference<>();
-        Awaitility.await()
-                .pollInterval(Duration.ofMillis(200))
-                .atMost(Duration.ofSeconds(10))
-                .ignoreExceptions().untilAsserted(() -> {
-                    TestSourceConnector sourceConnector = (TestSourceConnector) getPrivateField(javaInstanceRunnable,
-                            "source");
-                    Assert.assertNotNull(sourceConnector);
-                    source.set(sourceConnector);
-                });
-
-        // Fail the connector or function
-        if (failComponentType == FailComponentType.FAIL_SOURCE) {
-            source.get().fatalConnector();
-        } else {
-            source.get().pushRecord(failComponentType::toString);
-        }
-
-        // Assert that the instance is terminated with the fatal exception
-        Awaitility.await()
-                .pollInterval(Duration.ofMillis(200))
-                .atMost(Duration.ofSeconds(10))
-                .ignoreExceptions().untilAsserted(() -> {
-                    Assert.assertNotNull(javaInstanceRunnable.getDeathException());
-                    Assert.assertEquals(javaInstanceRunnable.getDeathException().getMessage(),
-                            failComponentType.toString());
-
-                    // Assert the java instance is closed
-                    Assert.assertFalse(fnThread.isAlive());
-                    Assert.assertFalse((boolean) getPrivateField(javaInstanceRunnable, "isInitialized"));
-                });
-    }
-
-    @AfterClass
-    public void cleanupInstanceCache() {
-        InstanceCache.shutdown();
-    }
-
-    @AfterMethod(alwaysRun = true)
-    public void cleanupCloseables() {
-        callCloseables(closeables);
-    }
-
-    protected <T extends AutoCloseable> T registerCloseable(T closeable) {
-        closeables.add(closeable);
-        return closeable;
-    }
-
-    private static void callCloseables(List<AutoCloseable> closeables) {
-        for (int i = closeables.size() - 1; i >= 0; i--) {
-            try {
-                closeables.get(i).close();
-            } catch (Exception e) {
-                log.error("Failure in calling close method", e);
-            }
-        }
     }
 }

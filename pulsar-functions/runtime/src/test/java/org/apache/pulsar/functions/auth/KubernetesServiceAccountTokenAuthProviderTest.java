@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -67,7 +67,7 @@ public class KubernetesServiceAccountTokenAuthProviderTest {
         Assert.assertEquals(volumes.get(1).getProjected().getSources().size(), 1);
         V1ServiceAccountTokenProjection tokenProjection =
                 volumes.get(1).getProjected().getSources().get(0).getServiceAccountToken();
-        Assert.assertEquals(tokenProjection.getExpirationSeconds(), 600);
+        Assert.assertEquals((long) tokenProjection.getExpirationSeconds(), 600);
         Assert.assertEquals(tokenProjection.getAudience(), "my-audience");
 
         Assert.assertEquals(statefulSet.getSpec().getTemplate().getSpec().getContainers().size(), 1);
@@ -103,7 +103,7 @@ public class KubernetesServiceAccountTokenAuthProviderTest {
         Assert.assertEquals(volumes.get(0).getProjected().getSources().size(), 1);
         V1ServiceAccountTokenProjection tokenProjection =
                 volumes.get(0).getProjected().getSources().get(0).getServiceAccountToken();
-        Assert.assertEquals(tokenProjection.getExpirationSeconds(), 600);
+        Assert.assertEquals((long) tokenProjection.getExpirationSeconds(), 600);
         Assert.assertEquals(tokenProjection.getAudience(), "pulsar-cluster");
 
         Assert.assertEquals(statefulSet.getSpec().getTemplate().getSpec().getContainers().size(), 1);

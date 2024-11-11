@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,8 +22,7 @@ import io.netty.util.Recycler;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.PositionFactory;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.Topic;
 
 /**
@@ -34,7 +33,7 @@ public class RestMessagePublishContext implements Topic.PublishContext {
 
     private Topic topic;
     private long startTimeNs;
-    private CompletableFuture<Position> positionFuture;
+    private CompletableFuture<PositionImpl> positionFuture;
 
     /**
      * Executed from managed ledger thread when the message is persisted.
@@ -55,13 +54,13 @@ public class RestMessagePublishContext implements Topic.PublishContext {
                         topic.getName(), ledgerId, entryId);
             }
             topic.recordAddLatency(System.nanoTime() - startTimeNs, TimeUnit.NANOSECONDS);
-            positionFuture.complete(PositionFactory.create(ledgerId, entryId));
+            positionFuture.complete(PositionImpl.get(ledgerId, entryId));
         }
         recycle();
     }
 
     // recycler
-    public static RestMessagePublishContext get(CompletableFuture<Position> positionFuture, Topic topic,
+    public static RestMessagePublishContext get(CompletableFuture<PositionImpl> positionFuture, Topic topic,
                                                      long startTimeNs) {
         RestMessagePublishContext callback = RECYCLER.get();
         callback.positionFuture = positionFuture;

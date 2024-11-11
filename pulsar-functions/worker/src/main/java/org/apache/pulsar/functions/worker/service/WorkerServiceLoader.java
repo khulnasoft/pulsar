@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,7 @@
 package org.apache.pulsar.functions.worker.service;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -60,7 +61,7 @@ public class WorkerServiceLoader {
     private static WorkerServiceDefinition getWorkerServiceDefinition(NarClassLoader ncl) throws IOException {
         String configStr = ncl.getServiceDefinition(PULSAR_FN_WORKER_DEFINITION_FILE);
 
-        return ObjectMapperFactory.getYamlMapper().reader().readValue(
+        return ObjectMapperFactory.getThreadLocalYaml().readValue(
             configStr, WorkerServiceDefinition.class
         );
     }
@@ -73,7 +74,7 @@ public class WorkerServiceLoader {
      */
     static WorkerServiceWithClassLoader load(WorkerServiceMetadata metadata,
                                              String narExtractionDirectory) throws IOException {
-        final File narFile = metadata.getArchivePath().toAbsolutePath().normalize().toFile();
+        final File narFile = metadata.getArchivePath().toAbsolutePath().toFile();
         NarClassLoader ncl = NarClassLoaderBuilder.builder()
                 .narFile(narFile)
                 .parentClassLoader(WorkerService.class.getClassLoader())

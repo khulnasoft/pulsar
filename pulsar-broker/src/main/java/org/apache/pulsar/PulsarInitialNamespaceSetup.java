@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,82 +18,72 @@
  */
 package org.apache.pulsar;
 
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
 import java.util.List;
 import org.apache.pulsar.broker.resources.PulsarResources;
 import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.docs.tools.CmdGenerateDocs;
+import org.apache.pulsar.common.util.CmdGenerateDocs;
 import org.apache.pulsar.metadata.api.MetadataStore;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
-import picocli.CommandLine.ScopeType;
 
 /**
  * Setup the initial namespace of the cluster without startup the Pulsar broker.
  */
 public class PulsarInitialNamespaceSetup {
 
-    @Command(name = "initialize-namespace", showDefaultValues = true, scope = ScopeType.INHERIT)
     private static class Arguments {
 
-        @Option(names = { "-c", "--cluster" }, description = "Cluster name", required = true)
+        @Parameter(names = { "-c", "--cluster" }, description = "Cluster name", required = true)
         private String cluster;
 
-        @Option(names = { "-cs",
+        @Parameter(names = { "-cs",
                 "--configuration-store" }, description = "Configuration Store connection string", required = true)
         private String configurationStore;
 
-        @Option(names = {"-cmscp",
-                "--configuration-metadata-store-config-path"}, description = "Configuration Metadata Store config path",
-                hidden = false)
-        private String configurationStoreConfigPath;
-
-        @Option(names = {
+        @Parameter(names = {
                 "--zookeeper-session-timeout-ms"
         }, description = "Local zookeeper session timeout ms")
         private int zkSessionTimeoutMillis = 30000;
 
-        @Parameters(description = "tenant/namespace", arity = "1")
+        @Parameter(description = "tenant/namespace", required = true)
         private List<String> namespaces;
 
-        @Option(names = { "-h", "--help" }, description = "Show this help message")
+        @Parameter(names = { "-h", "--help" }, description = "Show this help message")
         private boolean help = false;
 
-        @Option(names = {"-g", "--generate-docs"}, description = "Generate docs")
+        @Parameter(names = {"-g", "--generate-docs"}, description = "Generate docs")
         private boolean generateDocs = false;
     }
 
     public static int doMain(String[] args) throws Exception {
         Arguments arguments = new Arguments();
-        CommandLine commander = new CommandLine(arguments);
+        JCommander jcommander = new JCommander();
         try {
-            commander.parseArgs(args);
+            jcommander.addObject(arguments);
+            jcommander.parse(args);
             if (arguments.help) {
-                commander.usage(commander.getOut());
+                jcommander.usage();
                 return 0;
             }
             if (arguments.generateDocs) {
                 CmdGenerateDocs cmd = new CmdGenerateDocs("pulsar");
-                cmd.addCommand("initialize-namespace", commander);
+                cmd.addCommand("initialize-namespace", arguments);
                 cmd.run(null);
                 return 0;
             }
         } catch (Exception e) {
-            commander.getErr().println(e);
+            jcommander.usage();
             return 1;
         }
 
         if (arguments.configurationStore == null) {
             System.err.println("Configuration store address argument is required (--configuration-store)");
-            commander.usage(commander.getOut());
+            jcommander.usage();
             return 1;
         }
 
-        try (MetadataStore configStore = PulsarClusterMetadataSetup.initConfigMetadataStore(
-                arguments.configurationStore,
-                arguments.configurationStoreConfigPath,
-                arguments.zkSessionTimeoutMillis)) {
+        try (MetadataStore configStore = PulsarClusterMetadataSetup
+                .initMetadataStore(arguments.configurationStore, arguments.zkSessionTimeoutMillis)) {
             PulsarResources pulsarResources = new PulsarResources(null, configStore);
             for (String namespace : arguments.namespaces) {
                 NamespaceName namespaceName = null;

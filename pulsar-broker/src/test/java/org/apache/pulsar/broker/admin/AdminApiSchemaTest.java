@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,18 +20,18 @@ package org.apache.pulsar.broker.admin;
 
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.US_ASCII;
+import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doReturn;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
-import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
+import com.google.common.collect.Sets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.api.DigestType;
@@ -49,13 +49,9 @@ import org.apache.pulsar.common.policies.data.PersistentTopicInternalStats;
 import org.apache.pulsar.common.policies.data.SchemaAutoUpdateCompatibilityStrategy;
 import org.apache.pulsar.common.policies.data.SchemaCompatibilityStrategy;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.protocol.schema.IsCompatibilityResponse;
-import org.apache.pulsar.common.protocol.schema.PostSchemaPayload;
 import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.schema.SchemaInfoWithVersion;
-import org.apache.pulsar.common.schema.SchemaType;
 import org.awaitility.Awaitility;
-import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
@@ -74,17 +70,15 @@ public class AdminApiSchemaTest extends MockedPulsarServiceBaseTest {
     @BeforeMethod
     @Override
     public void setup() throws Exception {
-        conf.setSystemTopicEnabled(false);
-        conf.setTopicLevelPoliciesEnabled(false);
         super.internalSetup();
 
         // Setup namespaces
         admin.clusters().createCluster(cluster, ClusterData.builder().serviceUrl(pulsar.getWebServiceAddress()).build());
-        TenantInfoImpl tenantInfo = new TenantInfoImpl(Set.of("role1", "role2"), Set.of("test"));
+        TenantInfoImpl tenantInfo = new TenantInfoImpl(Sets.newHashSet("role1", "role2"), Sets.newHashSet("test"));
         admin.tenants().createTenant("schematest", tenantInfo);
-        admin.namespaces().createNamespace("schematest/test", Set.of("test"));
-        admin.namespaces().createNamespace("schematest/"+cluster+"/test", Set.of("test"));
-        admin.namespaces().createNamespace(schemaCompatibilityNamespace, Set.of("test"));
+        admin.namespaces().createNamespace("schematest/test", Sets.newHashSet("test"));
+        admin.namespaces().createNamespace("schematest/"+cluster+"/test", Sets.newHashSet("test"));
+        admin.namespaces().createNamespace(schemaCompatibilityNamespace, Sets.newHashSet("test"));
     }
 
     @AfterMethod(alwaysRun = true)
@@ -218,7 +212,7 @@ public class AdminApiSchemaTest extends MockedPulsarServiceBaseTest {
             admin.schemas().createSchema(topicName, fooSchemaInfo);
             fail("Should have failed");
         } catch (PulsarAdminException.NotFoundException e) {
-            assertTrue(e.getMessage().contains("Namespace does not exist"));
+            assertTrue(e.getMessage().contains("HTTP 404"));
         }
     }
 
@@ -263,25 +257,6 @@ public class AdminApiSchemaTest extends MockedPulsarServiceBaseTest {
         admin.schemas().createSchema(topicName, keyValueSchema.getSchemaInfo());
         SchemaInfo schemaInfo2 = admin.schemas().getSchemaInfo(topicName);
         assertEquals(timestamp, schemaInfo2.getTimestamp());
-    }
-
-
-    @Test(dataProvider = "version")
-    public void testInvalidSchemaDataException(ApiVersion version) {
-        String namespace = format("%s%s%s", "schematest", (ApiVersion.V1.equals(version) ? "/" + cluster + "/" : "/"),
-                "test");
-        String topicName = "persistent://"+ namespace + "/test-invalid-schema-data-exception";
-        SchemaInfo schemaInfo = SchemaInfo.builder()
-                .schema(new byte[0])
-                .type(SchemaType.AVRO)
-                .name("test")
-                .build();
-        try {
-            admin.schemas().createSchema(topicName, schemaInfo);
-        } catch (PulsarAdminException e) {
-            Assert.assertEquals(e.getStatusCode(), 422);
-            Assert.assertTrue(e.getMessage().contains("Invalid schema definition data for AVRO schema"));
-        }
     }
 
     @Test
@@ -384,7 +359,7 @@ public class AdminApiSchemaTest extends MockedPulsarServiceBaseTest {
             public long getCToken() {
                 return 0;
             }
-        })).when(pulsarTestContext.getBookKeeperClient()).getLedgerMetadata(anyLong());
+        })).when(mockBookKeeper).getLedgerMetadata(anyLong());
         PersistentTopicInternalStats persistentTopicInternalStats = admin.topics().getInternalStats(topicName);
         List<PersistentTopicInternalStats.LedgerInfo> list = persistentTopicInternalStats.schemaLedgers;
         assertEquals(list.size(), 1);
@@ -439,62 +414,5 @@ public class AdminApiSchemaTest extends MockedPulsarServiceBaseTest {
         Awaitility.await().untilAsserted(() -> assertEquals(
                 admin.namespaces().getSchemaCompatibilityStrategy(schemaCompatibilityNamespace),
                 SchemaCompatibilityStrategy.UNDEFINED));
-    }
-
-    @Test
-    public void testCompatibility() throws Exception {
-        String topicName = schemaCompatibilityNamespace + "/testCompatibility";
-        try {
-            admin.schemas().getSchemaInfo(topicName);
-            fail();
-        } catch (PulsarAdminException.NotFoundException e) {
-            assertEquals(e.getMessage(), "Schema not found");
-        }
-        Map<String, String> properties = new HashMap<>();
-        PostSchemaPayload postSchemaPayload = new PostSchemaPayload("STRING", "", properties);
-        admin.schemas().createSchema(topicName, postSchemaPayload);
-        IsCompatibilityResponse isCompatibilityResponse =
-                admin.schemas().testCompatibility(topicName, postSchemaPayload);
-
-        assertTrue(isCompatibilityResponse.isCompatibility());
-        assertEquals(isCompatibilityResponse.getSchemaCompatibilityStrategy(), SchemaCompatibilityStrategy.FULL.name());
-        postSchemaPayload = new PostSchemaPayload("INT8", "", properties);
-        try {
-            admin.schemas().testCompatibility(topicName, postSchemaPayload);
-            fail();
-        } catch (Exception e) {
-            assertTrue(e instanceof PulsarAdminException.ServerSideErrorException);
-            assertTrue(e.getMessage().contains("Incompatible schema: exists schema type STRING, new schema type INT8"));
-        }
-    }
-
-    @Test
-    public void testCompatibilityWithEmpty() throws Exception {
-        List<Schema<?>> checkSchemas = List.of(
-                Schema.STRING,
-                Schema.JSON(SchemaDefinition.builder().withPojo(Foo.class).withProperties(PROPS).build()),
-                Schema.AVRO(SchemaDefinition.builder().withPojo(Foo.class).withProperties(PROPS).build()),
-                Schema.KeyValue(Schema.STRING, Schema.STRING)
-        );
-        for (Schema<?> schema : checkSchemas) {
-            SchemaInfo schemaInfo = schema.getSchemaInfo();
-            String topicName = schemaCompatibilityNamespace + "/testCompatibilityWithEmpty";
-            PostSchemaPayload postSchemaPayload = new PostSchemaPayload(schemaInfo.getType().toString(),
-                    schemaInfo.getSchemaDefinition(), new HashMap<>());
-
-            // check compatibility with empty schema
-            IsCompatibilityResponse isCompatibilityResponse =
-                    admin.schemas().testCompatibility(topicName, postSchemaPayload);
-            assertTrue(isCompatibilityResponse.isCompatibility());
-            assertEquals(isCompatibilityResponse.getSchemaCompatibilityStrategy(), SchemaCompatibilityStrategy.FULL.name());
-
-            // set schema compatibility strategy is FULL_TRANSITIVE to cover checkCompatibilityWithAll
-            admin.namespaces().setSchemaCompatibilityStrategy(schemaCompatibilityNamespace, SchemaCompatibilityStrategy.FULL_TRANSITIVE);
-            isCompatibilityResponse = admin.schemas().testCompatibility(topicName, postSchemaPayload);
-            assertTrue(isCompatibilityResponse.isCompatibility());
-            assertEquals(isCompatibilityResponse.getSchemaCompatibilityStrategy(), SchemaCompatibilityStrategy.FULL_TRANSITIVE.name());
-            // set back to FULL
-            admin.namespaces().setSchemaCompatibilityStrategy(schemaCompatibilityNamespace, SchemaCompatibilityStrategy.FULL);
-        }
     }
 }

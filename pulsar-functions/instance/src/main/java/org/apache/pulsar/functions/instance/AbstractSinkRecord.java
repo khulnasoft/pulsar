@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -54,30 +54,6 @@ public abstract class AbstractSinkRecord<T> implements Record<T> {
     @Override
     public void ack() {
         sourceRecord.ack();
-    }
-
-    /**
-     * Some sink sometimes wants to control the ack type.
-     */
-    public void cumulativeAck() {
-        if (sourceRecord instanceof PulsarRecord) {
-            PulsarRecord pulsarRecord = (PulsarRecord) sourceRecord;
-            pulsarRecord.cumulativeAck();
-        } else {
-            throw new RuntimeException("SourceRecord class type must be PulsarRecord");
-        }
-    }
-
-    /**
-     * Some sink sometimes wants to control the ack type.
-     */
-    public void individualAck() {
-        if (sourceRecord instanceof PulsarRecord) {
-            PulsarRecord pulsarRecord = (PulsarRecord) sourceRecord;
-            pulsarRecord.individualAck();
-        } else {
-            throw new RuntimeException("SourceRecord class type must be PulsarRecord");
-        }
     }
 
     @Override

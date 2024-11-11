@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,7 +32,6 @@ import org.apache.pulsar.functions.worker.WorkerService;
 
 /**
  * Provide service API to access components.
- *
  * @param <W> worker service type
  */
 public interface Component<W extends WorkerService> {

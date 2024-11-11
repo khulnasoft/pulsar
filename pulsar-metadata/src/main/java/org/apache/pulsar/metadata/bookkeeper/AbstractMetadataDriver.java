@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.metadata.bookkeeper;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
-import java.util.concurrent.TimeUnit;
 import lombok.SneakyThrows;
 import org.apache.bookkeeper.conf.AbstractConfiguration;
 import org.apache.bookkeeper.discover.RegistrationClient;
@@ -41,7 +40,6 @@ public abstract class AbstractMetadataDriver implements Closeable {
     public static final String METADATA_STORE_SCHEME = "metadata-store";
 
     public static final String METADATA_STORE_INSTANCE = "metadata-store-instance";
-    public static final long BLOCKING_CALL_TIMEOUT = TimeUnit.SECONDS.toMillis(30);
 
     protected MetadataStoreExtended store;
     private boolean storeInstanceIsOwned;
@@ -58,7 +56,7 @@ public abstract class AbstractMetadataDriver implements Closeable {
         this.ledgersRootPath = resolveLedgersRootPath();
         createMetadataStore();
         this.registrationClient = new PulsarRegistrationClient(store, ledgersRootPath);
-        createRegistrationManager();
+        this.registrationManager = new PulsarRegistrationManager(store, ledgersRootPath, conf);
         this.layoutManager = new PulsarLayoutManager(store, ledgersRootPath);
         this.ledgerManagerFactory = new PulsarLedgerManagerFactory();
 
@@ -67,13 +65,6 @@ public abstract class AbstractMetadataDriver implements Closeable {
         } catch (IOException e) {
             throw new MetadataException(Code.METADATA_SERVICE_ERROR, e);
         }
-    }
-
-    public RegistrationManager createRegistrationManager() {
-        if (registrationManager == null) {
-            registrationManager = new PulsarRegistrationManager(store, ledgersRootPath, conf);
-        }
-        return registrationManager;
     }
 
     @SneakyThrows
@@ -117,7 +108,6 @@ public abstract class AbstractMetadataDriver implements Closeable {
                 this.store = MetadataStoreExtended.create(url,
                         MetadataStoreConfig.builder()
                                 .sessionTimeoutMillis(conf.getZkTimeout())
-                                .metadataStoreName(MetadataStoreConfig.METADATA_STORE)
                                 .build());
                 this.storeInstanceIsOwned = true;
             } catch (MetadataStoreException e) {

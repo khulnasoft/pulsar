@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,13 +30,10 @@ import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.WebTarget;
 
-import lombok.Cleanup;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.resources.PulsarResources;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.configuration.VipStatus;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
@@ -51,7 +48,6 @@ import org.testng.annotations.Test;
 public class UnauthedAdminProxyHandlerTest extends MockedPulsarServiceBaseTest {
     private final String STATUS_FILE_PATH = "./src/test/resources/vip_status.html";
     private ProxyConfiguration proxyConfig = new ProxyConfiguration();
-    private Authentication proxyClientAuthentication;
     private WebServer webServer;
     private BrokerDiscoveryProvider discoveryProvider;
     private AdminProxyWrapper adminProxyHandler;
@@ -78,25 +74,20 @@ public class UnauthedAdminProxyHandlerTest extends MockedPulsarServiceBaseTest {
         proxyConfig.setStatusFilePath(STATUS_FILE_PATH);
         proxyConfig.setMetadataStoreUrl(DUMMY_VALUE);
         proxyConfig.setConfigurationMetadataStoreUrl(GLOBAL_DUMMY_VALUE);
-        proxyConfig.setClusterName(configClusterName);
-
-        proxyClientAuthentication = AuthenticationFactory.create(proxyConfig.getBrokerClientAuthenticationPlugin(),
-                proxyConfig.getBrokerClientAuthenticationParameters());
-        proxyClientAuthentication.start();
 
         webServer = new WebServer(proxyConfig, new AuthenticationService(
                                           PulsarConfigurationLoader.convertFrom(proxyConfig)));
 
-        resource = new PulsarResources(registerCloseable(new ZKMetadataStore(mockZooKeeper)),
-                registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal)));
-        discoveryProvider = spy(registerCloseable(new BrokerDiscoveryProvider(proxyConfig, resource)));
-        adminProxyHandler = new AdminProxyWrapper(proxyConfig, discoveryProvider, proxyClientAuthentication);
+        resource = new PulsarResources(new ZKMetadataStore(mockZooKeeper),
+                new ZKMetadataStore(mockZooKeeperGlobal));
+        discoveryProvider = spy(new BrokerDiscoveryProvider(proxyConfig, resource));
+        adminProxyHandler = new AdminProxyWrapper(proxyConfig, discoveryProvider);
         ServletHolder servletHolder = new ServletHolder(adminProxyHandler);
         webServer.addServlet("/admin", servletHolder);
         webServer.addServlet("/lookup", servletHolder);
 
-        webServer.addRestResource("/", VipStatus.ATTRIBUTE_STATUS_FILE_PATH, proxyConfig.getStatusFilePath(),
-                VipStatus.class);
+        webServer.addRestResources("/", VipStatus.class.getPackage().getName(),
+                VipStatus.ATTRIBUTE_STATUS_FILE_PATH, proxyConfig.getStatusFilePath());
 
         // start web-service
         webServer.start();
@@ -108,14 +99,10 @@ public class UnauthedAdminProxyHandlerTest extends MockedPulsarServiceBaseTest {
     protected void cleanup() throws Exception {
         internalCleanup();
         webServer.stop();
-        if (proxyClientAuthentication != null) {
-            proxyClientAuthentication.close();
-        }
     }
 
     @Test
     public void testUnauthenticatedProxy() throws Exception {
-        @Cleanup
         PulsarAdmin admin = PulsarAdmin.builder()
             .serviceHttpUrl("http://127.0.0.1:" + webServer.getListenPortHTTP().get())
             .build();
@@ -127,19 +114,19 @@ public class UnauthedAdminProxyHandlerTest extends MockedPulsarServiceBaseTest {
 
     @Test
     public void testVipStatus() throws Exception {
-        @Cleanup
         Client client = ClientBuilder.newClient(new ClientConfig().register(LoggingFeature.class));
         WebTarget webTarget = client.target("http://127.0.0.1:" + webServer.getListenPortHTTP().get())
                 .path("/status.html");
         String response = webTarget.request().get(String.class);
         Assert.assertEquals(response, "OK");
+        client.close();
     }
 
     static class AdminProxyWrapper extends AdminProxyHandler {
         String rewrittenUrl;
 
-        AdminProxyWrapper(ProxyConfiguration config, BrokerDiscoveryProvider discoveryProvider, Authentication proxyClientAuthentication) {
-            super(config, discoveryProvider, proxyClientAuthentication);
+        AdminProxyWrapper(ProxyConfiguration config, BrokerDiscoveryProvider discoveryProvider) {
+            super(config, discoveryProvider);
         }
 
         @Override

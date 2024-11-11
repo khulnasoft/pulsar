@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.proxy.server;
 
 import io.netty.buffer.ByteBuf;
@@ -44,6 +45,7 @@ import org.slf4j.LoggerFactory;
 public class ParserProxyHandler extends ChannelInboundHandlerAdapter {
 
 
+    private final Channel channel;
     //inbound
     protected static final String FRONTEND_CONN = "frontendconn";
     //outbound
@@ -66,9 +68,10 @@ public class ParserProxyHandler extends ChannelInboundHandlerAdapter {
      */
     private static final Map<String, String> consumerHashMap = new ConcurrentHashMap<>();
 
-    public ParserProxyHandler(ProxyService service, String type, int maxMessageSize,
+    public ParserProxyHandler(ProxyService service, Channel channel, String type, int maxMessageSize,
                               ChannelId peerChannelId) {
         this.service = service;
+        this.channel = channel;
         this.connType = type;
         this.maxMessageSize = maxMessageSize;
         this.peerChannelId = peerChannelId;
@@ -117,11 +120,7 @@ public class ParserProxyHandler extends ChannelInboundHandlerAdapter {
                     ParserProxyHandler.producerHashMap.put(cmd.getProducer().getProducerId() + "," + ctx.channel().id(),
                             cmd.getProducer().getTopic());
 
-                    String producerName = "";
-                    if (cmd.getProducer().hasProducerName()){
-                        producerName = cmd.getProducer().getProducerName();
-                    }
-                    logging(ctx.channel(), cmd.getType(), "{producer:" + producerName
+                    logging(ctx.channel(), cmd.getType(), "{producer:" + cmd.getProducer().getProducerName()
                             + ",topic:" + cmd.getProducer().getTopic() + "}", null);
                     break;
 

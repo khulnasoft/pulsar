@@ -19,10 +19,13 @@
 
 tenant: "test"
 namespace: "test-namespace"
-name: "window-example"
+name: "example"
 className: "org.apache.pulsar.functions.api.examples.AddWindowFunction"
-inputs: ["test_window_src"]
-output: "test_window_result"
+inputs: ["test_src"]
+userConfig:
+  "PublishTopic": "test_result"
+
+output: "test_result"
 autoAck: true
 parallelism: 1
 windowConfig:

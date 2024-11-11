@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -36,13 +36,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.GetResult;
-import org.apache.pulsar.metadata.api.MetadataEventSynchronizer;
-import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.MetadataStoreException.BadVersionException;
 import org.apache.pulsar.metadata.api.MetadataStoreException.NotFoundException;
-import org.apache.pulsar.metadata.api.MetadataStoreProvider;
 import org.apache.pulsar.metadata.api.Notification;
 import org.apache.pulsar.metadata.api.NotificationType;
 import org.apache.pulsar.metadata.api.Stat;
@@ -52,7 +49,6 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 public class LocalMemoryMetadataStore extends AbstractMetadataStore implements MetadataStoreExtended {
 
-    static final String MEMORY_SCHEME = "memory";
     static final String MEMORY_SCHEME_IDENTIFIER = "memory:";
 
     @Data
@@ -66,7 +62,6 @@ public class LocalMemoryMetadataStore extends AbstractMetadataStore implements M
 
     private final NavigableMap<String, Value> map;
     private final AtomicLong sequentialIdGenerator;
-    private MetadataEventSynchronizer synchronizer;
 
     private static final Map<String, NavigableMap<String, Value>> STATIC_MAPS = new MapMaker()
             .weakValues().makeMap();
@@ -78,11 +73,8 @@ public class LocalMemoryMetadataStore extends AbstractMetadataStore implements M
 
     public LocalMemoryMetadataStore(String metadataURL, MetadataStoreConfig metadataStoreConfig)
             throws MetadataStoreException {
-        super(metadataStoreConfig.getMetadataStoreName(), metadataStoreConfig.getOpenTelemetry());
         String name = metadataURL.substring(MEMORY_SCHEME_IDENTIFIER.length());
         // Local means a private data set
-        // update synchronizer and register sync listener
-        updateMetadataEventSynchronizer(metadataStoreConfig.getSynchronizer());
         if ("local".equals(name)) {
             map = new TreeMap<>();
             sequentialIdGenerator = new AtomicLong();
@@ -225,37 +217,5 @@ public class LocalMemoryMetadataStore extends AbstractMetadataStore implements M
                 return FutureUtils.value(null);
             }
         }
-    }
-
-    @Override
-    public Optional<MetadataEventSynchronizer> getMetadataEventSynchronizer() {
-        return Optional.ofNullable(synchronizer);
-    }
-
-    @Override
-    public void updateMetadataEventSynchronizer(MetadataEventSynchronizer synchronizer) {
-        this.synchronizer = synchronizer;
-        registerSyncListener(Optional.ofNullable(synchronizer));
-    }
-
-    @Override
-    public void close() throws Exception {
-        if (isClosed.compareAndSet(false, true)) {
-            super.close();
-        }
-    }
-}
-
-class MemoryMetadataStoreProvider implements MetadataStoreProvider {
-
-    @Override
-    public String urlScheme() {
-        return LocalMemoryMetadataStore.MEMORY_SCHEME;
-    }
-
-    @Override
-    public MetadataStore create(String metadataURL, MetadataStoreConfig metadataStoreConfig,
-                                boolean enableSessionWatcher) throws MetadataStoreException {
-        return new LocalMemoryMetadataStore(metadataURL, metadataStoreConfig);
     }
 }

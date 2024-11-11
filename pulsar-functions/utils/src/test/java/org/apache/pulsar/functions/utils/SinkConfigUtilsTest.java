@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -38,7 +38,6 @@ import java.util.Map;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.functions.ConsumerConfig;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.Resources;
@@ -55,6 +54,8 @@ import org.testng.annotations.Test;
  * Unit test of {@link SinkConfigUtilsTest}.
  */
 public class SinkConfigUtilsTest {
+
+    private ConnectorDefinition defn;
 
     @Data
     @Accessors(chain = true)
@@ -129,7 +130,7 @@ public class SinkConfigUtilsTest {
         sinkConfig.setRetainKeyOrdering(false);
         sinkConfig.setAutoAck(true);
         sinkConfig.setCleanupSubscription(false);
-        sinkConfig.setTimeoutMs(2000L);
+        sinkConfig.setTimeoutMs(2000l);
         sinkConfig.setRuntimeFlags("-DKerberos");
         sinkConfig.setCleanupSubscription(true);
 
@@ -137,7 +138,6 @@ public class SinkConfigUtilsTest {
 
         sinkConfig.setTransformFunction("builtin://transform");
         sinkConfig.setTransformFunctionConfig("{\"key\": \"value\"}");
-        sinkConfig.setLogTopic("log-topic");
 
         Function.FunctionDetails functionDetails = SinkConfigUtils.convert(sinkConfig, new SinkConfigUtils.ExtractedSinkDetails(null, null, null));
         assertEquals(Function.SubscriptionType.SHARED, functionDetails.getSource().getSubscriptionType());
@@ -175,7 +175,6 @@ public class SinkConfigUtilsTest {
             SinkConfig sinkConfig = createSinkConfig();
             sinkConfig.setRetainOrdering(testcase);
             Function.FunctionDetails functionDetails = SinkConfigUtils.convert(sinkConfig, new SinkConfigUtils.ExtractedSinkDetails(null, null, null));
-            assertEquals(functionDetails.getRetainOrdering(), testcase != null ? testcase : Boolean.valueOf(false));
             SinkConfig result = SinkConfigUtils.convertFromDetails(functionDetails);
             assertEquals(result.getRetainOrdering(), testcase != null ? testcase : Boolean.valueOf(false));
         }
@@ -188,7 +187,6 @@ public class SinkConfigUtilsTest {
             SinkConfig sinkConfig = createSinkConfig();
             sinkConfig.setRetainKeyOrdering(testcase);
             Function.FunctionDetails functionDetails = SinkConfigUtils.convert(sinkConfig, new SinkConfigUtils.ExtractedSinkDetails(null, null, null));
-            assertEquals(functionDetails.getRetainKeyOrdering(), testcase != null ? testcase : Boolean.valueOf(false));
             SinkConfig result = SinkConfigUtils.convertFromDetails(functionDetails);
             assertEquals(result.getRetainKeyOrdering(), testcase != null ? testcase : Boolean.valueOf(false));
         }
@@ -223,18 +221,6 @@ public class SinkConfigUtilsTest {
             SinkConfig result = SinkConfigUtils.convertFromDetails(functionDetails);
             assertEquals(result.getCleanupSubscription(), testcase == null ? Boolean.valueOf(true) : testcase);
         }
-    }
-
-    @Test
-    public void testUpdateSubscriptionPosition() {
-        SinkConfig sinkConfig = createSinkConfig();
-        SinkConfig newSinkConfig = createSinkConfig();
-        newSinkConfig.setSourceSubscriptionPosition(SubscriptionInitialPosition.Earliest);
-        SinkConfig mergedConfig = SinkConfigUtils.validateUpdate(sinkConfig, newSinkConfig);
-        assertEquals(
-                new Gson().toJson(newSinkConfig),
-                new Gson().toJson(mergedConfig)
-        );
     }
 
     @Test
@@ -412,7 +398,7 @@ public class SinkConfigUtilsTest {
         SinkConfig mergedConfig = SinkConfigUtils.validateUpdate(sinkConfig, newSinkConfig);
         assertEquals(
                 mergedConfig.getParallelism(),
-                Integer.valueOf(101)
+                new Integer(101)
         );
         mergedConfig.setParallelism(sinkConfig.getParallelism());
         assertEquals(
@@ -426,8 +412,8 @@ public class SinkConfigUtilsTest {
         SinkConfig sinkConfig = createSinkConfig();
         Resources resources = new Resources();
         resources.setCpu(0.3);
-        resources.setRam(1232L);
-        resources.setDisk(123456L);
+        resources.setRam(1232l);
+        resources.setDisk(123456l);
         SinkConfig newSinkConfig = createUpdatedSinkConfig("resources", resources);
         SinkConfig mergedConfig = SinkConfigUtils.validateUpdate(sinkConfig, newSinkConfig);
         assertEquals(
@@ -444,11 +430,11 @@ public class SinkConfigUtilsTest {
     @Test
     public void testMergeDifferentTimeout() {
         SinkConfig sinkConfig = createSinkConfig();
-        SinkConfig newSinkConfig = createUpdatedSinkConfig("timeoutMs", 102L);
+        SinkConfig newSinkConfig = createUpdatedSinkConfig("timeoutMs", 102l);
         SinkConfig mergedConfig = SinkConfigUtils.validateUpdate(sinkConfig, newSinkConfig);
         assertEquals(
                 mergedConfig.getTimeoutMs(),
-                Long.valueOf(102L)
+                new Long(102l)
         );
         mergedConfig.setTimeoutMs(sinkConfig.getTimeoutMs());
         assertEquals(
@@ -537,22 +523,6 @@ public class SinkConfigUtilsTest {
     }
 
     @Test
-    public void testMergeDifferentLogTopic() {
-        SinkConfig sinkConfig = createSinkConfig();
-        SinkConfig newSinkConfig = createUpdatedSinkConfig("logTopic", "Different");
-        SinkConfig mergedConfig = SinkConfigUtils.validateUpdate(sinkConfig, newSinkConfig);
-        assertEquals(
-                mergedConfig.getLogTopic(),
-                "Different"
-        );
-        mergedConfig.setLogTopic(sinkConfig.getLogTopic());
-        assertEquals(
-                new Gson().toJson(sinkConfig),
-                new Gson().toJson(mergedConfig)
-        );
-    }
-
-    @Test
     public void testValidateConfig() {
         SinkConfig sinkConfig = createSinkConfig();
 
@@ -578,7 +548,6 @@ public class SinkConfigUtilsTest {
         inputSpecs.put("test-input", ConsumerConfig.builder().isRegexPattern(true).serdeClassName("test-serde").build());
         sinkConfig.setInputSpecs(inputSpecs);
         sinkConfig.setProcessingGuarantees(FunctionConfig.ProcessingGuarantees.ATLEAST_ONCE);
-        sinkConfig.setSourceSubscriptionPosition(SubscriptionInitialPosition.Latest);
         sinkConfig.setRetainOrdering(false);
         sinkConfig.setRetainKeyOrdering(false);
         sinkConfig.setConfigs(new HashMap<>());
@@ -590,7 +559,6 @@ public class SinkConfigUtilsTest {
         sinkConfig.setTransformFunction("builtin://transform");
         sinkConfig.setTransformFunctionClassName("Transform");
         sinkConfig.setTransformFunctionConfig("{\"key\": \"value\"}");
-        sinkConfig.setLogTopic("log-topic");
         return sinkConfig;
     }
 

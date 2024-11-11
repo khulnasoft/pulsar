@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,22 +20,23 @@ package org.apache.pulsar.broker.stats;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.apache.pulsar.common.stats.Metrics;
+import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 
 /**
  */
 public class ClusterReplicationMetrics {
     private final List<Metrics> metricsList;
     private final String localCluster;
-    private final Map<String, ReplicationMetrics> metricsMap = new ConcurrentHashMap<>();
+    private final ConcurrentOpenHashMap<String, ReplicationMetrics> metricsMap;
     public static final String SEPARATOR = "_";
     public final boolean metricsEnabled;
 
     public ClusterReplicationMetrics(String localCluster, boolean metricsEnabled) {
         metricsList = new ArrayList<>();
         this.localCluster = localCluster;
+        metricsMap = ConcurrentOpenHashMap.<String, ReplicationMetrics>newBuilder()
+                .build();
         this.metricsEnabled = metricsEnabled;
     }
 

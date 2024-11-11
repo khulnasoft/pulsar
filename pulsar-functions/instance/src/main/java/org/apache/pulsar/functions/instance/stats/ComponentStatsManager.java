@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -38,18 +38,17 @@ public abstract class ComponentStatsManager implements AutoCloseable {
 
     protected final FunctionCollectorRegistry collectorRegistry;
 
-    protected final EvictingQueue emptyQueue = EvictingQueue.create(0);
+    protected final EvictingQueue EMPTY_QUEUE = EvictingQueue.create(0);
 
     public static final String USER_METRIC_PREFIX = "user_metric_";
 
-    public static final String[] METRICS_LABEL_NAMES =
-            {"tenant", "namespace", "name", "instance_id", "cluster", "fqfn"};
+    public static final String[] metricsLabelNames = {"tenant", "namespace", "name", "instance_id", "cluster", "fqfn"};
 
-    protected static final String[] EXCEPTION_METRICS_LABEL_NAMES;
+    protected static final String[] exceptionMetricsLabelNames;
 
     static {
-        EXCEPTION_METRICS_LABEL_NAMES = Arrays.copyOf(METRICS_LABEL_NAMES, METRICS_LABEL_NAMES.length + 1);
-        EXCEPTION_METRICS_LABEL_NAMES[METRICS_LABEL_NAMES.length] = "error";
+        exceptionMetricsLabelNames = Arrays.copyOf(metricsLabelNames, metricsLabelNames.length + 1);
+        exceptionMetricsLabelNames[metricsLabelNames.length] = "error";
     }
 
     public static ComponentStatsManager getStatsManager(FunctionCollectorRegistry collectorRegistry,
@@ -126,17 +125,13 @@ public abstract class ComponentStatsManager implements AutoCloseable {
 
     public abstract double getAvgProcessLatency1min();
 
-    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation>
-    getLatestUserExceptions();
+    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation> getLatestUserExceptions();
 
-    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation>
-    getLatestSystemExceptions();
+    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation> getLatestSystemExceptions();
 
-    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation>
-    getLatestSourceExceptions();
+    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation> getLatestSourceExceptions();
 
-    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation>
-    getLatestSinkExceptions();
+    public abstract EvictingQueue<InstanceCommunication.FunctionStatus.ExceptionInformation> getLatestSinkExceptions();
 
     public String getStatsAsString() throws IOException {
         StringWriter outputWriter = new StringWriter();
@@ -149,7 +144,7 @@ public abstract class ComponentStatsManager implements AutoCloseable {
     protected InstanceCommunication.FunctionStatus.ExceptionInformation getExceptionInfo(Throwable th, long ts) {
         InstanceCommunication.FunctionStatus.ExceptionInformation.Builder exceptionInfoBuilder =
                 InstanceCommunication.FunctionStatus.ExceptionInformation.newBuilder().setMsSinceEpoch(ts);
-        String msg = String.format("[%s]: %s", th.getClass().getName(), th.getMessage());
+        String msg = th.getMessage();
         if (msg != null) {
             exceptionInfoBuilder.setExceptionString(msg);
         }

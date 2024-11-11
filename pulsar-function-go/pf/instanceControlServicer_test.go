@@ -21,7 +21,6 @@ package pf
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"testing"
@@ -30,7 +29,6 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -63,8 +61,7 @@ func TestInstanceControlServicer_serve_creates_valid_instance(t *testing.T) {
 	// Now we can setup the client:
 
 	ctx := context.Background()
-	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(lis)),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(lis)), grpc.WithInsecure())
 	if err != nil {
 		t.Fatalf("Failed to dial bufnet: %v", err)
 	}
@@ -78,57 +75,4 @@ func TestInstanceControlServicer_serve_creates_valid_instance(t *testing.T) {
 	// Test for output.
 	log.Printf("Response: %+v", resp.Success)
 	assert.Equal(t, resp.Success, true)
-}
-
-func instanceCommunicationClient(t *testing.T, instance *goInstance) pb.InstanceControlClient {
-	t.Helper()
-
-	if instance == nil {
-		t.Fatalf("cannot create communication client for nil instance")
-	}
-
-	var (
-		ctx = context.Background()
-		cf  context.CancelFunc
-	)
-
-	if testDeadline, ok := t.Deadline(); ok {
-		ctx, cf = context.WithDeadline(context.Background(), testDeadline)
-		t.Cleanup(cf)
-	}
-
-	lis = bufconn.Listen(bufSize)
-	t.Cleanup(func() {
-		lis.Close()
-	})
-	// create a gRPC server object
-	grpcServer := grpc.NewServer()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-	})
-
-	servicer := InstanceControlServicer{instance}
-	// must register before we start the service.
-	pb.RegisterInstanceControlServer(grpcServer, &servicer)
-
-	// start the server
-	t.Logf("Serving InstanceCommunication on port %d", instance.context.GetPort())
-
-	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			panic(fmt.Sprintf("grpc server exited with error: %v", err))
-		}
-	}()
-
-	// Now we can setup the client:
-	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(lis)),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("Failed to dial bufnet: %v", err)
-	}
-	t.Cleanup(func() {
-		conn.Close()
-	})
-	client := pb.NewInstanceControlClient(conn)
-	return client
 }

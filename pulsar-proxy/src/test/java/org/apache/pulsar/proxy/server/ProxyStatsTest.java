@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -35,11 +35,8 @@ import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import lombok.Cleanup;
-import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageRoutingMode;
@@ -63,7 +60,6 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
     private ProxyService proxyService;
     private WebServer proxyWebServer;
     private final ProxyConfiguration proxyConfig = new ProxyConfiguration();
-    private Authentication proxyClientAuthentication;
 
     @Override
     @BeforeClass
@@ -75,19 +71,13 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
         proxyConfig.setWebServicePort(Optional.of(0));
         proxyConfig.setMetadataStoreUrl(DUMMY_VALUE);
         proxyConfig.setConfigurationMetadataStoreUrl(GLOBAL_DUMMY_VALUE);
-        proxyConfig.setClusterName(configClusterName);
         // enable full parsing feature
         proxyConfig.setProxyLogLevel(Optional.of(2));
 
-        proxyClientAuthentication = AuthenticationFactory.create(proxyConfig.getBrokerClientAuthenticationPlugin(),
-                proxyConfig.getBrokerClientAuthenticationParameters());
-        proxyClientAuthentication.start();
-
         proxyService = Mockito.spy(new ProxyService(proxyConfig,
-                new AuthenticationService(PulsarConfigurationLoader.convertFrom(proxyConfig)), proxyClientAuthentication));
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeper))).when(proxyService).createLocalMetadataStore();
-        doReturn(registerCloseable(new ZKMetadataStore(mockZooKeeperGlobal))).when(proxyService)
-                .createConfigurationMetadataStore();
+                new AuthenticationService(PulsarConfigurationLoader.convertFrom(proxyConfig))));
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(proxyService).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeperGlobal)).when(proxyService).createConfigurationMetadataStore();
 
         Optional<Integer> proxyLogLevel = Optional.of(2);
         assertEquals(proxyLogLevel, proxyService.getConfiguration().getProxyLogLevel());
@@ -97,17 +87,8 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
                 PulsarConfigurationLoader.convertFrom(proxyConfig));
 
         proxyWebServer = new WebServer(proxyConfig, authService);
-        ProxyServiceStarter.addWebServerHandlers(proxyWebServer, proxyConfig, proxyService, null, proxyClientAuthentication);
+        ProxyServiceStarter.addWebServerHandlers(proxyWebServer, proxyConfig, proxyService, null);
         proxyWebServer.start();
-    }
-
-    @Override
-    protected ServiceConfiguration getDefaultConf() {
-        ServiceConfiguration conf = super.getDefaultConf();
-        // wait for shutdown of the broker, this prevents flakiness which could be caused by metrics being
-        // unregistered asynchronously. This impacts the execution of the next test method if this would be happening.
-        conf.setBrokerShutdownTimeoutMs(5000L);
-        return conf;
     }
 
     @Override
@@ -115,10 +96,6 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
     protected void cleanup() throws Exception {
         internalCleanup();
         proxyService.close();
-        proxyWebServer.stop();
-        if (proxyClientAuthentication != null) {
-            proxyClientAuthentication.close();
-        }
     }
 
     /**
@@ -148,7 +125,6 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
             consumer.acknowledge(msg);
         }
 
-        @Cleanup
         Client httpClient = ClientBuilder.newClient(new ClientConfig().register(LoggingFeature.class));
         Response r = httpClient.target(proxyWebServer.getServiceUri()).path("/proxy-stats/connections").request()
                 .get();
@@ -199,7 +175,6 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
             msg = consumer2.receive(1, TimeUnit.SECONDS);
         }
 
-        @Cleanup
         Client httpClient = ClientBuilder.newClient(new ClientConfig().register(LoggingFeature.class));
         Response r = httpClient.target(proxyWebServer.getServiceUri()).path("/proxy-stats/topics").request()
                 .get();
@@ -223,7 +198,6 @@ public class ProxyStatsTest extends MockedPulsarServiceBaseTest {
     public void testChangeLogLevel() {
         Assert.assertEquals(proxyService.getProxyLogLevel(), 2);
         int newLogLevel = 1;
-        @Cleanup
         Client httpClient = ClientBuilder.newClient(new ClientConfig().register(LoggingFeature.class));
         Response r = httpClient.target(proxyWebServer.getServiceUri()).path("/proxy-stats/logging/" + newLogLevel)
                 .request().post(Entity.entity("", MediaType.APPLICATION_JSON));

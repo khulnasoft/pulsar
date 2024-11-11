@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,7 @@
 package org.apache.pulsar.functions.worker;
 
 import java.net.URI;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
@@ -50,7 +51,7 @@ public class PackageUrlValidator {
 
     private static Path resolveDirectory(Boolean enabled, String directory) {
         return enabled != null && enabled
-                ? Path.of(directory).normalize().toAbsolutePath() : null;
+                ? FileSystems.getDefault().getPath(directory).normalize().toAbsolutePath() : null;
     }
 
     private static List<Pattern> compilePatterns(List<String> additionalPatterns) {
@@ -68,7 +69,7 @@ public class PackageUrlValidator {
 
     private boolean doesMatch(URI functionPkgUrl, Path directory, List<Pattern> patterns) {
         if (directory != null && "file".equals(functionPkgUrl.getScheme())) {
-            Path filePath = Path.of(functionPkgUrl.getPath()).normalize().toAbsolutePath();
+            Path filePath = FileSystems.getDefault().getPath(functionPkgUrl.getPath()).normalize().toAbsolutePath();
             if (filePath.startsWith(directory)) {
                 return true;
             }

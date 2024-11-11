@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,68 +18,104 @@
  */
 package org.apache.pulsar.admin.cli;
 
-import static org.apache.pulsar.client.admin.internal.BaseResource.getApiException;
+import com.beust.jcommander.DefaultUsageFormatter;
+import com.beust.jcommander.IUsageFormatter;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.admin.internal.PulsarAdminImpl;
-import picocli.CommandLine;
+import org.apache.pulsar.client.admin.PulsarAdminException.ConnectException;
 
 public abstract class CmdBase {
-    private final CommandLine commander;
+    protected final JCommander jcommander;
     private final Supplier<PulsarAdmin> adminSupplier;
+    private PulsarAdmin admin;
+    private IUsageFormatter usageFormatter;
 
-    /**
-     * Default request timeout in milliseconds.
-     * Used if not found from configuration data in {@link #getRequestTimeoutMs()}
-     */
-    private static final long DEFAULT_REQUEST_TIMEOUT_MILLIS = 60000;
+    @Parameter(names = { "-h", "--help" }, help = true, hidden = true)
+    private boolean help;
 
     public CmdBase(String cmdName, Supplier<PulsarAdmin> adminSupplier) {
         this.adminSupplier = adminSupplier;
-        commander = new CommandLine(this);
-        commander.setCommandName(cmdName);
+        jcommander = new JCommander();
+        usageFormatter = new CmdUsageFormatter(jcommander);
+        jcommander.setProgramName("pulsar-admin " + cmdName);
+        jcommander.setUsageFormatter(usageFormatter);
+    }
+
+    protected IUsageFormatter getUsageFormatter() {
+        if (usageFormatter == null) {
+             usageFormatter = new DefaultUsageFormatter(jcommander);
+        }
+        return usageFormatter;
+    }
+
+    private void tryShowCommandUsage() {
+        try {
+            String chosenCommand = jcommander.getParsedCommand();
+            getUsageFormatter().usage(chosenCommand);
+        } catch (Exception e) {
+            // it is caused by an invalid command, the invalid command can not be parsed
+            System.err.println("Invalid command, please use `pulsar-admin --help` to check out how to use");
+        }
     }
 
     public boolean run(String[] args) {
-        return commander.execute(args) == 0;
+        try {
+            jcommander.parse(args);
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            System.err.println();
+            tryShowCommandUsage();
+            return false;
+        }
+
+        String cmd = jcommander.getParsedCommand();
+        if (cmd == null) {
+            jcommander.usage();
+            return false;
+        } else {
+            JCommander obj = jcommander.getCommands().get(cmd);
+            CliCommand cmdObj = (CliCommand) obj.getObjects().get(0);
+
+            try {
+                cmdObj.run();
+                return true;
+            } catch (ParameterException e) {
+                System.err.println(e.getMessage());
+                System.err.println();
+                return false;
+            } catch (ConnectException e) {
+                System.err.println(e.getMessage());
+                System.err.println();
+                System.err.println("Error connecting to: " + getAdmin().getServiceUrl());
+                return false;
+            } catch (PulsarAdminException e) {
+                System.err.println(e.getHttpError());
+                System.err.println();
+                System.err.println("Reason: " + e.getMessage());
+                return false;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
     }
 
     protected PulsarAdmin getAdmin() {
-        return adminSupplier.get();
-    }
-
-    protected long getRequestTimeoutMs() {
-        PulsarAdmin pulsarAdmin = getAdmin();
-        if (pulsarAdmin instanceof PulsarAdminImpl) {
-            return ((PulsarAdminImpl) pulsarAdmin).getClientConfigData().getRequestTimeoutMs();
+        if (admin == null) {
+            admin = adminSupplier.get();
         }
-        return DEFAULT_REQUEST_TIMEOUT_MILLIS;
+        return admin;
     }
 
-    protected <T> T sync(Supplier<CompletableFuture<T>> executor) throws PulsarAdminException {
-        try {
-            return executor.get().get(getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new PulsarAdminException(e);
-        } catch (TimeoutException e) {
-            throw new PulsarAdminException.TimeoutException(e);
-        } catch (ExecutionException e) {
-            throw PulsarAdminException.wrap(getApiException(e.getCause()));
-        } catch (Exception e) {
-            throw PulsarAdminException.wrap(getApiException(e));
-        }
-    }
 
-    Map<String, String> parseListKeyValueMap(List<String> metadata) {
+    static Map<String, String> parseListKeyValueMap(List<String> metadata) {
         Map<String, String> map = null;
         if (metadata != null && !metadata.isEmpty()) {
             map = new HashMap<>();
@@ -95,26 +131,7 @@ public abstract class CmdBase {
         return map;
     }
 
-    // Used to register the subcomand.
-    protected CommandLine getCommander() {
-        return commander;
-    }
-
-    protected void addCommand(String name, Object cmd) {
-        commander.addSubcommand(name, cmd);
-    }
-
-    protected void addCommand(String name, Object cmd, String... aliases) {
-        commander.addSubcommand(name, cmd, aliases);
-    }
-
-    protected class ParameterException extends CommandLine.ParameterException {
-        public ParameterException(String msg) {
-            super(commander, msg);
-        }
-
-        public ParameterException(String msg, Throwable e) {
-            super(commander, msg, e);
-        }
+    public JCommander getJcommander() {
+        return jcommander;
     }
 }

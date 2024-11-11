@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -1015,32 +1015,36 @@ public class MockZooKeeper extends ZooKeeper {
         try {
             for (org.apache.zookeeper.Op op : ops) {
                 switch (op.getType()) {
-                    case ZooDefs.OpCode.create -> {
+                    case ZooDefs.OpCode.create: {
                         org.apache.zookeeper.Op.Create opc = ((org.apache.zookeeper.Op.Create) op);
                         CreateMode cm = CreateMode.fromFlag(opc.flags);
                         String path = this.create(op.getPath(), opc.data, null, cm);
                         res.add(new OpResult.CreateResult(path));
+                        break;
                     }
-                    case ZooDefs.OpCode.delete -> {
+                    case ZooDefs.OpCode.delete: {
                         this.delete(op.getPath(), (int) FieldUtils.readField(op, "version", true));
                         res.add(new OpResult.DeleteResult());
+                        break;
                     }
-                    case ZooDefs.OpCode.setData -> {
+                    case ZooDefs.OpCode.setData: {
                         Stat stat = this.setData(
                                 op.getPath(),
                                 (byte[]) FieldUtils.readField(op, "data", true),
                                 (int) FieldUtils.readField(op, "version", true));
                         res.add(new OpResult.SetDataResult(stat));
+                        break;
                     }
-                    case ZooDefs.OpCode.getChildren -> {
+                    case ZooDefs.OpCode.getChildren: {
                         try {
                             List<String> children = this.getChildren(op.getPath(), null);
                             res.add(new OpResult.GetChildrenResult(children));
                         } catch (KeeperException e) {
                             res.add(new OpResult.ErrorResult(e.code().intValue()));
                         }
+                        break;
                     }
-                    case ZooDefs.OpCode.getData -> {
+                    case ZooDefs.OpCode.getData: {
                         Stat stat = new Stat();
                         try {
                             byte[] payload = this.getData(op.getPath(), null, stat);
@@ -1048,6 +1052,7 @@ public class MockZooKeeper extends ZooKeeper {
                         } catch (KeeperException e) {
                             res.add(new OpResult.ErrorResult(e.code().intValue()));
                         }
+                        break;
                     }
                 }
             }
@@ -1086,7 +1091,6 @@ public class MockZooKeeper extends ZooKeeper {
 
     @Override
     public void close() throws InterruptedException {
-        shutdown();
     }
 
     public void shutdown() throws InterruptedException {
@@ -1114,7 +1118,7 @@ public class MockZooKeeper extends ZooKeeper {
         Optional<Failure> failure = failures.stream().filter(f -> f.predicate.test(op, path)).findFirst();
         if (failure.isPresent()) {
             failures.remove(failure.get());
-            return Optional.ofNullable(failure.get().failReturnCode);
+            return Optional.of(failure.get().failReturnCode);
         } else {
             return Optional.empty();
         }
@@ -1129,18 +1133,6 @@ public class MockZooKeeper extends ZooKeeper {
 
     public void failConditional(KeeperException.Code rc, BiPredicate<Op, String> predicate) {
         failures.add(new Failure(rc, predicate));
-    }
-
-    public void delay(long millis, BiPredicate<Op, String> predicate) {
-        failures.add(new Failure(null, (op, s) -> {
-            if (predicate.test(op, s)) {
-                try {
-                    Thread.sleep(millis);
-                } catch (InterruptedException e) {}
-                return true;
-            }
-            return false;
-        }));
     }
 
     public void setAlwaysFail(KeeperException.Code rc) {

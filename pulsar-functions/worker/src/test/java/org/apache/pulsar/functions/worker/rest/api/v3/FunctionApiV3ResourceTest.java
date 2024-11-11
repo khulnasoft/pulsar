@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -311,63 +311,6 @@ public class FunctionApiV3ResourceTest extends AbstractFunctionApiResourceTest {
         functionConfig.setOutputSerdeClassName(outputSerdeClassName);
         registerFunction(tenant, namespace, function, null, null, filePackageUrl, functionConfig);
 
-    }
-
-    @Test
-    public void testUpdateSourceWithNoChange() throws IOException {
-        mockWorkerUtils();
-
-        when(mockedManager.containsFunction(eq(tenant), eq(namespace), eq(function))).thenReturn(true);
-        FunctionConfig funcConfig = createDefaultFunctionConfig();
-
-        // config has not changes and don't update auth, should fail
-        try {
-            updateFunction(
-                    funcConfig.getTenant(),
-                    funcConfig.getNamespace(),
-                    funcConfig.getName(),
-                    null,
-                    mockedFormData,
-                    null,
-                    funcConfig,
-                    null,
-                    null);
-            fail("Update without changes should fail");
-        } catch (RestException e) {
-            assertThat(e.getMessage()).contains("Update contains no change");
-        }
-
-        try {
-            UpdateOptionsImpl updateOptions = new UpdateOptionsImpl();
-            updateOptions.setUpdateAuthData(false);
-            updateFunction(
-                    funcConfig.getTenant(),
-                    funcConfig.getNamespace(),
-                    funcConfig.getName(),
-                    null,
-                    mockedFormData,
-                    null,
-                    funcConfig,
-                    null,
-                    updateOptions);
-            fail("Update without changes should fail");
-        } catch (RestException e) {
-            assertTrue(e.getMessage().contains("Update contains no change"));
-        }
-
-        // no changes but set the auth-update flag to true, should not fail
-        UpdateOptionsImpl updateOptions = new UpdateOptionsImpl();
-        updateOptions.setUpdateAuthData(true);
-        updateFunction(
-                funcConfig.getTenant(),
-                funcConfig.getNamespace(),
-                funcConfig.getName(),
-                null,
-                mockedFormData,
-                null,
-                funcConfig,
-                null,
-                updateOptions);
     }
 
     @Test(expectedExceptions = RestException.class, expectedExceptionsMessageRegExp = "Function config is not provided")

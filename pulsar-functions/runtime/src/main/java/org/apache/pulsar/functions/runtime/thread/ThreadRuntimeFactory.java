@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,10 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime.thread;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import java.util.Optional;
+import com.google.common.base.Preconditions;
+import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +28,6 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.common.util.DirectMemoryUtils;
-import org.apache.pulsar.common.util.Reflections;
 import org.apache.pulsar.functions.auth.FunctionAuthProvider;
 import org.apache.pulsar.functions.instance.AuthenticationConfig;
 import org.apache.pulsar.functions.instance.InstanceCache;
@@ -40,11 +39,14 @@ import org.apache.pulsar.functions.runtime.RuntimeFactory;
 import org.apache.pulsar.functions.runtime.RuntimeUtils;
 import org.apache.pulsar.functions.secretsprovider.SecretsProvider;
 import org.apache.pulsar.functions.secretsproviderconfigurator.SecretsProviderConfigurator;
+import org.apache.pulsar.common.util.Reflections;
 import org.apache.pulsar.functions.utils.functioncache.FunctionCacheManager;
 import org.apache.pulsar.functions.utils.functioncache.FunctionCacheManagerImpl;
 import org.apache.pulsar.functions.worker.ConnectorsManager;
 import org.apache.pulsar.functions.worker.FunctionsManager;
 import org.apache.pulsar.functions.worker.WorkerConfig;
+
+import java.util.Optional;
 
 /**
  * Thread based function container factory implementation.
@@ -71,8 +73,7 @@ public class ThreadRuntimeFactory implements RuntimeFactory {
     private Optional<FunctionsManager> functionsManager;
 
     /**
-     * This constructor is used by other runtimes (e.g. ProcessRuntime and KubernetesRuntime)
-     * that rely on ThreadRuntime to actually run an instance of the function.
+     * This constructor is used by other runtimes (e.g. ProcessRuntime and KubernetesRuntime) that rely on ThreadRuntime to actually run an instance of the function.
      * When used by other runtimes, the arguments such as secretsProvider and rootClassLoader will be provided.
      */
     public ThreadRuntimeFactory(String threadGroupName, String pulsarServiceUrl,
@@ -125,11 +126,8 @@ public class ThreadRuntimeFactory implements RuntimeFactory {
             this.fnCache = new FunctionCacheManagerImpl(rootClassLoader);
         }
         this.threadGroup = new ThreadGroup(threadGroupName);
-        this.pulsarAdmin =
-                exposePulsarAdminClientEnabled ? InstanceUtils.createPulsarAdminClient(pulsarWebServiceUrl, authConfig)
-                        : null;
-        this.clientBuilder = InstanceUtils
-                .createPulsarClientBuilder(pulsarServiceUrl, authConfig, calculateClientMemoryLimit(memoryLimit));
+        this.pulsarAdmin = exposePulsarAdminClientEnabled ? InstanceUtils.createPulsarAdminClient(pulsarWebServiceUrl, authConfig) : null;
+        this.clientBuilder = InstanceUtils.createPulsarClientBuilder(pulsarServiceUrl, authConfig, calculateClientMemoryLimit(memoryLimit));
         this.pulsarClient = this.clientBuilder.build();
         this.stateStorageImplClass = stateStorageImplClass;
         this.storageServiceUrl = storageServiceUrl;
@@ -145,11 +143,10 @@ public class ThreadRuntimeFactory implements RuntimeFactory {
             Long absolute = memoryLimit.get().getAbsoluteValue();
             Double percentOfDirectMem = memoryLimit.get().getPercentOfMaxDirectMemory();
             if (absolute != null) {
-                checkArgument(absolute > 0, "Absolute memory limit for Pulsar client has to be positive");
+                Preconditions.checkArgument(absolute > 0, "Absolute memory limit for Pulsar client has to be positive");
             }
             if (percentOfDirectMem != null) {
-                checkArgument(percentOfDirectMem > 0 && percentOfDirectMem <= 100,
-                        "Percent of max direct memory limit for Pulsar client must be between 0 and 100");
+                Preconditions.checkArgument(percentOfDirectMem > 0 && percentOfDirectMem <= 100, "Percent of max direct memory limit for Pulsar client must be between 0 and 100");
             }
 
             if (absolute != null && percentOfDirectMem != null) {
@@ -168,7 +165,7 @@ public class ThreadRuntimeFactory implements RuntimeFactory {
     }
 
     private long getBytesPercentDirectMem(double percent) {
-        return (long) (DirectMemoryUtils.jvmMaxDirectMemory() * (percent / 100));
+        return (long) (PlatformDependent.maxDirectMemory() * (percent / 100));
     }
 
 
@@ -200,15 +197,11 @@ public class ThreadRuntimeFactory implements RuntimeFactory {
                                          Long expectedHealthCheckInterval) {
         SecretsProvider secretsProvider = defaultSecretsProvider;
         if (secretsProvider == null) {
-            String secretsProviderClassName =
-                    secretsProviderConfigurator.getSecretsProviderClassName(instanceConfig.getFunctionDetails());
-            secretsProvider =
-                    (SecretsProvider) Reflections.createInstance(secretsProviderClassName, this.rootClassLoader);
+            String secretsProviderClassName = secretsProviderConfigurator.getSecretsProviderClassName(instanceConfig.getFunctionDetails());
+            secretsProvider = (SecretsProvider) Reflections.createInstance(secretsProviderClassName, this.rootClassLoader);
             log.info("Initializing secrets provider {} with configs: {}",
-                    secretsProvider.getClass().getName(),
-                    secretsProviderConfigurator.getSecretsProviderConfig(instanceConfig.getFunctionDetails()));
-            secretsProvider
-                    .init(secretsProviderConfigurator.getSecretsProviderConfig(instanceConfig.getFunctionDetails()));
+              secretsProvider.getClass().getName(), secretsProviderConfigurator.getSecretsProviderConfig(instanceConfig.getFunctionDetails()));
+            secretsProvider.init(secretsProviderConfigurator.getSecretsProviderConfig(instanceConfig.getFunctionDetails()));
         }
 
         return new ThreadRuntime(

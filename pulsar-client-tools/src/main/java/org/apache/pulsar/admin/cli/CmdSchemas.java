@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,50 +18,45 @@
  */
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.Path;
 import java.util.function.Supplier;
 import org.apache.pulsar.admin.cli.utils.SchemaExtractor;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.schema.SchemaDefinition;
 import org.apache.pulsar.common.protocol.schema.PostSchemaPayload;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
-@Command(description = "Operations about schemas")
+@Parameters(commandDescription = "Operations about schemas")
 public class CmdSchemas extends CmdBase {
-    private static final ObjectMapper MAPPER = ObjectMapperFactory.create();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public CmdSchemas(Supplier<PulsarAdmin> admin) {
         super("schemas", admin);
-        addCommand("get", new GetSchema());
-        addCommand("delete", new DeleteSchema());
-        addCommand("upload", new UploadSchema());
-        addCommand("extract", new ExtractSchema());
-        addCommand("metadata", new GetSchemaMetadata());
-        addCommand("compatibility", new TestCompatibility());
+        jcommander.addCommand("get", new GetSchema());
+        jcommander.addCommand("delete", new DeleteSchema());
+        jcommander.addCommand("upload", new UploadSchema());
+        jcommander.addCommand("extract", new ExtractSchema());
     }
 
-    @Command(description = "Get the schema for a topic")
+    @Parameters(commandDescription = "Get the schema for a topic")
     private class GetSchema extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
+        @Parameter(description = "persistent://tenant/namespace/topic", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = {"-v", "--version"}, description = "version", required = false)
+        @Parameter(names = {"-v", "--version"}, description = "version", required = false)
         private Long version;
 
-        @Option(names = {"-a", "--all-version"}, description = "all version", required = false)
+        @Parameter(names = {"-a", "--all-version"}, description = "all version", required = false)
         private boolean all = false;
 
         @Override
         void run() throws Exception {
-            String topic = validateTopicName(topicName);
+            String topic = validateTopicName(params);
             if (version != null && all) {
                 throw new ParameterException("Only one or neither of --version and --all-version can be specified.");
             }
@@ -78,89 +73,59 @@ public class CmdSchemas extends CmdBase {
         }
     }
 
-    @Command(description = "Get the schema for a topic")
-    private class GetSchemaMetadata extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
-
-        @Override
-        void run() throws Exception {
-            String topic = validateTopicName(topicName);
-            print(getAdmin().schemas().getSchemaMetadata(topic));
-        }
-    }
-
-    @Command(description = "Delete all versions schema of a topic")
+    @Parameters(commandDescription = "Delete the latest schema for a topic")
     private class DeleteSchema extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
-
-        @Option(names = { "-f",
-                "--force" }, description = "whether to delete schema completely. If true, delete "
-                + "all resources (including metastore and ledger), otherwise only do a mark deletion"
-                + " and not remove any resources indeed")
-        private boolean force = false;
+        @Parameter(description = "persistent://tenant/namespace/topic", required = true)
+        private java.util.List<String> params;
 
         @Override
         void run() throws Exception {
-            String topic = validateTopicName(topicName);
-            getAdmin().schemas().deleteSchema(topic, force);
+            String topic = validateTopicName(params);
+            getAdmin().schemas().deleteSchema(topic);
         }
     }
 
-    @Command(description = "Update the schema for a topic")
+    @Parameters(commandDescription = "Update the schema for a topic")
     private class UploadSchema extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
+        @Parameter(description = "persistent://tenant/namespace/topic", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = { "-f", "--filename" }, description = "filename", required = true)
+        @Parameter(names = { "-f", "--filename" }, description = "filename", required = true)
         private String schemaFileName;
 
         @Override
         void run() throws Exception {
-            String topic = validateTopicName(topicName);
-            Path schemaPath = Path.of(schemaFileName);
-            File schemaFile = schemaPath.toFile();
-            if (!schemaFile.exists()) {
-                final StringBuilder sb = new StringBuilder();
-                sb.append("Schema file ").append(schemaPath).append(" is not found.");
-                if (!schemaPath.isAbsolute()) {
-                    sb.append(" Relative path ").append(schemaPath)
-                            .append(" is resolved to ").append(schemaPath.toAbsolutePath())
-                            .append(". Try to use absolute path if the relative one resolved wrongly.");
-                }
-                throw new FileNotFoundException(sb.toString());
-            }
-            PostSchemaPayload input = MAPPER.readValue(schemaFile, PostSchemaPayload.class);
+            String topic = validateTopicName(params);
+            PostSchemaPayload input = MAPPER.readValue(new File(schemaFileName), PostSchemaPayload.class);
             getAdmin().schemas().createSchema(topic, input);
         }
     }
 
-    @Command(description = "Provide the schema via a topic")
+    @Parameters(commandDescription = "Provide the schema via a topic")
     private class ExtractSchema extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
+        @Parameter(description = "persistent://tenant/namespace/topic", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = { "-j", "--jar" }, description = "jar filepath", required = true)
+        @Parameter(names = { "-j", "--jar" }, description = "jar filepath", required = true)
         private String jarFilePath;
 
-        @Option(names = { "-t", "--type" }, description = "type avro or json", required = true)
+        @Parameter(names = { "-t", "--type" }, description = "type avro or json", required = true)
         private String type;
 
-        @Option(names = { "-c", "--classname" }, description = "class name of pojo", required = true)
+        @Parameter(names = { "-c", "--classname" }, description = "class name of pojo", required = true)
         private String className;
 
-        @Option(names = {"-a", "--always-allow-null"}, arity = "1",
+        @Parameter(names = { "--always-allow-null" }, arity = 1,
                    description = "set schema whether always allow null or not")
         private boolean alwaysAllowNull = true;
 
-        @Option(names = { "-n", "--dry-run"},
+        @Parameter(names = { "-n", "--dry-run"},
                    description = "dost not apply to schema registry, just prints the post schema payload")
         private boolean dryRun = false;
 
         @Override
         void run() throws Exception {
-            String topic = validateTopicName(topicName);
+            String topic = validateTopicName(params);
 
             File file  = new File(jarFilePath);
             ClassLoader cl = new URLClassLoader(new URL[]{ file.toURI().toURL() });
@@ -179,7 +144,7 @@ public class CmdSchemas extends CmdBase {
                 input.setType("JSON");
                 input.setSchema(SchemaExtractor.getJsonSchemaInfo(schemaDefinition));
             } else {
-                throw new ParameterException("Invalid schema type " + type + ". Valid options are: avro, json");
+                throw new Exception("Unknown schema type specified as type");
             }
             input.setProperties(schemaDefinition.getProperties());
             if (dryRun) {
@@ -189,22 +154,6 @@ public class CmdSchemas extends CmdBase {
             } else {
                 getAdmin().schemas().createSchema(topic, input);
             }
-        }
-    }
-
-    @Command(description = "Test schema compatibility")
-    private class TestCompatibility extends CliCommand {
-        @Parameters(description = "persistent://tenant/namespace/topic", arity = "1")
-        private String topicName;
-
-        @Option(names = { "-f", "--filename" }, description = "filename", required = true)
-        private String schemaFileName;
-
-        @Override
-        void run() throws Exception {
-            String topic = validateTopicName(topicName);
-            PostSchemaPayload input = MAPPER.readValue(new File(schemaFileName), PostSchemaPayload.class);
-            getAdmin().schemas().testCompatibility(topic, input);
         }
     }
 

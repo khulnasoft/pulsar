@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,13 +16,24 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime;
 
-import static org.apache.commons.lang3.StringUtils.isEmpty;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.util.JsonFormat;
+
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URL;
+import java.text.Normalizer;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
 import io.prometheus.client.hotspot.BufferPoolsExports;
 import io.prometheus.client.hotspot.ClassLoadingExports;
 import io.prometheus.client.hotspot.GarbageCollectorExports;
@@ -31,19 +42,6 @@ import io.prometheus.client.hotspot.StandardExports;
 import io.prometheus.client.hotspot.ThreadExports;
 import io.prometheus.client.hotspot.VersionInfoExports;
 import io.prometheus.jmx.JmxCollector;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.URL;
-import java.text.Normalizer;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import javax.management.MalformedObjectNameException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.JavaVersion;
 import org.apache.commons.lang3.StringUtils;
@@ -55,6 +53,12 @@ import org.apache.pulsar.functions.instance.go.GoInstanceConfig;
 import org.apache.pulsar.functions.instance.stats.FunctionCollectorRegistry;
 import org.apache.pulsar.functions.proto.Function;
 import org.apache.pulsar.functions.utils.FunctionCommon;
+
+import javax.management.MalformedObjectNameException;
+
+import static org.apache.commons.lang3.StringUtils.isEmpty;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
 /**
  * Util class for common runtime functionality.
@@ -139,12 +143,6 @@ public class RuntimeUtils {
         final List<String> args = new LinkedList<>();
         GoInstanceConfig goInstanceConfig = new GoInstanceConfig();
 
-        // pass the raw functino details directly so that we don't need to assemble the `instanceConf.funcDetails`
-        // manually in Go instance
-        String functionDetails =
-                JsonFormat.printer().omittingInsignificantWhitespace().print(instanceConfig.getFunctionDetails());
-        goInstanceConfig.setFunctionDetails(functionDetails);
-
         if (instanceConfig.getClusterName() != null) {
             goInstanceConfig.setClusterName(instanceConfig.getClusterName());
         }
@@ -189,8 +187,7 @@ public class RuntimeUtils {
             goInstanceConfig.setLogTopic(instanceConfig.getFunctionDetails().getLogTopic());
         }
         if (instanceConfig.getFunctionDetails().getProcessingGuarantees() != null) {
-            goInstanceConfig
-                    .setProcessingGuarantees(instanceConfig.getFunctionDetails().getProcessingGuaranteesValue());
+            goInstanceConfig.setProcessingGuarantees(instanceConfig.getFunctionDetails().getProcessingGuaranteesValue());
         }
         if (instanceConfig.getFunctionDetails().getRuntime() != null) {
             goInstanceConfig.setRuntime(instanceConfig.getFunctionDetails().getRuntimeValue());
@@ -230,8 +227,7 @@ public class RuntimeUtils {
             goInstanceConfig.setPulsarServiceURL(pulsarServiceUrl);
         }
         if (instanceConfig.getFunctionDetails().getSource().getCleanupSubscription()) {
-            goInstanceConfig
-                    .setCleanupSubscription(instanceConfig.getFunctionDetails().getSource().getCleanupSubscription());
+            goInstanceConfig.setCleanupSubscription(instanceConfig.getFunctionDetails().getSource().getCleanupSubscription());
         }
         if (instanceConfig.getFunctionDetails().getSource().getSubscriptionName() != null) {
             goInstanceConfig.setSubscriptionName(instanceConfig.getFunctionDetails().getSource().getSubscriptionName());
@@ -240,15 +236,9 @@ public class RuntimeUtils {
                 instanceConfig.getFunctionDetails().getSource().getSubscriptionPosition().getNumber());
 
         if (instanceConfig.getFunctionDetails().getSource().getInputSpecsMap() != null) {
-            Map<String, String> sourceInputSpecs = new HashMap<>();
-            for (Map.Entry<String, Function.ConsumerSpec> entry :
-                    instanceConfig.getFunctionDetails().getSource().getInputSpecsMap().entrySet()) {
-                String topic = entry.getKey();
-                Function.ConsumerSpec spec = entry.getValue();
-                sourceInputSpecs.put(topic, JsonFormat.printer().omittingInsignificantWhitespace().print(spec));
-                goInstanceConfig.setSourceSpecsTopic(topic);
+            for (String inputTopic : instanceConfig.getFunctionDetails().getSource().getInputSpecsMap().keySet()) {
+                goInstanceConfig.setSourceSpecsTopic(inputTopic);
             }
-            goInstanceConfig.setSourceInputSpecs(sourceInputSpecs);
         }
 
         if (instanceConfig.getFunctionDetails().getSource().getTimeoutMs() != 0) {
@@ -272,13 +262,11 @@ public class RuntimeUtils {
         }
 
         if (instanceConfig.getFunctionDetails().getRetryDetails().getDeadLetterTopic() != null) {
-            goInstanceConfig
-                    .setDeadLetterTopic(instanceConfig.getFunctionDetails().getRetryDetails().getDeadLetterTopic());
+            goInstanceConfig.setDeadLetterTopic(instanceConfig.getFunctionDetails().getRetryDetails().getDeadLetterTopic());
         }
 
         if (instanceConfig.getFunctionDetails().getRetryDetails().getMaxMessageRetries() != 0) {
-            goInstanceConfig
-                    .setMaxMessageRetries(instanceConfig.getFunctionDetails().getRetryDetails().getMaxMessageRetries());
+            goInstanceConfig.setMaxMessageRetries(instanceConfig.getFunctionDetails().getRetryDetails().getMaxMessageRetries());
         }
 
         if (instanceConfig.hasValidMetricsPort()) {
@@ -289,7 +277,7 @@ public class RuntimeUtils {
         goInstanceConfig.setPort(instanceConfig.getPort());
 
         // Parse the contents of goInstanceConfig into json form string
-        ObjectMapper objectMapper = ObjectMapperFactory.getMapper().getObjectMapper();
+        ObjectMapper objectMapper = ObjectMapperFactory.getThreadLocal();
         String configContent = objectMapper.writeValueAsString(goInstanceConfig);
 
         args.add(originalCodeFileName);
@@ -348,14 +336,13 @@ public class RuntimeUtils {
             }
 
             if (StringUtils.isNotEmpty(functionInstanceClassPath)) {
-                args.add(String.format("-D%s=%s", FUNCTIONS_INSTANCE_CLASSPATH, functionInstanceClassPath));
+               args.add(String.format("-D%s=%s", FUNCTIONS_INSTANCE_CLASSPATH, functionInstanceClassPath));
             } else {
                 // add complete classpath for broker/worker so that the function instance can load
                 // the functions instance dependencies separately from user code dependencies
                 String systemFunctionInstanceClasspath = System.getProperty(FUNCTIONS_INSTANCE_CLASSPATH);
                 if (systemFunctionInstanceClasspath == null) {
-                    log.warn("Property {} is not set.  Falling back to using classpath of current JVM",
-                            FUNCTIONS_INSTANCE_CLASSPATH);
+                    log.warn("Property {} is not set.  Falling back to using classpath of current JVM", FUNCTIONS_INSTANCE_CLASSPATH);
                     systemFunctionInstanceClasspath = System.getProperty("java.class.path");
                 }
                 args.add(String.format("-D%s=%s", FUNCTIONS_INSTANCE_CLASSPATH, systemFunctionInstanceClasspath));
@@ -367,26 +354,12 @@ public class RuntimeUtils {
                     instanceConfig.getFunctionDetails().getName(),
                     shardId));
 
-            // Needed for optimized Netty direct byte buffer support
             args.add("-Dio.netty.tryReflectionSetAccessible=true");
-            // Handle possible shaded Netty versions
-            args.add("-Dorg.apache.pulsar.shade.io.netty.tryReflectionSetAccessible=true");
-            args.add("-Dio.grpc.netty.shaded.io.netty.tryReflectionSetAccessible=true");
 
-            if (SystemUtils.isJavaVersionAtLeast(JavaVersion.JAVA_11)) {
-                // Needed for optimized Netty direct byte buffer support
-                args.add("--add-opens");
-                args.add("java.base/java.nio=ALL-UNNAMED");
-                args.add("--add-opens");
-                args.add("java.base/jdk.internal.misc=ALL-UNNAMED");
-            }
-
+            // Needed for netty.DnsResolverUtil on JDK9+
             if (SystemUtils.isJavaVersionAtLeast(JavaVersion.JAVA_9)) {
-                // Needed for optimized checksum calculation when com.scurrilous.circe.checksum.Java9IntHash
-                // is used. That gets used when the native library libcirce-checksum is not available or cannot
-                // be loaded.
                 args.add("--add-opens");
-                args.add("java.base/java.util.zip=ALL-UNNAMED");
+                args.add("java.base/sun.net=ALL-UNNAMED");
             }
 
             if (instanceConfig.getAdditionalJavaRuntimeArguments() != null) {
@@ -413,7 +386,7 @@ public class RuntimeUtils {
                 args.add(instanceConfig.getTransformFunctionId());
             }
         } else if (instanceConfig.getFunctionDetails().getRuntime() == Function.FunctionDetails.Runtime.PYTHON) {
-            args.add("python3");
+            args.add("python");
             if (!isEmpty(instanceConfig.getFunctionDetails().getRuntimeFlags())) {
                 Collections.addAll(args, splitRuntimeArgs(instanceConfig.getFunctionDetails().getRuntimeFlags()));
             }
@@ -449,8 +422,7 @@ public class RuntimeUtils {
         args.add("--function_version");
         args.add(instanceConfig.getFunctionVersion());
         args.add("--function_details");
-        args.add("'" + JsonFormat.printer().omittingInsignificantWhitespace()
-                .print(instanceConfig.getFunctionDetails()) + "'");
+        args.add("'" + JsonFormat.printer().omittingInsignificantWhitespace().print(instanceConfig.getFunctionDetails()) + "'");
 
         args.add("--pulsar_serviceurl");
         args.add(pulsarServiceUrl);
@@ -486,7 +458,7 @@ public class RuntimeUtils {
         }
         args.add("--max_buffered_tuples");
         args.add(String.valueOf(instanceConfig.getMaxBufferedTuples()));
-
+        
         args.add("--port");
         args.add(String.valueOf(grpcPort));
 
@@ -502,7 +474,7 @@ public class RuntimeUtils {
                 args.add("--ignore_unknown_config_fields");
             }
         }
-
+        
         // state storage configs
         if (null != stateStorageServiceUrl) {
             args.add("--state_storage_serviceurl");
@@ -554,14 +526,14 @@ public class RuntimeUtils {
     }
 
     /**
-     * Regex for splitting a string using space when not surrounded by single or double quotes.
+     * Regex for splitting a string using space when not surrounded by single or double quotes
      */
     public static String[] splitRuntimeArgs(String input) {
         return input.split("\\s(?=([^\"]*\"[^\"]*\")*[^\"]*$)");
     }
 
     public static <T> T getRuntimeFunctionConfig(Map<String, Object> configMap, Class<T> functionRuntimeConfigClass) {
-        return ObjectMapperFactory.getMapper().getObjectMapper().convertValue(configMap, functionRuntimeConfigClass);
+        return ObjectMapperFactory.getThreadLocal().convertValue(configMap, functionRuntimeConfigClass);
     }
 
     public static void registerDefaultCollectors(FunctionCollectorRegistry registry) {

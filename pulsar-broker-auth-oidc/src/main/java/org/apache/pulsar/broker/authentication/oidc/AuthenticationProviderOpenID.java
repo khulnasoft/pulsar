@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -52,7 +52,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.naming.AuthenticationException;
 import javax.net.ssl.SSLSession;
-import okhttp3.OkHttpClient;
 import org.apache.commons.lang.StringUtils;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
@@ -61,6 +60,7 @@ import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.authentication.metrics.AuthenticationMetrics;
 import org.apache.pulsar.common.api.AuthData;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.AsyncHttpClientConfig;
 import org.asynchttpclient.DefaultAsyncHttpClient;
@@ -87,6 +87,8 @@ import org.slf4j.LoggerFactory;
  */
 public class AuthenticationProviderOpenID implements AuthenticationProvider {
     private static final Logger log = LoggerFactory.getLogger(AuthenticationProviderOpenID.class);
+
+    private static final String SIMPLE_NAME = AuthenticationProviderOpenID.class.getSimpleName();
 
     // Must match the value used by the OAuth2 Client Plugin.
     private static final String AUTH_METHOD_NAME = "token";
@@ -144,20 +146,9 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
 
     // The list of audiences that are allowed to connect to this broker. A valid JWT must contain one of the audiences.
     private String[] allowedAudiences;
-    private ApiClient k8sApiClient;
-
-    private AuthenticationMetrics authenticationMetrics;
 
     @Override
     public void initialize(ServiceConfiguration config) throws IOException {
-        initialize(Context.builder().config(config).build());
-    }
-
-    @Override
-    public void initialize(Context context) throws IOException {
-        authenticationMetrics = new AuthenticationMetrics(context.getOpenTelemetry(),
-                getClass().getSimpleName(), getAuthMethodName());
-        var config = context.getConfig();
         this.allowedAudiences = validateAllowedAudiences(getConfigValueAsSet(config, ALLOWED_AUDIENCES));
         this.roleClaim = getConfigValueAsString(config, ROLE_CLAIM, ROLE_CLAIM_DEFAULT);
         this.isRoleClaimNotSubject = !ROLE_CLAIM_DEFAULT.equals(roleClaim);
@@ -188,19 +179,15 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
                 .setSslContext(sslContext)
                 .build();
         httpClient = new DefaultAsyncHttpClient(clientConfig);
-        k8sApiClient = fallbackDiscoveryMode != FallbackDiscoveryMode.DISABLED ? Config.defaultClient() : null;
-        this.openIDProviderMetadataCache = new OpenIDProviderMetadataCache(this, config, httpClient, k8sApiClient);
-        this.jwksCache = new JwksCache(this, config, httpClient, k8sApiClient);
+        ApiClient k8sApiClient =
+                fallbackDiscoveryMode != FallbackDiscoveryMode.DISABLED ? Config.defaultClient() : null;
+        this.openIDProviderMetadataCache = new OpenIDProviderMetadataCache(config, httpClient, k8sApiClient);
+        this.jwksCache = new JwksCache(config, httpClient, k8sApiClient);
     }
 
     @Override
     public String getAuthMethodName() {
         return AUTH_METHOD_NAME;
-    }
-
-    @Override
-    public void incrementFailureMetric(Enum<?> errorCode) {
-        authenticationMetrics.recordFailure(errorCode);
     }
 
     /**
@@ -227,12 +214,12 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
             token = AuthenticationProviderToken.getToken(authData);
         } catch (AuthenticationException e) {
             incrementFailureMetric(AuthenticationExceptionCode.ERROR_DECODING_JWT);
-            return CompletableFuture.failedFuture(e);
+            return FutureUtil.failedFuture(e);
         }
         return authenticateToken(token)
                 .whenComplete((jwt, e) -> {
                     if (jwt != null) {
-                        authenticationMetrics.recordSuccess();
+                        AuthenticationMetrics.authenticateSuccess(getClass().getSimpleName(), getAuthMethodName());
                     }
                     // Failure metrics are incremented within methods above
                 });
@@ -305,22 +292,21 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
     private CompletableFuture<DecodedJWT> authenticateToken(String token) {
         if (token == null) {
             incrementFailureMetric(AuthenticationExceptionCode.ERROR_DECODING_JWT);
-            return CompletableFuture.failedFuture(new AuthenticationException("JWT cannot be null"));
+            return FutureUtil.failedFuture(new AuthenticationException("JWT cannot be null"));
         }
         final DecodedJWT jwt;
         try {
             jwt = decodeJWT(token);
         } catch (AuthenticationException e) {
             incrementFailureMetric(AuthenticationExceptionCode.ERROR_DECODING_JWT);
-            return CompletableFuture.failedFuture(e);
+            return FutureUtil.failedFuture(e);
         }
         return verifyIssuerAndGetJwk(jwt)
                 .thenCompose(jwk -> {
                     try {
-                        // verify the algorithm, if it is set ("alg" is optional in the JWK spec)
-                        if (jwk.getAlgorithm() != null && !jwt.getAlgorithm().equals(jwk.getAlgorithm())) {
+                        if (!jwt.getAlgorithm().equals(jwk.getAlgorithm())) {
                             incrementFailureMetric(AuthenticationExceptionCode.ALGORITHM_MISMATCH);
-                            return CompletableFuture.failedFuture(
+                            return FutureUtil.failedFuture(
                                     new AuthenticationException("JWK's alg [" + jwk.getAlgorithm()
                                             + "] does not match JWT's alg [" + jwt.getAlgorithm() + "]"));
                         }
@@ -330,10 +316,10 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
                                 .completedFuture(verifyJWT(jwk.getPublicKey(), jwt.getAlgorithm(), jwt));
                     } catch (InvalidPublicKeyException e) {
                         incrementFailureMetric(AuthenticationExceptionCode.INVALID_PUBLIC_KEY);
-                        return CompletableFuture.failedFuture(
+                        return FutureUtil.failedFuture(
                                 new AuthenticationException("Invalid public key: " + e.getMessage()));
                     } catch (AuthenticationException e) {
-                        return CompletableFuture.failedFuture(e);
+                        return FutureUtil.failedFuture(e);
                     }
                 });
     }
@@ -348,7 +334,7 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
     private CompletableFuture<Jwk> verifyIssuerAndGetJwk(DecodedJWT jwt) {
         if (jwt.getIssuer() == null) {
             incrementFailureMetric(AuthenticationExceptionCode.UNSUPPORTED_ISSUER);
-            return CompletableFuture.failedFuture(new AuthenticationException("Issuer cannot be null"));
+            return FutureUtil.failedFuture(new AuthenticationException("Issuer cannot be null"));
         } else if (this.issuers.contains(jwt.getIssuer())) {
             // Retrieve the metadata: https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
             return openIDProviderMetadataCache.getOpenIDProviderMetadataForIssuer(jwt.getIssuer())
@@ -363,8 +349,7 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
                     .thenCompose(__ -> jwksCache.getJwkFromKubernetesApiServer(jwt.getKeyId()));
         } else {
             incrementFailureMetric(AuthenticationExceptionCode.UNSUPPORTED_ISSUER);
-            return CompletableFuture
-                    .failedFuture(new AuthenticationException("Issuer not allowed: " + jwt.getIssuer()));
+            return FutureUtil.failedFuture(new AuthenticationException("Issuer not allowed: " + jwt.getIssuer()));
         }
     }
 
@@ -376,17 +361,7 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
 
     @Override
     public void close() throws IOException {
-        if (httpClient != null) {
-            httpClient.close();
-        }
-        if (k8sApiClient != null) {
-            OkHttpClient okHttpClient = k8sApiClient.getHttpClient();
-            okHttpClient.dispatcher().executorService().shutdown();
-            okHttpClient.connectionPool().evictAll();
-            if (okHttpClient.cache() != null) {
-                okHttpClient.cache().close();
-            }
-        }
+        httpClient.close();
     }
 
     /**
@@ -474,6 +449,10 @@ public class AuthenticationProviderOpenID implements AuthenticationProvider {
             incrementFailureMetric(AuthenticationExceptionCode.ERROR_VERIFYING_JWT);
             throw new AuthenticationException("JWT verification failed: " + e.getMessage());
         }
+    }
+
+    static void incrementFailureMetric(AuthenticationExceptionCode code) {
+        AuthenticationMetrics.authenticateFailure(SIMPLE_NAME, "token", code.toString());
     }
 
     /**

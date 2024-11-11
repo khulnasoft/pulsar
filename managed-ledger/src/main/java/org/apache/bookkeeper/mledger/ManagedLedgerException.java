@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -199,16 +199,16 @@ public class ManagedLedgerException extends Exception {
         }
     }
 
+    @Override
+    public synchronized Throwable fillInStackTrace() {
+        // Disable stack traces to be filled in
+        return null;
+    }
+
     public static class OffloadReadHandleClosedException extends ManagedLedgerException {
 
         public OffloadReadHandleClosedException() {
             super("Offload read handle already closed");
         }
-    }
-
-    @Override
-    public synchronized Throwable fillInStackTrace() {
-        // Disable stack traces to be filled in
-        return null;
     }
 }

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -25,10 +26,7 @@ import os
 import inspect
 import sys
 import importlib
-import configparser
-
 from threading import Timer
-from pulsar.functions import serde
 
 import log
 
@@ -63,13 +61,7 @@ def import_class_from_path(from_path, full_class_name):
     mod = importlib.import_module(class_name)
     return mod
   else:
-    # Serde modules is being used in unqualified form instead of using
-    # the full name `pulsar.functions.serde`, so we have to make sure
-    # it gets resolved correctly.
-    if classname_path == 'serde':
-        mod = serde
-    else:
-        mod = importlib.import_module(classname_path)
+    mod = importlib.import_module(classname_path)
     retval = getattr(mod, class_name)
     return retval
 
@@ -81,23 +73,6 @@ def getFullyQualifiedInstanceId(tenant, namespace, name, instance_id):
 
 def get_properties(fullyQualifiedName, instanceId):
     return {"application": "pulsar-function", "id": str(fullyQualifiedName), "instance_id": str(instanceId)}
-
-def read_config(config_file):
-    """
-    The content of the configuration file is styled as follows:
-
-    [DEFAULT]
-    parameter1 = value1
-    parameter2 = value2
-    parameter3 = value3
-    ...
-    """
-    if config_file == "":
-        return None
-
-    cfg = configparser.ConfigParser()
-    cfg.read(config_file)
-    return cfg
 
 class FixedTimer():
 

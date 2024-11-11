@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.metadata.impl;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -25,8 +26,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -46,11 +45,8 @@ import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.metadata.api.GetResult;
-import org.apache.pulsar.metadata.api.MetadataEventSynchronizer;
-import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
-import org.apache.pulsar.metadata.api.MetadataStoreProvider;
 import org.apache.pulsar.metadata.api.Notification;
 import org.apache.pulsar.metadata.api.NotificationType;
 import org.apache.pulsar.metadata.api.Stat;
@@ -77,7 +73,6 @@ import org.rocksdb.WriteOptions;
 @Slf4j
 public class RocksdbMetadataStore extends AbstractMetadataStore {
 
-    static final String ROCKSDB_SCHEME = "rocksdb";
     static final String ROCKSDB_SCHEME_IDENTIFIER = "rocksdb:";
 
     private static final byte[] SEQUENTIAL_ID_KEY = toBytes("__metadata_sequentialId_key");
@@ -88,10 +83,17 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
 
     private final TransactionDB db;
     private final ReentrantReadWriteLock dbStateLock;
-    private final WriteOptions writeOptions;
+    private volatile State state;
+
+    private final WriteOptions optionSync;
+    private final WriteOptions optionDontSync;
     private final ReadOptions optionCache;
     private final ReadOptions optionDontCache;
-    private MetadataEventSynchronizer synchronizer;
+
+    enum State {
+        RUNNING, CLOSED
+    }
+
     private int referenceCount = 1;
 
     private static final Map<String, RocksdbMetadataStore> instancesCache = new ConcurrentHashMap<>();
@@ -111,8 +113,6 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
 
         // Create a new store instance
         store = new RocksdbMetadataStore(metadataStoreUri, conf);
-        // update synchronizer and register sync listener
-        store.updateMetadataEventSynchronizer(conf.getSynchronizer());
         instancesCache.put(metadataStoreUri, store);
         return store;
     }
@@ -209,7 +209,6 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
      */
     private RocksdbMetadataStore(String metadataURL, MetadataStoreConfig metadataStoreConfig)
             throws MetadataStoreException {
-        super(metadataStoreConfig.getMetadataStoreName(), metadataStoreConfig.getOpenTelemetry());
         this.metadataUrl = metadataURL;
         try {
             RocksDB.loadLibrary();
@@ -221,15 +220,14 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         Path dataPath = FileSystems.getDefault().getPath(dataDir);
         try {
             Files.createDirectories(dataPath);
-            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxr-x---");
-            Files.setPosixFilePermissions(dataPath, perms);
         } catch (IOException e) {
             throw new MetadataStoreException("Fail to create RocksDB file directory", e);
         }
 
         db = openDB(dataPath.toString(), metadataStoreConfig.getConfigFilePath());
 
-        this.writeOptions = new WriteOptions().setSync(metadataStoreConfig.isFsyncEnable());
+        this.optionSync = new WriteOptions().setSync(true);
+        this.optionDontSync = new WriteOptions().setSync(false);
         this.optionCache = new ReadOptions().setFillCache(true);
         this.optionDontCache = new ReadOptions().setFillCache(false);
 
@@ -241,6 +239,7 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
             close();
             throw new MetadataStoreException("Error init metastore state", exception);
         }
+        state = State.RUNNING;
         dbStateLock = new ReentrantReadWriteLock();
         log.info("new RocksdbMetadataStore,url={},instanceId={}", metadataStoreConfig, instanceId);
     }
@@ -253,7 +252,7 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         } else {
             instanceId = 0;
         }
-        db.put(writeOptions, INSTANCE_ID_KEY, toBytes(instanceId));
+        db.put(optionSync, INSTANCE_ID_KEY, toBytes(instanceId));
         return instanceId;
     }
 
@@ -263,7 +262,7 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         if (value != null) {
             generator.set(toLong(value));
         } else {
-            db.put(writeOptions, INSTANCE_ID_KEY, toBytes(generator.get()));
+            db.put(optionSync, INSTANCE_ID_KEY, toBytes(generator.get()));
         }
         return generator;
     }
@@ -314,8 +313,6 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
             logPathSetting = FileSystems.getDefault().getPath(logPath + "/rocksdb-log");
             Files.createDirectories(logPathSetting);
             options.setDbLogDir(logPathSetting.toString());
-            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxr-x---");
-            Files.setPosixFilePermissions(logPathSetting, perms);
         }
 
         // Configure log level
@@ -351,20 +348,25 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
 
         instancesCache.remove(this.metadataUrl, this);
-        if (isClosed.compareAndSet(false, true)) {
-            try {
-                dbStateLock.writeLock().lock();
-                log.info("close.instanceId={}", instanceId);
-                db.close();
-                writeOptions.close();
-                optionCache.close();
-                optionDontCache.close();
-                super.close();
-            } catch (Throwable throwable) {
-                throw MetadataStoreException.wrap(throwable);
-            } finally {
-                dbStateLock.writeLock().unlock();
-            }
+
+        if (state == State.CLOSED) {
+            //already closed.
+            return;
+        }
+        try {
+            dbStateLock.writeLock().lock();
+            state = State.CLOSED;
+            log.info("close.instanceId={}", instanceId);
+            db.close();
+            optionSync.close();
+            optionDontSync.close();
+            optionCache.close();
+            optionDontCache.close();
+            super.close();
+        } catch (Throwable throwable) {
+            throw MetadataStoreException.wrap(throwable);
+        } finally {
+            dbStateLock.writeLock().unlock();
         }
     }
 
@@ -375,8 +377,8 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
         try {
             dbStateLock.readLock().lock();
-            if (isClosed()) {
-                return alreadyClosedFailedFuture();
+            if (state == State.CLOSED) {
+                throw new MetadataStoreException.AlreadyClosedException("");
             }
             byte[] value = db.get(optionCache, toBytes(path));
             if (value == null) {
@@ -410,8 +412,8 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
         try {
             dbStateLock.readLock().lock();
-            if (isClosed()) {
-                return alreadyClosedFailedFuture();
+            if (state == State.CLOSED) {
+                throw new MetadataStoreException.AlreadyClosedException("");
             }
             try (RocksIterator iterator = db.newIterator(optionDontCache)) {
                 Set<String> result = new HashSet<>();
@@ -455,8 +457,8 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
         try {
             dbStateLock.readLock().lock();
-            if (isClosed()) {
-                return alreadyClosedFailedFuture();
+            if (state == State.CLOSED) {
+                throw new MetadataStoreException.AlreadyClosedException("");
             }
             byte[] value = db.get(optionDontCache, toBytes(path));
             if (log.isDebugEnabled()) {
@@ -480,10 +482,10 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
         try {
             dbStateLock.readLock().lock();
-            if (isClosed()) {
-                return alreadyClosedFailedFuture();
+            if (state == State.CLOSED) {
+                throw new MetadataStoreException.AlreadyClosedException("");
             }
-            try (Transaction transaction = db.beginTransaction(writeOptions)) {
+            try (Transaction transaction = db.beginTransaction(optionSync)) {
                 byte[] pathBytes = toBytes(path);
                 byte[] oldValueData = transaction.getForUpdate(optionDontCache, pathBytes, true);
                 MetaValue metaValue = MetaValue.parse(oldValueData);
@@ -519,10 +521,10 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         }
         try {
             dbStateLock.readLock().lock();
-            if (isClosed()) {
-                return alreadyClosedFailedFuture();
+            if (state == State.CLOSED) {
+                throw new MetadataStoreException.AlreadyClosedException("");
             }
-            try (Transaction transaction = db.beginTransaction(writeOptions)) {
+            try (Transaction transaction = db.beginTransaction(optionSync)) {
                 byte[] pathBytes = toBytes(path);
                 byte[] oldValueData = transaction.getForUpdate(optionDontCache, pathBytes, true);
                 MetaValue metaValue = MetaValue.parse(oldValueData);
@@ -580,30 +582,5 @@ public class RocksdbMetadataStore extends AbstractMetadataStore {
         } finally {
             dbStateLock.readLock().unlock();
         }
-    }
-
-    @Override
-    public Optional<MetadataEventSynchronizer> getMetadataEventSynchronizer() {
-        return Optional.ofNullable(synchronizer);
-    }
-
-    @Override
-    public void updateMetadataEventSynchronizer(MetadataEventSynchronizer synchronizer) {
-        this.synchronizer = synchronizer;
-        registerSyncListener(Optional.ofNullable(synchronizer));
-    }
-}
-
-class RocksdbMetadataStoreProvider implements MetadataStoreProvider {
-
-    @Override
-    public String urlScheme() {
-        return RocksdbMetadataStore.ROCKSDB_SCHEME;
-    }
-
-    @Override
-    public MetadataStore create(String metadataURL, MetadataStoreConfig metadataStoreConfig,
-                                boolean enableSessionWatcher) throws MetadataStoreException {
-        return RocksdbMetadataStore.get(metadataURL, metadataStoreConfig);
     }
 }

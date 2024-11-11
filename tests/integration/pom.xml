@@ -25,7 +25,7 @@
   <parent>
     <groupId>org.apache.pulsar.tests</groupId>
     <artifactId>tests-parent</artifactId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>2.10.6.3-SNAPSHOT</version>
   </parent>
 
   <artifactId>integration</artifactId>
@@ -34,7 +34,6 @@
 
   <properties>
     <integrationTestSuiteFile>pulsar.xml</integrationTestSuiteFile>
-    <mongo-reactivestreams.version>4.1.2</mongo-reactivestreams.version>
   </properties>
 
   <dependencies>
@@ -44,56 +43,43 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>pulsar-functions-api-examples</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>pulsar-broker</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-broker-common</artifactId>
-      <version>${project.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>pulsar-common</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-client-original</artifactId>
+      <groupId>com.khulnasoft.oss</groupId>
+      <artifactId>pulsar-client</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-client-admin-original</artifactId>
+      <groupId>com.khulnasoft.oss</groupId>
+      <artifactId>pulsar-client-admin</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
-      <artifactId>pulsar-proxy</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>managed-ledger</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.datastax.cassandra</groupId>
+      <groupId>com.khulnasoft.cassandra</groupId>
       <artifactId>cassandra-driver-core</artifactId>
       <exclusions>
         <exclusion>
@@ -109,15 +95,9 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>pulsar-io-kafka</artifactId>
       <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>dev.failsafe</groupId>
-      <artifactId>failsafe</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -145,14 +125,9 @@
       <artifactId>docker-java-core</artifactId>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcpkix-jdk18on</artifactId>
-      <scope>test</scope>
-    </dependency>
 
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>com.khulnasoft.oss</groupId>
       <artifactId>pulsar-io-jdbc-postgres</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
@@ -188,6 +163,7 @@
       <scope>test</scope>
     </dependency>
 
+
     <dependency>
       <groupId>com.rabbitmq</groupId>
       <artifactId>amqp-client</artifactId>
@@ -202,14 +178,15 @@
     </dependency>
 
     <dependency>
-      <groupId>org.awaitility</groupId>
-      <artifactId>awaitility</artifactId>
+      <groupId>io.prestosql</groupId>
+      <artifactId>presto-jdbc</artifactId>
+      <version>${presto.version}</version>
       <scope>test</scope>
     </dependency>
 
     <dependency>
-      <groupId>io.rest-assured</groupId>
-      <artifactId>rest-assured</artifactId>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -230,19 +207,11 @@
       <artifactId>aws-java-sdk-core</artifactId>
       <scope>test</scope>
     </dependency>
-
-    <!-- mongodb -->
-    <dependency>
-      <groupId>org.testcontainers</groupId>
-      <artifactId>mongodb</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.mongodb</groupId>
-      <artifactId>mongodb-driver-reactivestreams</artifactId>
-      <version>${mongo-reactivestreams.version}</version>
-      <scope>test</scope>
-    </dependency>
+      <dependency>
+          <groupId>org.projectlombok</groupId>
+          <artifactId>lombok</artifactId>
+          <scope>test</scope>
+      </dependency>
 
   </dependencies>
 
@@ -302,8 +271,7 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <argLine>${testJacocoAgentArgument} -XX:+ExitOnOutOfMemoryError -Xmx1G -XX:MaxDirectMemorySize=1G
-              -Dio.netty.leakDetectionLevel=advanced -Dconfluent.version=${confluent.version} -Djacoco.version=${jacoco-maven-plugin.version}
-              -Dintegrationtest.coverage.enabled=${integrationtest.coverage.enabled} -Dintegrationtest.coverage.dir=${integrationtest.coverage.dir}
+              -Dio.netty.leakDetectionLevel=advanced
               ${test.additional.args}
               </argLine>
               <skipTests>false</skipTests>
@@ -312,27 +280,6 @@
               </suiteXmlFiles>
               <forkCount>1</forkCount>
             </configuration>
-          </plugin>
-          <plugin>
-            <artifactId>maven-resources-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>copy-pulsar-certificate-authority-resources</id>
-                <phase>generate-test-resources</phase>
-                <goals>
-                  <goal>copy-resources</goal>
-                </goals>
-                <configuration>
-                  <outputDirectory>${project.build.testOutputDirectory}/certificate-authority</outputDirectory>
-                  <resources>
-                    <resource>
-                      <directory>${project.parent.basedir}/certificate-authority</directory>
-                      <filtering>false</filtering>
-                    </resource>
-                  </resources>
-                </configuration>
-              </execution>
-            </executions>
           </plugin>
         </plugins>
       </build>

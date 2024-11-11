@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,24 +18,11 @@
  */
 package org.apache.pulsar.proxy.server;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
-import java.io.IOException;
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.util.Base64;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Future;
-import java.util.function.Consumer;
 import lombok.Cleanup;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
-import org.apache.pulsar.client.api.Authentication;
+
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.apache.pulsar.websocket.data.ProducerMessage;
 import org.eclipse.jetty.client.HttpClient;
@@ -49,25 +36,34 @@ import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.util.Base64;
+import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Future;
+
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
+
 public class ProxyServiceStarterTest extends MockedPulsarServiceBaseTest {
 
-    public static final String[] ARGS = new String[]{"-c", "./src/test/resources/proxy.conf"};
+    static final String[] ARGS = new String[]{"-c", "./src/test/resources/proxy.conf"};
 
-    protected ProxyServiceStarter serviceStarter;
-    protected String serviceUrl;
+    private ProxyServiceStarter serviceStarter;
+    private String serviceUrl;
 
     @Override
     @BeforeClass
     protected void setup() throws Exception {
         internalSetup();
-        serviceStarter = new ProxyServiceStarter(ARGS, null, true);
+        serviceStarter = new ProxyServiceStarter(ARGS);
         serviceStarter.getConfig().setBrokerServiceURL(pulsar.getBrokerServiceUrl());
         serviceStarter.getConfig().setBrokerWebServiceURL(pulsar.getWebServiceAddress());
         serviceStarter.getConfig().setWebServicePort(Optional.of(0));
         serviceStarter.getConfig().setServicePort(Optional.of(0));
         serviceStarter.getConfig().setWebSocketServiceEnabled(true);
         serviceStarter.getConfig().setBrokerProxyAllowedTargetPorts("*");
-        serviceStarter.getConfig().setClusterName(configClusterName);
         serviceStarter.start();
         serviceUrl = serviceStarter.getProxyService().getServiceUrl();
     }
@@ -102,9 +98,7 @@ public class ProxyServiceStarterTest extends MockedPulsarServiceBaseTest {
 
     @Test
     public void testProduceAndConsumeMessageWithWebsocket() throws Exception {
-        @Cleanup("stop")
         HttpClient producerClient = new HttpClient();
-        @Cleanup("stop")
         WebSocketClient producerWebSocketClient = new WebSocketClient(producerClient);
         producerWebSocketClient.start();
         MyWebSocket producerSocket = new MyWebSocket();
@@ -115,18 +109,16 @@ public class ProxyServiceStarterTest extends MockedPulsarServiceBaseTest {
         produceRequest.setContext("context");
         produceRequest.setPayload(Base64.getEncoder().encodeToString("my payload".getBytes()));
 
-        @Cleanup("stop")
         HttpClient consumerClient = new HttpClient();
-        @Cleanup("stop")
         WebSocketClient consumerWebSocketClient = new WebSocketClient(consumerClient);
         consumerWebSocketClient.start();
         MyWebSocket consumerSocket = new MyWebSocket();
         String consumeUri = computeWsBasePath() + "/consumer/persistent/sample/test/local/websocket-topic/my-sub";
         Future<Session> consumerSession = consumerWebSocketClient.connect(consumerSocket, URI.create(consumeUri));
         consumerSession.get().getRemote().sendPing(ByteBuffer.wrap("ping".getBytes()));
-        producerSession.get().getRemote().sendString(ObjectMapperFactory.getMapper().writer().writeValueAsString(produceRequest));
+        producerSession.get().getRemote().sendString(ObjectMapperFactory.getThreadLocal().writeValueAsString(produceRequest));
         assertTrue(consumerSocket.getResponse().contains("ping"));
-        ProducerMessage message = ObjectMapperFactory.getMapper().reader().readValue(consumerSocket.getResponse(), ProducerMessage.class);
+        ProducerMessage message = ObjectMapperFactory.getThreadLocal().readValue(consumerSocket.getResponse(), ProducerMessage.class);
         assertEquals(new String(Base64.getDecoder().decode(message.getPayload())), "my payload");
     }
 
@@ -163,91 +155,6 @@ public class ProxyServiceStarterTest extends MockedPulsarServiceBaseTest {
 
         public String getResponse() throws InterruptedException {
             return incomingMessages.take();
-        }
-    }
-
-    @Test
-    public void testProxyClientAuthentication() throws Exception {
-        final Consumer<ProxyConfiguration> initConfig = (proxyConfig) -> {
-            proxyConfig.setBrokerServiceURL(pulsar.getBrokerServiceUrl());
-            proxyConfig.setBrokerWebServiceURL(pulsar.getWebServiceAddress());
-            proxyConfig.setWebServicePort(Optional.of(0));
-            proxyConfig.setServicePort(Optional.of(0));
-            proxyConfig.setWebSocketServiceEnabled(true);
-            proxyConfig.setBrokerProxyAllowedTargetPorts("*");
-            proxyConfig.setClusterName(configClusterName);
-        };
-
-
-
-        ProxyServiceStarter serviceStarter = new ProxyServiceStarter(ARGS, null, true);
-        initConfig.accept(serviceStarter.getConfig());
-        // ProxyServiceStarter will throw an exception when Authentication#start is failed
-        serviceStarter.getConfig().setBrokerClientAuthenticationPlugin(ExceptionAuthentication1.class.getName());
-        try {
-            serviceStarter.start();
-            fail("ProxyServiceStarter should throw an exception when Authentication#start is failed");
-        } catch (Exception ex) {
-            assertTrue(ex.getMessage().contains("ExceptionAuthentication1#start"));
-            assertTrue(serviceStarter.getProxyClientAuthentication() instanceof ExceptionAuthentication1);
-        }
-
-        serviceStarter = new ProxyServiceStarter(ARGS, null, true);
-        initConfig.accept(serviceStarter.getConfig());
-        // ProxyServiceStarter will throw an exception when Authentication#start and Authentication#close are failed
-        serviceStarter.getConfig().setBrokerClientAuthenticationPlugin(ExceptionAuthentication2.class.getName());
-        try {
-            serviceStarter.start();
-            fail("ProxyServiceStarter should throw an exception when Authentication#start and Authentication#close are failed");
-        } catch (Exception ex) {
-            assertTrue(ex.getMessage().contains("ExceptionAuthentication2#start"));
-            assertTrue(serviceStarter.getProxyClientAuthentication() instanceof ExceptionAuthentication2);
-        }
-    }
-
-    public static class ExceptionAuthentication1 implements Authentication {
-
-        @Override
-        public String getAuthMethodName() {
-            return "org.apache.pulsar.proxy.server.ProxyConfigurationTest.ExceptionAuthentication1";
-        }
-
-        @Override
-        public void configure(Map<String, String> authParams) {
-            // no-op
-        }
-
-        @Override
-        public void start() throws PulsarClientException {
-            throw new PulsarClientException("ExceptionAuthentication1#start");
-        }
-
-        @Override
-        public void close() throws IOException {
-            // no-op
-        }
-    }
-
-    public static class ExceptionAuthentication2 implements Authentication {
-
-        @Override
-        public String getAuthMethodName() {
-            return "org.apache.pulsar.proxy.server.ProxyConfigurationTest.ExceptionAuthentication2";
-        }
-
-        @Override
-        public void configure(Map<String, String> authParams) {
-            // no-op
-        }
-
-        @Override
-        public void start() throws PulsarClientException {
-            throw new PulsarClientException("ExceptionAuthentication2#start");
-        }
-
-        @Override
-        public void close() throws IOException {
-            throw new IOException("ExceptionAuthentication2#close");
         }
     }
 

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -66,8 +66,7 @@ public class ZKSessionWatcher implements AutoCloseable, Watcher {
         this.scheduler = Executors
                 .newSingleThreadScheduledExecutor(new DefaultThreadFactory("metadata-store-zk-session-watcher"));
         this.task =
-                scheduler.scheduleWithFixedDelay(
-                        catchingAndLoggingThrowables(this::checkConnectionStatus), tickTimeMillis,
+                scheduler.scheduleAtFixedRate(catchingAndLoggingThrowables(this::checkConnectionStatus), tickTimeMillis,
                         tickTimeMillis,
                         TimeUnit.MILLISECONDS);
         this.currentStatus = SessionEvent.SessionReestablished;
@@ -154,8 +153,8 @@ public class ZKSessionWatcher implements AutoCloseable, Watcher {
                 currentStatus = SessionEvent.SessionLost;
                 sessionListener.accept(currentStatus);
             } else if (currentStatus != SessionEvent.SessionLost) {
-                log.warn("[{}] ZooKeeper client is disconnected. Waiting to reconnect, time remaining = {} seconds",
-                        zk.getSessionId(), timeRemainingMillis / 1000.0);
+                log.warn("ZooKeeper client is disconnected. Waiting to reconnect, time remaining = {} seconds",
+                        timeRemainingMillis / 1000.0);
                 if (currentStatus == SessionEvent.SessionReestablished) {
                     currentStatus = SessionEvent.ConnectionLost;
                     sessionListener.accept(currentStatus);

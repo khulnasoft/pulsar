@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,10 +18,7 @@
  */
 package org.apache.pulsar.common.util;
 
-import com.google.common.util.concurrent.MoreExecutors;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -30,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -38,8 +34,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import javax.annotation.Nonnull;
 import javax.annotation.concurrent.ThreadSafe;
 
 /**
@@ -48,59 +42,37 @@ import javax.annotation.concurrent.ThreadSafe;
 public class FutureUtil {
 
     /**
+     * Return a future that represents the completion of the futures in the provided List.
+     * This method with the List parameter is needed to keep compatibility with external
+     * applications that are compiled with Pulsar < 2.10.0.
+     *
+     * @param futures futures to wait for
+     * @return a new CompletableFuture that is completed when all of the given CompletableFutures complete
+     */
+    public static CompletableFuture<Void> waitForAll(List<? extends CompletableFuture<?>> futures) {
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
+
+    /**
      * Return a future that represents the completion of the futures in the provided Collection.
      *
      * @param futures futures to wait for
      * @return a new CompletableFuture that is completed when all of the given CompletableFutures complete
      */
     public static CompletableFuture<Void> waitForAll(Collection<? extends CompletableFuture<?>> futures) {
-        if (futures == null || futures.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     }
 
-    public static CompletableFuture<Void> runWithCurrentThread(Runnable runnable) {
-        return CompletableFuture.runAsync(
-                () -> runnable.run(), MoreExecutors.directExecutor());
-    }
-
-    public static <T> CompletableFuture<List<T>> waitForAll(Stream<CompletableFuture<List<T>>> futures) {
-        return futures.reduce(CompletableFuture.completedFuture(new ArrayList<>()),
-                (pre, curr) -> pre.thenCompose(preV -> curr.thenApply(currV -> {
-                    preV.addAll(currV);
-                    return preV;
-                })));
-    }
-
     /**
-     * Make the dest future complete after another one. {@param dest} is will be completed with the same value as
-     * {@param src}, or be completed with the same error as {@param src}.
+     * Return a future that represents the completion of any future in the provided List.
+     * This method with the List parameter is needed to keep compatibility with external
+     * applications that are compiled with Pulsar < 2.10.0.
+     *
+     * @param futures futures to wait any
+     * @return a new CompletableFuture that is completed when any of the given CompletableFutures complete
      */
-    public static <T> void completeAfter(final CompletableFuture<T> dest, CompletableFuture<T> src) {
-        src.whenComplete((v, ex) -> {
-            if (ex != null) {
-                dest.completeExceptionally(ex);
-            } else {
-                dest.complete(v);
-            }
-        });
-    }
-
-    /**
-     * Make the dest future complete after others. {@param dest} is will be completed with a {@link Void} value
-     * if all the futures of {@param src} is completed, or be completed exceptionally with the same error as the first
-     * one completed exceptionally future of {@param src}.
-     */
-    public static void completeAfterAll(final CompletableFuture<Void> dest,
-                                        CompletableFuture<? extends Object>... src) {
-        FutureUtil.waitForAll(Arrays.asList(src)).whenComplete((ignore, ex) -> {
-            if (ex != null) {
-                dest.completeExceptionally(ex);
-            } else {
-                dest.complete(null);
-            }
-        });
+    public static CompletableFuture<Object> waitForAny(List<? extends CompletableFuture<?>> futures) {
+        return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]));
     }
 
     /**
@@ -165,7 +137,7 @@ public class FutureUtil {
      * @return a new CompletableFuture that is completed when all of the given CompletableFutures complete
      */
     public static CompletableFuture<Void> waitForAllAndSupportCancel(
-            Collection<? extends CompletableFuture<?>> futures) {
+                                                    Collection<? extends CompletableFuture<?>> futures) {
         CompletableFuture[] futuresArray = futures.toArray(new CompletableFuture[0]);
         CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futuresArray);
         whenCancelledOrTimedOut(combinedFuture, () -> {
@@ -202,9 +174,9 @@ public class FutureUtil {
 
     public static Throwable unwrapCompletionException(Throwable ex) {
         if (ex instanceof CompletionException) {
-            return unwrapCompletionException(ex.getCause());
+            return ex.getCause();
         } else if (ex instanceof ExecutionException) {
-            return unwrapCompletionException(ex.getCause());
+            return ex.getCause();
         } else {
             return ex;
         }
@@ -279,30 +251,6 @@ public class FutureUtil {
         future.whenComplete((res, exception) -> scheduledFuture.cancel(false));
         return future;
     }
-
-    /**
-     * @throws RejectedExecutionException if this task cannot be accepted for execution
-     * @throws NullPointerException if one of params is null
-     */
-    public static <T> @Nonnull CompletableFuture<T> composeAsync(Supplier<CompletableFuture<T>> futureSupplier,
-                                                                 Executor executor) {
-        Objects.requireNonNull(futureSupplier);
-        Objects.requireNonNull(executor);
-        final CompletableFuture<T> future = new CompletableFuture<>();
-        try {
-            executor.execute(() -> futureSupplier.get().whenComplete((result, error) -> {
-                if (error != null) {
-                    future.completeExceptionally(error);
-                    return;
-                }
-                future.complete(result);
-            }));
-        } catch (RejectedExecutionException ex) {
-            future.completeExceptionally(ex);
-        }
-        return future;
-    }
-
 
     /**
      * Creates a low-overhead timeout exception which is performance optimized to minimize allocations

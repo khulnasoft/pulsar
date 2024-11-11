@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.broker.authentication;
 
 import java.io.BufferedReader;
@@ -46,8 +47,6 @@ public class AuthenticationProviderBasic implements AuthenticationProvider {
     private static final String CONF_PULSAR_PROPERTY_KEY = "basicAuthConf";
     private Map<String, String> users;
 
-    private AuthenticationMetrics authenticationMetrics;
-
     private enum ErrorCode {
         UNKNOWN,
         EMPTY_AUTH_DATA,
@@ -77,14 +76,6 @@ public class AuthenticationProviderBasic implements AuthenticationProvider {
 
     @Override
     public void initialize(ServiceConfiguration config) throws IOException {
-        initialize(Context.builder().config(config).build());
-    }
-
-    @Override
-    public void initialize(Context context) throws IOException {
-        authenticationMetrics = new AuthenticationMetrics(context.getOpenTelemetry(),
-                getClass().getSimpleName(), getAuthMethodName());
-        var config = context.getConfig();
         String data = config.getProperties().getProperty(CONF_PULSAR_PROPERTY_KEY);
         if (StringUtils.isEmpty(data)) {
             data = System.getProperty(CONF_SYSTEM_PROPERTY_KEY);
@@ -114,11 +105,6 @@ public class AuthenticationProviderBasic implements AuthenticationProvider {
     @Override
     public String getAuthMethodName() {
         return "basic";
-    }
-
-    @Override
-    public void incrementFailureMetric(Enum<?> errorCode) {
-        authenticationMetrics.recordFailure(errorCode);
     }
 
     @Override
@@ -153,7 +139,7 @@ public class AuthenticationProviderBasic implements AuthenticationProvider {
             incrementFailureMetric(errorCode);
             throw exception;
         }
-        authenticationMetrics.recordSuccess();
+        AuthenticationMetrics.authenticateSuccess(getClass().getSimpleName(), getAuthMethodName());
         return userId;
     }
 

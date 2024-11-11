@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 /**
  * This class was adapted from NiFi NAR Utils
  * https://github.com/apache/nifi/tree/master/nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-nar-utils
@@ -32,9 +33,7 @@ import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
@@ -88,32 +87,19 @@ public class NarUnpacker {
             try (FileChannel channel = new RandomAccessFile(lockFile, "rw").getChannel();
                  FileLock lock = channel.lock()) {
                 File narWorkingDirectory = new File(parentDirectory, md5Sum);
-                if (!narWorkingDirectory.exists()) {
-                    File narExtractionTempDirectory = new File(parentDirectory, md5Sum + ".tmp");
-                    if (narExtractionTempDirectory.exists()) {
-                        FileUtils.deleteFile(narExtractionTempDirectory, true);
-                    }
-                    if (!narExtractionTempDirectory.mkdir()) {
-                        throw new IOException("Cannot create " + narExtractionTempDirectory);
-                    }
+                if (narWorkingDirectory.mkdir()) {
                     try {
-                        log.info("Extracting {} to {}", nar, narExtractionTempDirectory);
+                        log.info("Extracting {} to {}", nar, narWorkingDirectory);
                         if (extractCallback != null) {
                             extractCallback.run();
                         }
-                        unpack(nar, narExtractionTempDirectory);
+                        unpack(nar, narWorkingDirectory);
                     } catch (IOException e) {
                         log.error("There was a problem extracting the nar file. Deleting {} to clean up state.",
-                                narExtractionTempDirectory, e);
-                        try {
-                            FileUtils.deleteFile(narExtractionTempDirectory, true);
-                        } catch (IOException e2) {
-                            log.error("Failed to delete temporary directory {}", narExtractionTempDirectory, e2);
-                        }
+                                narWorkingDirectory, e);
+                        FileUtils.deleteFile(narWorkingDirectory, true);
                         throw e;
                     }
-                    Files.move(narExtractionTempDirectory.toPath(), narWorkingDirectory.toPath(),
-                            StandardCopyOption.ATOMIC_MOVE);
                 }
                 return narWorkingDirectory;
             }
@@ -181,9 +167,8 @@ public class NarUnpacker {
      * @throws IOException
      *             if cannot read file
      */
-    protected static byte[] calculateMd5sum(final File file) throws IOException {
+    private static byte[] calculateMd5sum(final File file) throws IOException {
         try (final FileInputStream inputStream = new FileInputStream(file)) {
-            // codeql[java/weak-cryptographic-algorithm] - md5 is sufficient for this use case
             final MessageDigest md5 = MessageDigest.getInstance("md5");
 
             final byte[] buffer = new byte[1024];

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -61,7 +61,7 @@ class ProtocolHandlerUtils {
     private static ProtocolHandlerDefinition getProtocolHandlerDefinition(NarClassLoader ncl) throws IOException {
         String configStr = ncl.getServiceDefinition(PULSAR_PROTOCOL_HANDLER_DEFINITION_FILE);
 
-        return ObjectMapperFactory.getYamlMapper().reader().readValue(
+        return ObjectMapperFactory.getThreadLocalYaml().readValue(
             configStr, ProtocolHandlerDefinition.class
         );
     }
@@ -75,7 +75,7 @@ class ProtocolHandlerUtils {
      */
     public static ProtocolHandlerDefinitions searchForHandlers(String handlersDirectory,
                                                                String narExtractionDirectory) throws IOException {
-        Path path = Paths.get(handlersDirectory).toAbsolutePath().normalize();
+        Path path = Paths.get(handlersDirectory).toAbsolutePath();
         log.info("Searching for protocol handlers in {}", path);
 
         ProtocolHandlerDefinitions handlers = new ProtocolHandlerDefinitions();
@@ -119,7 +119,7 @@ class ProtocolHandlerUtils {
      */
     static ProtocolHandlerWithClassLoader load(ProtocolHandlerMetadata metadata,
                                                String narExtractionDirectory) throws IOException {
-        final File narFile = metadata.getArchivePath().toAbsolutePath().normalize().toFile();
+        final File narFile = metadata.getArchivePath().toAbsolutePath().toFile();
         NarClassLoader ncl = NarClassLoaderBuilder.builder()
                 .narFile(narFile)
                 .parentClassLoader(ProtocolHandler.class.getClassLoader())

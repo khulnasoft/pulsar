@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.client.admin.internal;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminBuilder;
@@ -34,20 +33,26 @@ import org.apache.pulsar.client.impl.conf.ConfigurationDataUtils;
 
 public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
 
-    @Getter
     protected ClientConfigurationData conf;
-
+    private int connectTimeout = PulsarAdminImpl.DEFAULT_CONNECT_TIMEOUT_SECONDS;
+    private int readTimeout = PulsarAdminImpl.DEFAULT_READ_TIMEOUT_SECONDS;
+    private int requestTimeout = PulsarAdminImpl.DEFAULT_REQUEST_TIMEOUT_SECONDS;
+    private int autoCertRefreshTime = PulsarAdminImpl.DEFAULT_CERT_REFRESH_SECONDS;
+    private TimeUnit connectTimeoutUnit = TimeUnit.SECONDS;
+    private TimeUnit readTimeoutUnit = TimeUnit.SECONDS;
+    private TimeUnit requestTimeoutUnit = TimeUnit.SECONDS;
+    private TimeUnit autoCertRefreshTimeUnit = TimeUnit.SECONDS;
     private ClassLoader clientBuilderClassLoader = null;
-    private boolean acceptGzipCompression = true;
 
     @Override
     public PulsarAdmin build() throws PulsarClientException {
-        return new PulsarAdminImpl(conf.getServiceUrl(), conf, clientBuilderClassLoader, acceptGzipCompression);
+        return new PulsarAdminImpl(conf.getServiceUrl(), conf, connectTimeout, connectTimeoutUnit, readTimeout,
+                readTimeoutUnit, requestTimeout, requestTimeoutUnit, autoCertRefreshTime,
+                autoCertRefreshTimeUnit, clientBuilderClassLoader);
     }
 
     public PulsarAdminBuilderImpl() {
         this.conf = new ClientConfigurationData();
-        this.conf.setConnectionsPerBroker(16);
     }
 
     private PulsarAdminBuilderImpl(ClientConfigurationData conf) {
@@ -56,33 +61,13 @@ public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
 
     @Override
     public PulsarAdminBuilder clone() {
-        PulsarAdminBuilderImpl pulsarAdminBuilder = new PulsarAdminBuilderImpl(conf.clone());
-        pulsarAdminBuilder.clientBuilderClassLoader = clientBuilderClassLoader;
-        pulsarAdminBuilder.acceptGzipCompression = acceptGzipCompression;
-        return pulsarAdminBuilder;
+        return new PulsarAdminBuilderImpl(conf.clone());
     }
 
     @Override
     public PulsarAdminBuilder loadConf(Map<String, Object> config) {
         conf = ConfigurationDataUtils.loadData(config, conf, ClientConfigurationData.class);
         setAuthenticationFromPropsIfAvailable(conf);
-        if (config.containsKey("acceptGzipCompression")) {
-            Object acceptGzipCompressionObj = config.get("acceptGzipCompression");
-            if (acceptGzipCompressionObj instanceof Boolean) {
-                acceptGzipCompression = (Boolean) acceptGzipCompressionObj;
-            } else {
-                acceptGzipCompression = Boolean.parseBoolean(acceptGzipCompressionObj.toString());
-            }
-        }
-        // in ClientConfigurationData, the maxConnectionsPerHost maps to connectionsPerBroker
-        if (config.containsKey("maxConnectionsPerHost")) {
-            Object maxConnectionsPerHostObj = config.get("maxConnectionsPerHost");
-            if (maxConnectionsPerHostObj instanceof Integer) {
-                maxConnectionsPerHost((Integer) maxConnectionsPerHostObj);
-            } else {
-                maxConnectionsPerHost(Integer.parseInt(maxConnectionsPerHostObj.toString()));
-            }
-        }
         return this;
     }
 
@@ -131,18 +116,6 @@ public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
     }
 
     @Override
-    public PulsarAdminBuilder tlsKeyFilePath(String tlsKeyFilePath) {
-        conf.setTlsKeyFilePath(tlsKeyFilePath);
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder tlsCertificateFilePath(String tlsCertificateFilePath) {
-        conf.setTlsCertificateFilePath(tlsCertificateFilePath);
-        return this;
-    }
-
-    @Override
     public PulsarAdminBuilder tlsTrustCertsFilePath(String tlsTrustCertsFilePath) {
         conf.setTlsTrustCertsFilePath(tlsTrustCertsFilePath);
         return this;
@@ -173,24 +146,6 @@ public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
     }
 
     @Override
-    public PulsarAdminBuilder tlsKeyStoreType(String tlsKeyStoreType) {
-        conf.setTlsKeyStoreType(tlsKeyStoreType);
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder tlsKeyStorePath(String tlsTrustStorePath) {
-        conf.setTlsKeyStorePath(tlsTrustStorePath);
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder tlsKeyStorePassword(String tlsKeyStorePassword) {
-        conf.setTlsKeyStorePassword(tlsKeyStorePassword);
-        return this;
-    }
-
-    @Override
     public PulsarAdminBuilder tlsTrustStoreType(String tlsTrustStoreType) {
         conf.setTlsTrustStoreType(tlsTrustStoreType);
         return this;
@@ -215,20 +170,6 @@ public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
     }
 
     @Override
-    public PulsarAdminBuilder sslFactoryPlugin(String sslFactoryPlugin) {
-        if (StringUtils.isNotBlank(sslFactoryPlugin)) {
-            conf.setSslFactoryPlugin(sslFactoryPlugin);
-        }
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder sslFactoryPluginParams(String sslFactoryPluginParams) {
-        conf.setSslFactoryPluginParams(sslFactoryPluginParams);
-        return this;
-    }
-
-    @Override
     public PulsarAdminBuilder tlsProtocols(Set<String> tlsProtocols) {
         conf.setTlsProtocols(tlsProtocols);
         return this;
@@ -236,51 +177,35 @@ public class PulsarAdminBuilderImpl implements PulsarAdminBuilder {
 
     @Override
     public PulsarAdminBuilder connectionTimeout(int connectionTimeout, TimeUnit connectionTimeoutUnit) {
-        this.conf.setConnectionTimeoutMs((int) connectionTimeoutUnit.toMillis(connectionTimeout));
+        this.connectTimeout = connectionTimeout;
+        this.connectTimeoutUnit = connectionTimeoutUnit;
         return this;
     }
 
     @Override
     public PulsarAdminBuilder readTimeout(int readTimeout, TimeUnit readTimeoutUnit) {
-        this.conf.setReadTimeoutMs((int) readTimeoutUnit.toMillis(readTimeout));
+        this.readTimeout = readTimeout;
+        this.readTimeoutUnit = readTimeoutUnit;
         return this;
     }
 
     @Override
     public PulsarAdminBuilder requestTimeout(int requestTimeout, TimeUnit requestTimeoutUnit) {
-        this.conf.setRequestTimeoutMs((int) requestTimeoutUnit.toMillis(requestTimeout));
+        this.requestTimeout = requestTimeout;
+        this.requestTimeoutUnit = requestTimeoutUnit;
         return this;
     }
 
     @Override
     public PulsarAdminBuilder autoCertRefreshTime(int autoCertRefreshTime, TimeUnit autoCertRefreshTimeUnit) {
-        this.conf.setAutoCertRefreshSeconds((int) autoCertRefreshTimeUnit.toSeconds(autoCertRefreshTime));
+        this.autoCertRefreshTime = autoCertRefreshTime;
+        this.autoCertRefreshTimeUnit = autoCertRefreshTimeUnit;
         return this;
     }
 
     @Override
     public PulsarAdminBuilder setContextClassLoader(ClassLoader clientBuilderClassLoader) {
         this.clientBuilderClassLoader = clientBuilderClassLoader;
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder acceptGzipCompression(boolean acceptGzipCompression) {
-        this.acceptGzipCompression = acceptGzipCompression;
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder maxConnectionsPerHost(int maxConnectionsPerHost) {
-        // reuse the same configuration as the client, however for the admin client, the connection
-        // is usually established to a cluster address and not to a broker address
-        this.conf.setConnectionsPerBroker(maxConnectionsPerHost);
-        return this;
-    }
-
-    @Override
-    public PulsarAdminBuilder connectionMaxIdleSeconds(int connectionMaxIdleSeconds) {
-        this.conf.setConnectionMaxIdleSeconds(connectionMaxIdleSeconds);
         return this;
     }
 }

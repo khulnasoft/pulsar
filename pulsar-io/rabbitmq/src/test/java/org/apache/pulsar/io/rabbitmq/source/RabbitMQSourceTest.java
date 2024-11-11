@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,6 @@
  */
 package org.apache.pulsar.io.rabbitmq.source;
 
-import static org.mockito.Mockito.mock;
-import java.time.Duration;
-import org.apache.pulsar.io.core.SourceContext;
 import org.apache.pulsar.io.rabbitmq.RabbitMQBrokerManager;
 import org.apache.pulsar.io.rabbitmq.RabbitMQSource;
 import org.awaitility.Awaitility;
@@ -47,7 +44,7 @@ public class RabbitMQSourceTest {
     }
 
     @Test
-    public void testOpenAndWriteSink() throws Exception {
+    public void TestOpenAndWriteSink() {
         Map<String, Object> configs = new HashMap<>();
         configs.put("host", "localhost");
         configs.put("port", "5672");
@@ -69,11 +66,7 @@ public class RabbitMQSourceTest {
 
         // open should success
         // rabbitmq service may need time to initialize
-        SourceContext sourceContext = mock(SourceContext.class);
-        Awaitility.await().ignoreExceptions().pollDelay(Duration.ofSeconds(1))
-                .untilAsserted(() -> source.open(configs, sourceContext));
-        source.close();
+        Awaitility.await().ignoreExceptions().untilAsserted(() -> source.open(configs, null));
     }
-
 
 }

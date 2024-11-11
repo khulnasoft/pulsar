@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,7 +23,6 @@ import java.util.Map;
 import lombok.Data;
 import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.common.policies.data.PublisherStats;
-import org.apache.pulsar.common.stats.Rate;
 
 /**
  * Statistics about a publisher.
@@ -54,21 +53,38 @@ public class PublisherStatsImpl implements PublisherStats {
     public boolean supportsPartialProducer;
 
     /** Producer name. */
-    private String producerName;
+    @JsonIgnore
+    private int producerNameOffset = -1;
+    @JsonIgnore
+    private int producerNameLength;
+
     /** Address of this publisher. */
-    private String address;
+    @JsonIgnore
+    private int addressOffset = -1;
+    @JsonIgnore
+    private int addressLength;
+
     /** Timestamp of connection. */
-    private String connectedSince;
+    @JsonIgnore
+    private int connectedSinceOffset = -1;
+    @JsonIgnore
+    private int connectedSinceLength;
+
     /** Client library version. */
-    private String clientVersion;
+    @JsonIgnore
+    private int clientVersionOffset = -1;
+    @JsonIgnore
+    private int clientVersionLength;
+
+    /**
+     * In order to prevent multiple string objects under stats: create a string-buffer that stores data for all string
+     * place-holders.
+     */
+    @JsonIgnore
+    private StringBuilder stringBuffer = new StringBuilder();
 
     /** Metadata (key/value strings) associated with this publisher. */
     public Map<String, String> metadata;
-
-    @JsonIgnore
-    private final Rate msgIn = new Rate();
-    @JsonIgnore
-    private final Rate msgChunkIn = new Rate();
 
     public PublisherStatsImpl add(PublisherStatsImpl stats) {
         if (stats == null) {
@@ -83,67 +99,61 @@ public class PublisherStatsImpl implements PublisherStats {
     }
 
     public String getProducerName() {
-        return producerName;
+        return producerNameOffset == -1 ? null
+                : stringBuffer.substring(producerNameOffset, producerNameOffset + producerNameLength);
     }
 
     public void setProducerName(String producerName) {
-        this.producerName = producerName;
+        if (producerName == null) {
+            this.producerNameOffset = -1;
+            return;
+        }
+        this.producerNameOffset = this.stringBuffer.length();
+        this.producerNameLength = producerName.length();
+        this.stringBuffer.append(producerName);
     }
 
     public String getAddress() {
-        return address;
+        return addressOffset == -1 ? null : stringBuffer.substring(addressOffset, addressOffset + addressLength);
     }
 
     public void setAddress(String address) {
-        this.address = address;
+        if (address == null) {
+            this.addressOffset = -1;
+            return;
+        }
+        this.addressOffset = this.stringBuffer.length();
+        this.addressLength = address.length();
+        this.stringBuffer.append(address);
     }
 
     public String getConnectedSince() {
-        return connectedSince;
+        return connectedSinceOffset == -1 ? null
+                : stringBuffer.substring(connectedSinceOffset, connectedSinceOffset + connectedSinceLength);
     }
 
     public void setConnectedSince(String connectedSince) {
-        this.connectedSince = connectedSince;
+        if (connectedSince == null) {
+            this.connectedSinceOffset = -1;
+            return;
+        }
+        this.connectedSinceOffset = this.stringBuffer.length();
+        this.connectedSinceLength = connectedSince.length();
+        this.stringBuffer.append(connectedSince);
     }
 
     public String getClientVersion() {
-        return clientVersion;
+        return clientVersionOffset == -1 ? null
+                : stringBuffer.substring(clientVersionOffset, clientVersionOffset + clientVersionLength);
     }
 
     public void setClientVersion(String clientVersion) {
-        this.clientVersion = clientVersion;
-    }
-
-    public void calculateRates() {
-        msgIn.calculateRate();
-        msgChunkIn.calculateRate();
-
-        msgRateIn = msgIn.getRate();
-        msgThroughputIn = msgIn.getValueRate();
-        averageMsgSize = msgIn.getAverageValue();
-        chunkedMessageRate = msgChunkIn.getRate();
-    }
-
-    public void recordMsgIn(long messageCount, long byteCount) {
-        msgIn.recordMultipleEvents(messageCount, byteCount);
-    }
-
-    @JsonIgnore
-    public long getMsgInCounter() {
-        return msgIn.getTotalCount();
-    }
-
-    @JsonIgnore
-    public long getBytesInCounter() {
-        return msgIn.getTotalValue();
-    }
-
-    public void recordChunkedMsgIn() {
-        msgChunkIn.recordEvent();
-    }
-
-    @JsonIgnore
-    public long getChunkedMsgInCounter() {
-        return msgChunkIn.getTotalCount();
+        if (clientVersion == null) {
+            this.clientVersionOffset = -1;
+            return;
+        }
+        this.clientVersionOffset = this.stringBuffer.length();
+        this.clientVersionLength = clientVersion.length();
+        this.stringBuffer.append(clientVersion);
     }
 }

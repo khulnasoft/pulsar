@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -119,24 +119,28 @@ public class SourcesBase extends AdminResource {
                     examples = @Example(
                             value = @ExampleProperty(
                                     mediaType = MediaType.TEXT_PLAIN,
-                                    value = """
-                                            Example
-                                            1. Create a JSON object.
-                                            {
-                                             "tenant": "public",
-                                             "namespace": "default",
-                                             "name": "pulsar-io-mysql",
-                                             "className": "TestSourceMysql",
-                                             "topicName": "pulsar-io-mysql",
-                                             "parallelism": "1",
-                                             "archive": "/connectors/pulsar-io-mysql-0.0.1.nar",
-                                             "schemaType": "avro"
-                                            }
-                                            2. Encapsulate the JSON object to a multipart object (in Python).
-                                            from requests_toolbelt.multipart.encoder import MultipartEncoder
-                                            mp_encoder = MultipartEncoder([('sourceConfig', \
-                                            (None, json.dumps(config), 'application/json'))])
-                                            """
+                                    value = " Example \n"
+                                            + "\n"
+                                            + "1. Create a JSON object. \n"
+                                            + "\n"
+                                            + "{\n"
+                                            + "\t\"tenant\": \"public\",\n"
+                                            + "\t\"namespace\": \"default\",\n"
+                                            + "\t\"name\": \"pulsar-io-mysql\",\n"
+                                            + "\t\"className\": \"TestSourceMysql\",\n"
+                                            + "\t\"topicName\": \"pulsar-io-mysql\",\n"
+                                            + "\t\"parallelism\": \"1\",\n"
+                                            + "\t\"archive\": \"/connectors/pulsar-io-mysql-0.0.1.nar\",\n"
+                                            + "\t\"schemaType\": \"avro\"\n"
+                                            + "}\n"
+                                            + "\n"
+                                            + "\n"
+                                            + "2. Encapsulate the JSON object to a multipart object (in Python). \n"
+                                            + "\n"
+                                            + "from requests_toolbelt.multipart.encoder import MultipartEncoder \n"
+                                            + "mp_encoder = MultipartEncoder( \n"
+                                            + "\t[('sourceConfig', "
+                                            + "(None, json.dumps(config), 'application/json'))])\n"
                             )
                     )
             )
@@ -208,18 +212,16 @@ public class SourcesBase extends AdminResource {
                     examples = @Example(
                             value = @ExampleProperty(
                                     mediaType = MediaType.APPLICATION_JSON,
-                                    value = """
-                                            {
-                                              "tenant": "public",
-                                              "namespace": "default",
-                                              "name": "pulsar-io-mysql",
-                                              "className": "TestSourceMysql",
-                                              "topicName": "pulsar-io-mysql",
-                                              "parallelism": 1,
-                                              "archive": "/connectors/pulsar-io-mysql-0.0.1.nar",
-                                              "schemaType": "avro"
-                                            }
-                                            """
+                                    value = "{\n"
+                                            + "  \"tenant\": public\n"
+                                            + "  \"namespace\": default\n"
+                                            + "  \"name\": pulsar-io-mysql\n"
+                                            + "  \"className\": TestSourceMysql\n"
+                                            + "  \"topicName\": pulsar-io-mysql\n"
+                                            + "  \"parallelism\": 1\n"
+                                            + "  \"archive\": /connectors/pulsar-io-mysql-0.0.1.nar\n"
+                                            + "  \"schemaType\": avro\n"
+                                            + "}\n"
                             )
                     )
             )
@@ -323,7 +325,7 @@ public class SourcesBase extends AdminResource {
     @ApiOperation(
             value = "Lists all Pulsar Sources currently deployed in a given namespace",
             response = String.class,
-            responseContainer = "List"
+            responseContainer = "Collection"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Invalid request"),
@@ -342,9 +344,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart an instance of a Pulsar Source")
+    @ApiOperation(value = "Restart an instance of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 307, message = "Current broker doesn't serve the namespace of this source"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
@@ -366,9 +367,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart all instances of a Pulsar Source")
+    @ApiOperation(value = "Restart all instances of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
             @ApiResponse(code = 404, message = "Not Found(The Pulsar Source doesn't exist)"),
@@ -388,9 +388,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop instance of a Pulsar Source")
+    @ApiOperation(value = "Stop instance of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
             @ApiResponse(code = 404, message = "Not Found(The Pulsar Source doesn't exist)"),
@@ -410,9 +409,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop all instances of a Pulsar Source")
+    @ApiOperation(value = "Stop all instances of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
             @ApiResponse(code = 404, message = "Not Found(The Pulsar Source doesn't exist)"),
@@ -432,9 +430,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start an instance of a Pulsar Source")
+    @ApiOperation(value = "Start an instance of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
             @ApiResponse(code = 404, message = "Not Found(The Pulsar Source doesn't exist)"),
@@ -454,9 +451,8 @@ public class SourcesBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start all instances of a Pulsar Source")
+    @ApiOperation(value = "Start all instances of a Pulsar Source", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 401, message = "Client is not authorized to perform operation"),
             @ApiResponse(code = 404, message = "Not Found(The Pulsar Source doesn't exist)"),

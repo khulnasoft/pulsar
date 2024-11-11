@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,13 +18,10 @@
  */
 package org.apache.bookkeeper.mledger;
 
-import com.google.common.collect.Range;
 import io.netty.buffer.ByteBuf;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Predicate;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
@@ -376,8 +373,6 @@ public interface ManagedLedger {
      */
     long getNumberOfEntries();
 
-    long getNumberOfEntries(Range<Position> range);
-
     /**
      * Get the total number of active entries for this managed ledger.
      *
@@ -442,8 +437,6 @@ public interface ManagedLedger {
     long getLastOffloadedFailureTimestamp();
 
     void asyncTerminate(TerminateCallback callback, Object ctx);
-
-    CompletableFuture<Position> asyncMigrate();
 
     /**
      * Terminate the managed ledger and return the last committed entry.
@@ -535,11 +528,6 @@ public interface ManagedLedger {
      * Returns whether the managed ledger was terminated.
      */
     boolean isTerminated();
-
-    /**
-     * Returns whether the managed ledger was migrated.
-     */
-    boolean isMigrated();
 
     /**
      * Returns managed-ledger config.
@@ -636,11 +624,6 @@ public interface ManagedLedger {
     void trimConsumedLedgersInBackground(CompletableFuture<?> promise);
 
     /**
-     * Rollover cursors in background if needed.
-     */
-    default void rolloverCursorsInBackground() {}
-
-    /**
      * If a ledger is lost, this ledger will be skipped after enabled "autoSkipNonRecoverableData", and the method is
      * used to delete information about this ledger in the ManagedCursor.
      */
@@ -655,7 +638,7 @@ public interface ManagedLedger {
     /**
      * Find position by sequenceId.
      * */
-    CompletableFuture<Position> asyncFindPosition(Predicate<Entry> predicate);
+    CompletableFuture<Position> asyncFindPosition(com.google.common.base.Predicate<Entry> predicate);
 
     /**
      * Get the ManagedLedgerInterceptor for ManagedLedger.
@@ -691,46 +674,11 @@ public interface ManagedLedger {
     /**
      * Check current inactive ledger (based on {@link ManagedLedgerConfig#getInactiveLedgerRollOverTimeMs()} and
      * roll over that ledger if inactive.
-     *
-     * @return true if ledger is considered for rolling over
      */
-    boolean checkInactiveLedgerAndRollOver();
+    void checkInactiveLedgerAndRollOver();
 
     /**
      * Check if managed ledger should cache backlog reads.
      */
     void checkCursorsToCacheEntries();
-
-    /**
-     * Get managed ledger attributes.
-     */
-    default ManagedLedgerAttributes getManagedLedgerAttributes() {
-        return new ManagedLedgerAttributes(this);
-    }
-
-    void asyncReadEntry(Position position, AsyncCallbacks.ReadEntryCallback callback, Object ctx);
-
-    /**
-     * Get all the managed ledgers.
-     */
-    NavigableMap<Long, LedgerInfo> getLedgersInfo();
-
-    Position getNextValidPosition(Position position);
-
-    Position getPreviousPosition(Position position);
-
-    long getEstimatedBacklogSize(Position position);
-
-    Position getPositionAfterN(Position startPosition, long n, PositionBound startRange);
-
-    int getPendingAddEntriesCount();
-
-    long getCacheSize();
-
-    default CompletableFuture<Position> getLastDispatchablePosition(final Predicate<Entry> predicate,
-                                                                    final Position startPosition) {
-        return CompletableFuture.completedFuture(PositionFactory.EARLIEST);
-    }
-
-    Position getFirstPosition();
 }

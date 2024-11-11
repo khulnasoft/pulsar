@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,21 +16,24 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.worker;
 
 import static org.apache.pulsar.common.stats.JvmMetrics.getJvmDirectMemoryUsed;
+
+import io.netty.util.internal.PlatformDependent;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.Summary;
 import io.prometheus.client.hotspot.DefaultExports;
+import lombok.Setter;
+import org.apache.pulsar.functions.instance.stats.PrometheusTextFormat;
+import org.apache.pulsar.functions.proto.Function;
+
 import java.io.IOException;
 import java.io.StringWriter;
 import java.util.List;
 import java.util.function.Supplier;
-import lombok.Setter;
-import org.apache.pulsar.common.util.DirectMemoryUtils;
-import org.apache.pulsar.functions.instance.stats.PrometheusTextFormat;
-import org.apache.pulsar.functions.proto.Function;
 
 public class WorkerStatsManager {
 
@@ -81,15 +84,15 @@ public class WorkerStatsManager {
   private final Summary drainTotalExecutionTime;
 
   // As an optimization
-  private final Summary.Child statWorkerStartupTimeChild;
-  private final Gauge.Child statNumInstancesChild;
-  private final Summary.Child scheduleTotalExecutionTimeChild;
-  private final Summary.Child scheduleStrategyExecutionTimeChild;
-  private final Summary.Child rebalanceTotalExecutionTimeChild;
-  private final Summary.Child rebalanceStrategyExecutionTimeChild;
-  private final Summary.Child stopInstanceProcessTimeChild;
-  private final Summary.Child startInstanceProcessTimeChild;
-  private final Summary.Child drainTotalExecutionTimeChild;
+  private final Summary.Child _statWorkerStartupTime;
+  private final Gauge.Child _statNumInstances;
+  private final Summary.Child _scheduleTotalExecutionTime;
+  private final Summary.Child _scheduleStrategyExecutionTime;
+  private final Summary.Child _rebalanceTotalExecutionTime;
+  private final Summary.Child _rebalanceStrategyExecutionTime;
+  private final Summary.Child _stopInstanceProcessTime;
+  private final Summary.Child _startInstanceProcessTime;
+  private final Summary.Child _drainTotalExecutionTime;
 
   public WorkerStatsManager(WorkerConfig workerConfig, boolean runAsStandalone) {
 
@@ -100,14 +103,14 @@ public class WorkerStatsManager {
       .help("Worker service startup time in milliseconds.")
       .labelNames(metricsLabelNames)
       .register(collectorRegistry);
-    statWorkerStartupTimeChild = statWorkerStartupTime.labels(metricsLabels);
+    _statWorkerStartupTime = statWorkerStartupTime.labels(metricsLabels);
 
     statNumInstances = Gauge.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + INSTANCE_COUNT)
       .help("Number of instances run by this worker.")
       .labelNames(metricsLabelNames)
       .register(collectorRegistry);
-    statNumInstancesChild = statNumInstances.labels(metricsLabels);
+    _statNumInstances = statNumInstances.labels(metricsLabels);
 
     scheduleTotalExecutionTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + SCHEDULE_TOTAL_EXEC_TIME)
@@ -117,7 +120,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    scheduleTotalExecutionTimeChild = scheduleTotalExecutionTime.labels(metricsLabels);
+    _scheduleTotalExecutionTime = scheduleTotalExecutionTime.labels(metricsLabels);
 
     scheduleStrategyExecutionTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + SCHEDULE_STRATEGY_EXEC_TIME)
@@ -127,7 +130,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    scheduleStrategyExecutionTimeChild = scheduleStrategyExecutionTime.labels(metricsLabels);
+    _scheduleStrategyExecutionTime = scheduleStrategyExecutionTime.labels(metricsLabels);
 
     rebalanceTotalExecutionTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + REBALANCE_TOTAL_EXEC_TIME)
@@ -137,7 +140,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    rebalanceTotalExecutionTimeChild = rebalanceTotalExecutionTime.labels(metricsLabels);
+    _rebalanceTotalExecutionTime = rebalanceTotalExecutionTime.labels(metricsLabels);
 
     rebalanceStrategyExecutionTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + REBALANCE_STRATEGY_EXEC_TIME)
@@ -147,7 +150,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    rebalanceStrategyExecutionTimeChild = rebalanceStrategyExecutionTime.labels(metricsLabels);
+    _rebalanceStrategyExecutionTime = rebalanceStrategyExecutionTime.labels(metricsLabels);
 
     stopInstanceProcessTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + STOPPING_INSTANCE_PROCESS_TIME)
@@ -157,7 +160,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    stopInstanceProcessTimeChild = stopInstanceProcessTime.labels(metricsLabels);
+    _stopInstanceProcessTime = stopInstanceProcessTime.labels(metricsLabels);
 
     startInstanceProcessTime = Summary.build()
       .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + STARTING_INSTANCE_PROCESS_TIME)
@@ -167,7 +170,7 @@ public class WorkerStatsManager {
       .quantile(0.9, 0.01)
       .quantile(1, 0.01)
       .register(collectorRegistry);
-    startInstanceProcessTimeChild = startInstanceProcessTime.labels(metricsLabels);
+    _startInstanceProcessTime = startInstanceProcessTime.labels(metricsLabels);
 
     drainTotalExecutionTime = Summary.build()
             .name(PULSAR_FUNCTION_WORKER_METRICS_PREFIX + DRAIN_TOTAL_EXEC_TIME)
@@ -177,7 +180,7 @@ public class WorkerStatsManager {
             .quantile(0.9, 0.01)
             .quantile(1, 0.01)
             .register(collectorRegistry);
-    drainTotalExecutionTimeChild = drainTotalExecutionTime.labels(metricsLabels);
+    _drainTotalExecutionTime = drainTotalExecutionTime.labels(metricsLabels);
 
     if (runAsStandalone) {
       Gauge.build("jvm_memory_direct_bytes_used", "-").create().setChild(new Gauge.Child() {
@@ -190,7 +193,7 @@ public class WorkerStatsManager {
       Gauge.build("jvm_memory_direct_bytes_max", "-").create().setChild(new Gauge.Child() {
         @Override
         public double get() {
-          return DirectMemoryUtils.jvmMaxDirectMemory();
+          return PlatformDependent.maxDirectMemory();
         }
       }).register(CollectorRegistry.defaultRegistry);
     }
@@ -204,7 +207,7 @@ public class WorkerStatsManager {
   public void startupTimeEnd() {
     if (startupTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - startupTimeStart) / 1.0E6D;
-      statWorkerStartupTimeChild.observe(endTimeMs);
+      _statWorkerStartupTime.observe(endTimeMs);
     }
   }
 
@@ -216,7 +219,7 @@ public class WorkerStatsManager {
   public void scheduleTotalExecTimeEnd() {
     if (scheduleTotalExecTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - scheduleTotalExecTimeStart) / 1.0E6D;
-      scheduleTotalExecutionTimeChild.observe(endTimeMs);
+      _scheduleTotalExecutionTime.observe(endTimeMs);
     }
   }
 
@@ -228,7 +231,7 @@ public class WorkerStatsManager {
   public void scheduleStrategyExecTimeStartEnd() {
     if (scheduleStrategyExecTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - scheduleStrategyExecTimeStart) / 1.0E6D;
-      scheduleStrategyExecutionTimeChild.observe(endTimeMs);
+      _scheduleStrategyExecutionTime.observe(endTimeMs);
     }
   }
 
@@ -240,7 +243,7 @@ public class WorkerStatsManager {
   public void rebalanceTotalExecTimeEnd() {
     if (rebalanceTotalExecTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - rebalanceTotalExecTimeStart) / 1.0E6D;
-      rebalanceTotalExecutionTimeChild.observe(endTimeMs);
+      _rebalanceTotalExecutionTime.observe(endTimeMs);
     }
   }
 
@@ -252,7 +255,7 @@ public class WorkerStatsManager {
   public void rebalanceStrategyExecTimeEnd() {
     if (rebalanceStrategyExecTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - rebalanceStrategyExecTimeStart) / 1.0E6D;
-      rebalanceStrategyExecutionTimeChild.observe(endTimeMs);
+      _rebalanceStrategyExecutionTime.observe(endTimeMs);
     }
   }
 
@@ -264,7 +267,7 @@ public class WorkerStatsManager {
   public void drainTotalExecTimeEnd() {
     if (drainTotalExecTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - drainTotalExecTimeStart) / 1.0E6D;
-      drainTotalExecutionTimeChild.observe(endTimeMs);
+      _drainTotalExecutionTime.observe(endTimeMs);
     }
   }
 
@@ -276,7 +279,7 @@ public class WorkerStatsManager {
   public void stopInstanceProcessTimeEnd() {
     if (stopInstanceProcessTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - stopInstanceProcessTimeStart) / 1.0E6D;
-      stopInstanceProcessTimeChild.observe(endTimeMs);
+      _stopInstanceProcessTime.observe(endTimeMs);
     }
   }
 
@@ -288,13 +291,13 @@ public class WorkerStatsManager {
   public void startInstanceProcessTimeEnd() {
     if (startInstanceProcessTimeStart != null) {
       double endTimeMs = ((double) System.nanoTime() - startInstanceProcessTimeStart) / 1.0E6D;
-      startInstanceProcessTimeChild.observe(endTimeMs);
+      _startInstanceProcessTime.observe(endTimeMs);
     }
   }
 
   public String getStatsAsString() throws IOException {
 
-    statNumInstancesChild.set(functionRuntimeManager.getMyInstances());
+    _statNumInstances.set(functionRuntimeManager.getMyInstances());
 
     StringWriter outputWriter = new StringWriter();
 

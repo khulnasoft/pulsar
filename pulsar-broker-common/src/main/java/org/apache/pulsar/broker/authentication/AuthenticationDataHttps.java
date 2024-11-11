@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,7 @@ public class AuthenticationDataHttps extends AuthenticationDataHttp {
     protected final X509Certificate[] certificates;
 
     public AuthenticationDataHttps(HttpServletRequest request) {
-        super(request);
+        super(new AuthenticationProviderToken.HttpServletRequestWrapper(request));
         certificates = (X509Certificate[]) request.getAttribute("javax.servlet.request.X509Certificate");
     }
 

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.kafka.connect.schema;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,6 +28,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.generic.GenericData;
 import org.apache.kafka.connect.data.Date;
@@ -83,7 +85,7 @@ public class KafkaConnectData {
                     List arr = (List) nativeObject;
                     return arr.stream()
                             .map(x -> getKafkaConnectData(x, kafkaSchema.valueSchema()))
-                            .toList();
+                            .collect(Collectors.toList());
                 } else if (nativeObject.getClass().isArray()) {
                     return arrayToList(nativeObject, kafkaSchema.valueSchema());
                 }

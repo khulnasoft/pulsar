@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,16 +29,6 @@ import org.apache.pulsar.broker.namespace.NamespaceService;
  * This algorithm divides the bundle into several parts by the specified positions.
  */
 public class SpecifiedPositionsBundleSplitAlgorithm implements NamespaceBundleSplitAlgorithm{
-
-    private boolean force;
-
-    public SpecifiedPositionsBundleSplitAlgorithm() {
-        force = false;
-    }
-
-    public SpecifiedPositionsBundleSplitAlgorithm(boolean force) {
-        this.force = force;
-    }
     @Override
     public CompletableFuture<List<Long>> getSplitBoundary(BundleSplitOption bundleSplitOption) {
         NamespaceService service = bundleSplitOption.getService();
@@ -49,28 +39,19 @@ public class SpecifiedPositionsBundleSplitAlgorithm implements NamespaceBundleSp
         }
         // sort all positions
         Collections.sort(positions);
-        if (force) {
-            return getBoundaries(bundle, positions);
-        } else {
-            return service.getOwnedTopicListForNamespaceBundle(bundle)
-                    .thenCompose(topics -> {
-                        if (topics == null || topics.size() <= 1) {
-                            return CompletableFuture.completedFuture(null);
-                        }
-                        return getBoundaries(bundle, positions);
-                    });
-        }
-    }
+        return service.getOwnedTopicListForNamespaceBundle(bundle).thenCompose(topics -> {
+            if (topics == null || topics.size() <= 1) {
+                return CompletableFuture.completedFuture(null);
+            }
+            List<Long> splitBoundaries = positions
+                    .stream()
+                    .filter(position -> position > bundle.getLowerEndpoint() && position < bundle.getUpperEndpoint())
+                    .collect(Collectors.toList());
 
-    private CompletableFuture<List<Long>> getBoundaries(NamespaceBundle bundle, List<Long> positions) {
-        List<Long> splitBoundaries = positions
-                .stream()
-                .filter(position -> position > bundle.getLowerEndpoint() && position < bundle.getUpperEndpoint())
-                .collect(Collectors.toList());
-
-        if (splitBoundaries.size() == 0) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return CompletableFuture.completedFuture(splitBoundaries);
+            if (splitBoundaries.size() == 0) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return CompletableFuture.completedFuture(splitBoundaries);
+        });
     }
 }

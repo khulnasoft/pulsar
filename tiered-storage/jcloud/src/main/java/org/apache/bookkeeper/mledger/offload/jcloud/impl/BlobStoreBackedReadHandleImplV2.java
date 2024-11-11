@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,7 +30,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import lombok.val;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.api.LastConfirmedAndEntry;
@@ -47,9 +46,7 @@ import org.apache.bookkeeper.mledger.offload.jcloud.OffloadIndexBlockV2;
 import org.apache.bookkeeper.mledger.offload.jcloud.OffloadIndexBlockV2Builder;
 import org.apache.bookkeeper.mledger.offload.jcloud.impl.DataBlockUtils.VersionCheck;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
-import org.apache.pulsar.common.naming.TopicName;
 import org.jclouds.blobstore.BlobStore;
-import org.jclouds.blobstore.KeyNotFoundException;
 import org.jclouds.blobstore.domain.Blob;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,8 +59,8 @@ public class BlobStoreBackedReadHandleImplV2 implements ReadHandle {
     private final List<BackedInputStream> inputStreams;
     private final List<DataInputStream> dataStreams;
     private final ExecutorService executor;
-    private volatile State state = null;
-    private final AtomicReference<CompletableFuture<Void>> closeFuture = new AtomicReference<>();
+
+    private State state = null;
 
     enum State {
         Opened,
@@ -126,12 +123,8 @@ public class BlobStoreBackedReadHandleImplV2 implements ReadHandle {
 
     @Override
     public CompletableFuture<Void> closeAsync() {
-        if (closeFuture.get() != null || !closeFuture.compareAndSet(null, new CompletableFuture<>())) {
-            return closeFuture.get();
-        }
-
-        CompletableFuture<Void> promise = closeFuture.get();
-        executor.execute(() -> {
+        CompletableFuture<Void> promise = new CompletableFuture<>();
+        executor.submit(() -> {
             try {
                 for (OffloadIndexBlockV2 indexBlock : indices) {
                     indexBlock.close();
@@ -150,11 +143,9 @@ public class BlobStoreBackedReadHandleImplV2 implements ReadHandle {
 
     @Override
     public CompletableFuture<LedgerEntries> readAsync(long firstEntry, long lastEntry) {
-        if (log.isDebugEnabled()) {
-            log.debug("Ledger {}: reading {} - {}", getId(), firstEntry, lastEntry);
-        }
+        log.debug("Ledger {}: reading {} - {}", getId(), firstEntry, lastEntry);
         CompletableFuture<LedgerEntries> promise = new CompletableFuture<>();
-        executor.execute(() -> {
+        executor.submit(() -> {
             if (state == State.Closed) {
                 log.warn("Reading a closed read handler. Ledger ID: {}, Read range: {}-{}",
                         ledgerId, firstEntry, lastEntry);
@@ -225,11 +216,7 @@ public class BlobStoreBackedReadHandleImplV2 implements ReadHandle {
                         }
                     }
                 } catch (Throwable t) {
-                    if (t instanceof KeyNotFoundException) {
-                        promise.completeExceptionally(new BKException.BKNoSuchLedgerExistsException());
-                    } else {
-                        promise.completeExceptionally(t);
-                    }
+                    promise.completeExceptionally(t);
                     entries.forEach(LedgerEntry::close);
                 }
 
@@ -308,21 +295,16 @@ public class BlobStoreBackedReadHandleImplV2 implements ReadHandle {
                                   VersionCheck versionCheck,
                                   long ledgerId, int readBufferSize, LedgerOffloaderStats offloaderStats,
                                   String managedLedgerName)
-            throws IOException, BKException.BKNoSuchLedgerExistsException {
+            throws IOException {
         List<BackedInputStream> inputStreams = new LinkedList<>();
         List<OffloadIndexBlockV2> indice = new LinkedList<>();
-        String topicName = TopicName.fromPersistenceNamingEncoding(managedLedgerName);
         for (int i = 0; i < indexKeys.size(); i++) {
             String indexKey = indexKeys.get(i);
             String key = keys.get(i);
             log.debug("open bucket: {} index key: {}", bucket, indexKey);
             long startTime = System.nanoTime();
             Blob blob = blobStore.getBlob(bucket, indexKey);
-            if (blob == null) {
-                log.error("{} not found in container {}", indexKey, bucket);
-                throw new BKException.BKNoSuchLedgerExistsException();
-            }
-            offloaderStats.recordReadOffloadIndexLatency(topicName,
+            offloaderStats.recordReadOffloadIndexLatency(managedLedgerName,
                     System.nanoTime() - startTime, TimeUnit.NANOSECONDS);
             log.debug("indexKey blob: {} {}", indexKey, blob);
             versionCheck.check(indexKey, blob);

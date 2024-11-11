@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,12 +24,13 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +40,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+
 import lombok.Cleanup;
+
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.client.impl.BatchMessageIdImpl;
@@ -126,7 +129,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader.readNext(1, TimeUnit.SECONDS);
 
@@ -157,7 +160,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader.readNext(1, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
@@ -182,7 +185,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
                 .startMessageId(MessageId.earliest).create();
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader.readNext(1, TimeUnit.SECONDS);
 
@@ -212,7 +215,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
                 .startMessageId(MessageId.earliest).create();
 
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader.readNext(1, TimeUnit.SECONDS);
 
@@ -240,7 +243,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
                 .startMessageId(MessageId.earliest).create();
 
         Message<byte[]> msg = null;
-        Set<String> messageSet1 = new HashSet<>();
+        Set<String> messageSet1 = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader1.readNext(1, TimeUnit.SECONDS);
 
@@ -250,7 +253,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
             testMessageOrderAndDuplicates(messageSet1, receivedMessage, expectedMessage);
         }
 
-        Set<String> messageSet2 = new HashSet<>();
+        Set<String> messageSet2 = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader2.readNext(1, TimeUnit.SECONDS);
 
@@ -283,14 +286,14 @@ public class TopicReaderTest extends ProducerConsumerBase {
                 .startMessageId(MessageId.earliest).create();
 
         Message<byte[]> msg = null;
-        Set<String> messageSet1 = new HashSet<>();
+        Set<String> messageSet1 = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader1.readNext(1, TimeUnit.SECONDS);
             String receivedMessage = new String(msg.getData());
             assertTrue(messageSet1.add(receivedMessage));
         }
 
-        Set<String> messageSet2 = new HashSet<>();
+        Set<String> messageSet2 = Sets.newHashSet();
         for (int i = 0; i < 10; i++) {
             msg = reader2.readNext(1, TimeUnit.SECONDS);
 
@@ -374,7 +377,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         // Publish more messages and verify the readers only sees new messages
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = halfOfMsgs; i < numOfMessages; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -423,7 +426,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         // Publish more messages and verify the readers only sees new messages
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = halfOfMsgs; i < numOfMessages; i++) {
             Message<byte[]> message = reader.readNext();
             assertFalse(oldMessage.contains(message));
@@ -454,7 +457,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         // Publish more messages and verify the readers only sees messages starting from the intended message
         Message<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 5; i < 10; i++) {
             msg = reader.readNext(1, TimeUnit.SECONDS);
 
@@ -554,7 +557,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         final int totalMsg = 10;
 
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         Reader<byte[]> reader = pulsarClient.newReader()
                 .topic("persistent://my-property/my-ns/test-reader-myecdsa-topic1").startMessageId(MessageId.latest)
                 .cryptoKeyReader(new EncKeyReader()).create();
@@ -624,7 +627,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         final int totalMsg = 10;
 
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         String topic = "persistent://my-property/my-ns/test-multi-reader-myecdsa-topic1";
         admin.topics().createPartitionedTopic(topic, 3);
         Reader<byte[]> reader = pulsarClient.newReader()
@@ -664,10 +667,10 @@ public class TopicReaderTest extends ProducerConsumerBase {
         final String rsaPrivateKeyData = "data:application/x-pem-file;base64,LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVBdEtXd2dxZG5UWXJPQ3YrajFNa1RXZlNIMHdDc0haWmNhOXdBVzNxUDR1dWhsQnZuCmIxMEpjRmY1Wmp6UDlCU1hLK3RIbUk4dW9OMzY4dkV2NnloVVJITTR5dVhxekN4enVBd2tRU28zOXJ6WDhQR0MKN3FkakNON0xESjNNbnFpQklyVXNTYUVQMXdyTnNCMWtJK285RVIxZTVPL3VFUEFvdFA5MzNoSFEwSjJoTUVlawpIcUw3c0JsSjk4aDZObXNpY0VhVWthcmRrMFRPWHJsa2pDK2NNZDhaYkdTY1BxSTlNMzhibW4zT0x4RlRuMXZ0Cmhwdm5YTHZDbUc0TSs2eHRZdEQrbnBjVlBadzFpMVI5MGZNczdwcFpuUmJ2OEhjL0RGZE9LVlFJZ2FtNkNEZG4KTktnVzdjN0lCTXJQMEFFbTM3SFR1MExTT2pQMk9IWGx2dmxRR1FJREFRQUJBb0lCQUFhSkZBaTJDN3UzY05yZgpBc3RZOXZWRExvTEl2SEZabGtCa3RqS1pEWW1WSXNSYitoU0NWaXdWVXJXTEw2N1I2K0l2NGVnNERlVE9BeDAwCjhwbmNYS2daVHcyd0liMS9RalIvWS9SamxhQzhsa2RtUldsaTd1ZE1RQ1pWc3lodVNqVzZQajd2cjhZRTR3b2oKRmhOaWp4RUdjZjl3V3JtTUpyemRuVFdRaVhCeW8rZVR2VVE5QlBnUEdyUmpzTVptVGtMeUFWSmZmMkRmeE81YgpJV0ZEWURKY3lZQU1DSU1RdTd2eXMvSTUwb3U2aWxiMUNPNlFNNlo3S3BQZU9vVkZQd3R6Ymg4Y2Y5eE04VU5TCmo2Si9KbWRXaGdJMzRHUzNOQTY4eFRRNlBWN3pqbmhDYytpY2NtM0pLeXpHWHdhQXBBWitFb2NlLzlqNFdLbXUKNUI0emlSMENnWUVBM2wvOU9IYmwxem15VityUnhXT0lqL2kyclR2SHp3Qm5iblBKeXVlbUw1Vk1GZHBHb2RRMwp2d0h2eVFtY0VDUlZSeG1Yb2pRNFF1UFBIczNxcDZ3RUVGUENXeENoTFNUeGxVYzg1U09GSFdVMk85OWpWN3pJCjcrSk9wREsvTXN0c3g5bkhnWGR1SkYrZ2xURnRBM0xIOE9xeWx6dTJhRlBzcHJ3S3VaZjk0UThDZ1lFQXovWngKYWtFRytQRU10UDVZUzI4Y1g1WGZqc0lYL1YyNkZzNi9zSDE2UWpVSUVkZEU1VDRmQ3Vva3hDalNpd1VjV2htbApwSEVKNVM1eHAzVllSZklTVzNqUlczcXN0SUgxdHBaaXBCNitTMHpUdUptTEpiQTNJaVdFZzJydE10N1gxdUp2CkEvYllPcWUwaE9QVHVYdVpkdFZaMG5NVEtrN0dHOE82VmtCSTdGY0NnWUVBa0RmQ21zY0pnczdKYWhsQldIbVgKekg5cHdlbStTUEtqSWMvNE5CNk4rZGdpa3gyUHAwNWhwUC9WaWhVd1lJdWZ2cy9MTm9nVllOUXJ0SGVwVW5yTgoyK1RtYkhiWmdOU3YxTGR4dDgyVWZCN3kwRnV0S3U2bGhtWEh5TmVjaG8zRmk4c2loMFYwYWlTV21ZdUhmckFICkdhaXNrRVpLbzFpaVp2UVhKSXg5TzJNQ2dZQVRCZjByOWhUWU10eXh0YzZIMy9zZGQwMUM5dGhROGdEeTB5alAKMFRxYzBkTVNKcm9EcW1JV2tvS1lldzkvYmhGQTRMVzVUQ25Xa0NBUGJIbU50RzRmZGZiWXdta0gvaGRuQTJ5MApqS2RscGZwOEdYZVVGQUdIR3gxN0ZBM3NxRnZnS1VoMGVXRWdSSFVMN3ZkUU1WRkJnSlM5M283elFNOTRmTGdQCjZjT0I4d0tCZ0ZjR1Y0R2pJMld3OWNpbGxhQzU1NE12b1NqZjhCLyswNGtYekRPaDhpWUlJek85RVVpbDFqaksKSnZ4cDRobkx6VEtXYnV4M01FV3F1ckxrWWFzNkdwS0JqdytpTk9DYXI2WWRxV0dWcU0zUlV4N1BUVWFad2tLeApVZFA2M0lmWTdpWkNJVC9RYnlIUXZJVWUyTWFpVm5IK3VseGRrSzZZNWU3Z3hjYmNrSUg0Ci0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg==";
         final int numMsg = 10;
 
-        Map<String, String> privateKeyFileMap = new HashMap<>();
+        Map<String, String> privateKeyFileMap = Maps.newHashMap();
         privateKeyFileMap.put("client-ecdsa.pem", ecdsaPrivateKeyFile);
         privateKeyFileMap.put("client-rsa.pem", rsaPrivateKeyFile);
-        Map<String, String> privateKeyDataMap = new HashMap<>();
+        Map<String, String> privateKeyDataMap = Maps.newHashMap();
         privateKeyDataMap.put("client-ecdsa.pem", ecdsaPrivateKeyData);
         privateKeyDataMap.put("client-rsa.pem", rsaPrivateKeyData);
 
@@ -756,7 +759,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         MessageImpl<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         int index = 0;
 
         // read message till end.
@@ -812,7 +815,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         TopicMessageImpl<byte[]> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         int index = 0;
 
         // read message till end.
@@ -996,7 +999,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         // cause broker to drop topic. Will be loaded next time we access it
-        pulsar.getBrokerService().getTopics().keySet().forEach(topicName -> {
+        pulsar.getBrokerService().getTopics().keys().forEach(topicName -> {
             try {
                 pulsar.getBrokerService().getTopicReference(topicName).get().close(false).get();
             } catch (Exception e) {
@@ -1077,7 +1080,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
     }
 
     @Test(timeOut = 20000)
-    public void testHasMessageAvailable() throws Exception {
+    public void testHasMessageAvailableWithBatch() throws Exception {
         final String topicName = "persistent://my-property/my-ns/testHasMessageAvailableWithBatch";
         final int numOfMessage = 10;
 
@@ -1089,19 +1092,13 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         //For batch-messages with single message, the type of client messageId should be the same as that of broker
         MessageIdImpl messageId = (MessageIdImpl) producer.send("msg".getBytes());
-        assertFalse(messageId instanceof BatchMessageIdImpl);
+        assertTrue(messageId instanceof MessageIdImpl);
         ReaderImpl<byte[]> reader = (ReaderImpl<byte[]>)pulsarClient.newReader().topic(topicName)
                 .startMessageId(messageId).startMessageIdInclusive().create();
         MessageIdImpl lastMsgId = (MessageIdImpl) reader.getConsumer().getLastMessageId();
-        assertFalse(lastMsgId instanceof BatchMessageIdImpl);
+        assertTrue(messageId instanceof BatchMessageIdImpl);
         assertEquals(lastMsgId.getLedgerId(), messageId.getLedgerId());
         assertEquals(lastMsgId.getEntryId(), messageId.getEntryId());
-        List<TopicMessageId> lastMsgIds = reader.getConsumer().getLastMessageIds();
-        assertEquals(lastMsgIds.size(), 1);
-        assertEquals(lastMsgIds.get(0).getOwnerTopic(), topicName);
-        MessageIdAdv lastMsgIdAdv = (MessageIdAdv) lastMsgIds.get(0);
-        assertEquals(lastMsgIdAdv.getLedgerId(), messageId.getLedgerId());
-        assertEquals(lastMsgIdAdv.getEntryId(), messageId.getEntryId());
         reader.close();
 
         CountDownLatch latch = new CountDownLatch(numOfMessage);
@@ -1217,7 +1214,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         assertTrue(reader.hasMessageAvailable());
 
         // Read all messages the first time
-        Set<String> messageSetA = new HashSet<>();
+        Set<String> messageSetA = Sets.newHashSet();
         for (int i = 0; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1231,7 +1228,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         reader.seek(RelativeTimeUtil.parseRelativeTimeInSeconds("-1m"));
 
         // Read all messages a second time after seek()
-        Set<String> messageSetB = new HashSet<>();
+        Set<String> messageSetB = Sets.newHashSet();
         for (int i = 0; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1265,7 +1262,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         assertTrue(reader.hasMessageAvailable());
 
         // Read all messages the first time
-        Set<String> messageSetA = new HashSet<>();
+        Set<String> messageSetA = Sets.newHashSet();
         for (int i = 0; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1278,7 +1275,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         reader.seek(RelativeTimeUtil.parseRelativeTimeInSeconds("-1m"));
 
         // Read all messages a second time after seek()
-        Set<String> messageSetB = new HashSet<>();
+        Set<String> messageSetB = Sets.newHashSet();
         for (int i = 0; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1314,7 +1311,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
 
         // Read all messages the first time
         MessageId midmessageToSeek = null;
-        Set<String> messageSetA = new HashSet<>();
+        Set<String> messageSetA = Sets.newHashSet();
         for (int i = 0; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1332,7 +1329,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         reader.seek(midmessageToSeek);
 
         // Read all halved messages after seek()
-        Set<String> messageSetB = new HashSet<>();
+        Set<String> messageSetB = Sets.newHashSet();
         for (int i = halfMessages + 1; i < numOfMessage; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());
@@ -1353,30 +1350,36 @@ public class TopicReaderTest extends ProducerConsumerBase {
     public void testReaderIsAbleToSeekWithTimeOnMiddleOfTopic() throws Exception {
         final String topicName = "persistent://my-property/my-ns/ReaderIsAbleToSeekWithTimeOnMiddleOfTopic";
         final int numOfMessage = 10;
-        final int halfMessages = numOfMessage / 2;
 
         Producer<byte[]> producer = pulsarClient.newProducer()
                 .topic(topicName).create();
 
-        long l = System.currentTimeMillis();
+        long halfTime = 0;
         for (int i = 0; i < numOfMessage; i++) {
+            if (i == 6) {
+                halfTime = System.currentTimeMillis();
+            }
             producer.send(String.format("msg num %d", i).getBytes());
-            Thread.sleep(100);
         }
 
         Reader<byte[]> reader = pulsarClient.newReader().topic(topicName)
-                .startMessageId(MessageId.earliest).create();
+                .startMessageId(MessageId.latest).create();
 
-        int plusTime = (halfMessages + 1) * 100;
-        reader.seek(l + plusTime);
+        reader.seek(halfTime);
 
-        Set<String> messageSet = new HashSet<>();
-        for (int i = halfMessages + 1; i < numOfMessage; i++) {
-            Message<byte[]> message = reader.readNext();
+        Set<String> messageSet = Sets.newHashSet();
+        int i = 6;
+        while (true) {
+            Message<byte[]> message = reader.readNext(1, TimeUnit.SECONDS);
+            // make sure we are headed to the end of the topic
+            if (message == null) {
+                break;
+            }
             String receivedMessage = new String(message.getData());
-            String expectedMessage = String.format("msg num %d", i);
+            String expectedMessage = String.format("msg num %d", i++);
             testMessageOrderAndDuplicates(messageSet, receivedMessage, expectedMessage);
         }
+        assertEquals(messageSet.size(), 4);
 
         reader.close();
         producer.close();
@@ -1386,26 +1389,30 @@ public class TopicReaderTest extends ProducerConsumerBase {
     public void testMultiReaderIsAbleToSeekWithTimeOnMiddleOfTopic() throws Exception {
         final String topicName = "persistent://my-property/my-ns/testMultiReaderIsAbleToSeekWithTimeOnMiddleOfTopic" + System.currentTimeMillis();
         final int numOfMessage = 10;
-        final int halfMessages = numOfMessage / 2;
         admin.topics().createPartitionedTopic(topicName, 3);
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         long halfTime = 0;
         for (int i = 0; i < numOfMessage; i++) {
-            if (i == numOfMessage / 2) {
+            if (i == 6) {
                 halfTime = System.currentTimeMillis();
             }
             producer.send(String.format("msg num %d", i).getBytes());
         }
         Assert.assertTrue(halfTime != 0);
-        Reader<byte[]> reader = pulsarClient.newReader().topic(topicName).startMessageId(MessageId.earliest).create();
+        Reader<byte[]> reader = pulsarClient.newReader().topic(topicName).startMessageId(MessageId.latest).create();
 
         reader.seek(halfTime);
-        Set<String> messageSet = new HashSet<>();
-        for (int i = halfMessages + 1; i < numOfMessage; i++) {
-            Message<byte[]> message = reader.readNext(10, TimeUnit.SECONDS);
+        Set<String> messageSet = Sets.newHashSet();
+        while (true) {
+            Message<byte[]> message = reader.readNext(1, TimeUnit.SECONDS);
+            // make sure we are headed to the end of the topic
+            if (message == null) {
+                break;
+            }
             String receivedMessage = new String(message.getData());
             Assert.assertTrue(messageSet.add(receivedMessage), "Received duplicate message " + receivedMessage);
         }
+        assertEquals(messageSet.size(), 4);
         reader.close();
         producer.close();
     }
@@ -1455,7 +1462,7 @@ public class TopicReaderTest extends ProducerConsumerBase {
         }
 
         Reader<byte[]> reader = readerBuilder.create();
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = firstMessage; i < numOfMessages; i++) {
             Message<byte[]> message = reader.readNext();
             String receivedMessage = new String(message.getData());

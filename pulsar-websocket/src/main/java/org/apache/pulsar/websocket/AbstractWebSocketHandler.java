@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,8 +19,6 @@
 package org.apache.pulsar.websocket;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Splitter;
 import java.io.Closeable;
@@ -54,8 +52,6 @@ import org.apache.pulsar.client.api.PulsarClientException.TopicTerminatedExcepti
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.Codec;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
-import org.apache.pulsar.websocket.data.ConsumerCommand;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.WebSocketAdapter;
 import org.eclipse.jetty.websocket.servlet.ServletUpgradeResponse;
@@ -67,25 +63,23 @@ public abstract class AbstractWebSocketHandler extends WebSocketAdapter implemen
     protected final WebSocketService service;
     protected final HttpServletRequest request;
 
-    protected TopicName topic;
+    protected final TopicName topic;
     protected final Map<String, String> queryParams;
-    private static final String PULSAR_AUTH_METHOD_NAME = "X-Pulsar-Auth-Method-Name";
-    protected final ObjectReader consumerCommandReader =
-            ObjectMapperFactory.getMapper().reader().forType(ConsumerCommand.class);
 
     private ScheduledFuture<?> pingFuture;
+    private static final String PULSAR_AUTH_METHOD_NAME = "X-Pulsar-Auth-Method-Name";
 
     public AbstractWebSocketHandler(WebSocketService service,
                                     HttpServletRequest request,
                                     ServletUpgradeResponse response) {
         this.service = service;
         this.request = new WebSocketHttpServletRequestWrapper(request);
+        this.topic = extractTopicName(request);
 
         this.queryParams = new TreeMap<>();
         request.getParameterMap().forEach((key, values) -> {
             queryParams.put(key, values[0]);
         });
-        extractTopicName(request);
     }
 
     protected boolean checkAuth(ServletUpgradeResponse response) {
@@ -244,7 +238,7 @@ public abstract class AbstractWebSocketHandler extends WebSocketAdapter implemen
         return null;
     }
 
-    protected void extractTopicName(HttpServletRequest request) {
+    private TopicName extractTopicName(HttpServletRequest request) {
         String uri = request.getRequestURI();
         List<String> parts = Splitter.on("/").splitToList(uri);
 
@@ -287,7 +281,7 @@ public abstract class AbstractWebSocketHandler extends WebSocketAdapter implemen
         }
         final String name = Codec.decode(topicName.toString());
 
-        topic = TopicName.get(domain, namespace, name);
+        return TopicName.get(domain, namespace, name);
     }
 
     @VisibleForTesting
@@ -295,13 +289,8 @@ public abstract class AbstractWebSocketHandler extends WebSocketAdapter implemen
         return pingFuture;
     }
 
-
     protected abstract Boolean isAuthorized(String authRole,
                                             AuthenticationDataSource authenticationData) throws Exception;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractWebSocketHandler.class);
-
-    protected ObjectWriter objectWriter() {
-        return ObjectMapperFactory.getMapper().writer();
-    }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -132,15 +132,6 @@ public interface TransactionMetadataStore {
      * @return TransactionMetadataStoreStats {@link TransactionMetadataStoreStats}
      */
     TransactionMetadataStoreStats getMetadataStoreStats();
-
-    /**
-     * Get the transaction metadata store OpenTelemetry attributes.
-     *
-     * @return TransactionMetadataStoreAttributes {@link TransactionMetadataStoreAttributes}
-     */
-    default TransactionMetadataStoreAttributes getAttributes() {
-        return new TransactionMetadataStoreAttributes(this);
-    }
 
     /**
      * Get the transactions witch timeout is bigger than given timeout.

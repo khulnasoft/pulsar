@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -98,11 +98,9 @@ public class CommandsTest {
     public void testPeekStickyKey() {
         String message = "msg-1";
         String partitionedKey = "key1";
-        String producerName = "testProducer";
-        int sequenceId = 1;
         MessageMetadata messageMetadata2 = new MessageMetadata()
-                .setSequenceId(sequenceId)
-                .setProducerName(producerName)
+                .setSequenceId(1)
+                .setProducerName("testProducer")
                 .setPartitionKey(partitionedKey)
                 .setPartitionKeyB64Encoded(false)
                 .setPublishTime(System.currentTimeMillis());
@@ -115,28 +113,16 @@ public class CommandsTest {
         // test 64 encoded
         String partitionedKey2 = Base64.getEncoder().encodeToString("key2".getBytes(UTF_8));
         MessageMetadata messageMetadata = new MessageMetadata()
-                .setSequenceId(sequenceId)
-                .setProducerName(producerName)
+                .setSequenceId(1)
+                .setProducerName("testProducer")
                 .setPartitionKey(partitionedKey2)
                 .setPartitionKeyB64Encoded(true)
                 .setPublishTime(System.currentTimeMillis());
         ByteBuf byteBuf2 = serializeMetadataAndPayload(Commands.ChecksumType.Crc32c, messageMetadata,
                 Unpooled.copiedBuffer(message.getBytes(UTF_8)));
         byte[] bytes2 = Commands.peekStickyKey(byteBuf2, "topic-2", "sub-2");
-        String key2 = Base64.getEncoder().encodeToString(bytes2);
+        String key2 = Base64.getEncoder().encodeToString(bytes2);;
         Assert.assertEquals(partitionedKey2, key2);
         ReferenceCountUtil.safeRelease(byteBuf2);
-        // test fallback key if no key given in message metadata
-        String fallbackPartitionedKey = producerName + "-" + sequenceId;
-        MessageMetadata messageMetadataWithoutKey = new MessageMetadata()
-                .setSequenceId(sequenceId)
-                .setProducerName(producerName)
-                .setPublishTime(System.currentTimeMillis());
-        ByteBuf byteBuf3 = serializeMetadataAndPayload(Commands.ChecksumType.Crc32c, messageMetadataWithoutKey,
-                Unpooled.copiedBuffer(message.getBytes(UTF_8)));
-        byte[] bytes3 = Commands.peekStickyKey(byteBuf3, "topic-3", "sub-3");
-        String key3 = new String(bytes3);
-        Assert.assertEquals(fallbackPartitionedKey, key3);
-        ReferenceCountUtil.safeRelease(byteBuf3);
     }
 }

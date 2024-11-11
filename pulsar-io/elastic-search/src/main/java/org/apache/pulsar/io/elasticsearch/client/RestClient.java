@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -38,7 +38,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpHeaders;
@@ -69,7 +68,6 @@ import org.apache.pulsar.io.elasticsearch.ElasticSearchConnectionException;
 import org.apache.pulsar.io.elasticsearch.ElasticSearchSslConfig;
 import org.elasticsearch.client.RestClientBuilder;
 
-@Slf4j
 public abstract class RestClient implements Closeable {
 
     protected final ElasticSearchConfig config;
@@ -141,14 +139,9 @@ public abstract class RestClient implements Closeable {
                 PoolingNHttpClientConnectionManager connManager;
                 if (config.getSsl().isEnabled()) {
                     ElasticSearchSslConfig sslConfig = config.getSsl();
-                    final boolean hostnameVerification = config.getSsl().isHostnameVerification();
-                    HostnameVerifier hostnameVerifier;
-                    if (hostnameVerification) {
-                        hostnameVerifier = SSLConnectionSocketFactory.getDefaultHostnameVerifier();
-                    } else {
-                        hostnameVerifier = NoopHostnameVerifier.INSTANCE;
-                        log.warn("Hostname verification is disabled.");
-                    }
+                    HostnameVerifier hostnameVerifier = config.getSsl().isHostnameVerification()
+                            ? SSLConnectionSocketFactory.getDefaultHostnameVerifier()
+                            : new NoopHostnameVerifier();
                     String[] cipherSuites = null;
                     if (!Strings.isNullOrEmpty(sslConfig.getCipherSuites())) {
                         cipherSuites = sslConfig.getCipherSuites().split(",");
@@ -193,7 +186,6 @@ public abstract class RestClient implements Closeable {
             }
             if (sslConfig.isDisableCertificateValidation()) {
                 sslContextBuilder.loadTrustMaterial(null, TrustAllStrategy.INSTANCE);
-                log.warn("Certificate validation is disabled, the identity of the target server will not be verified.");
             }
             if (!Strings.isNullOrEmpty(sslConfig.getKeystorePath())
                     && !Strings.isNullOrEmpty(sslConfig.getKeystorePassword())) {

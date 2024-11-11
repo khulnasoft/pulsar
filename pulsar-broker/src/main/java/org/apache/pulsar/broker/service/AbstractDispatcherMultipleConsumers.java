@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,11 +20,14 @@ package org.apache.pulsar.broker.service;
 
 import com.carrotsearch.hppc.ObjectHashSet;
 import com.carrotsearch.hppc.ObjectSet;
+import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.service.persistent.PersistentStickyKeyDispatcherMultipleConsumers;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -41,6 +44,8 @@ public abstract class AbstractDispatcherMultipleConsumers extends AbstractBaseDi
             AtomicIntegerFieldUpdater
                     .newUpdater(AbstractDispatcherMultipleConsumers.class, "isClosed");
     private volatile int isClosed = FALSE;
+
+    private Random random = new Random(42);
 
     protected AbstractDispatcherMultipleConsumers(Subscription subscription, ServiceConfiguration serviceConfig) {
         super(subscription, serviceConfig);
@@ -152,7 +157,7 @@ public abstract class AbstractDispatcherMultipleConsumers extends AbstractBaseDi
             return null;
         }
 
-        return consumerList.get(ThreadLocalRandom.current().nextInt(consumerList.size()));
+        return consumerList.get(random.nextInt(consumerList.size()));
     }
 
 
@@ -186,14 +191,10 @@ public abstract class AbstractDispatcherMultipleConsumers extends AbstractBaseDi
      * @return
      */
     private int getNextConsumerFromSameOrLowerLevel(int currentRoundRobinIndex) {
-        Consumer currentRRConsumer = consumerList.get(currentRoundRobinIndex);
-        if (isConsumerAvailable(currentRRConsumer)) {
-            return currentRoundRobinIndex;
-        }
 
-        // scan the consumerList, if consumer in currentRoundRobinIndex is unavailable
-        int targetPriority = currentRRConsumer.getPriorityLevel();
-        int scanIndex = currentRoundRobinIndex + 1;
+        int targetPriority = consumerList.get(currentRoundRobinIndex).getPriorityLevel();
+        // use to do round-robin if can't find consumer from currentRR to last-consumer in list
+        int scanIndex = currentRoundRobinIndex;
         int endPriorityLevelIndex = currentRoundRobinIndex;
         do {
             Consumer scanConsumer = scanIndex < consumerList.size() ? consumerList.get(scanIndex)
@@ -235,5 +236,8 @@ public abstract class AbstractDispatcherMultipleConsumers extends AbstractBaseDi
         }
         return -1;
     }
+
+    private static final Logger log = LoggerFactory.getLogger(PersistentStickyKeyDispatcherMultipleConsumers.class);
+
 
 }

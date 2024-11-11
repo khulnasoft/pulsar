@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,10 +29,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Position;
+
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.collections4.map.LinkedMap;
+import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -50,14 +53,16 @@ import org.apache.pulsar.client.api.transaction.TransactionCoordinatorClientExce
 import org.apache.pulsar.client.api.transaction.TxnID;
 import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.client.impl.transaction.TransactionImpl;
-import org.apache.pulsar.common.naming.SystemTopicNames;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
+
+import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.transaction.coordinator.TransactionCoordinatorID;
 import org.apache.pulsar.transaction.coordinator.TransactionMetadataStore;
 import org.apache.pulsar.transaction.coordinator.TransactionMetadataStoreState;
 import org.apache.pulsar.transaction.coordinator.impl.MLTransactionMetadataStore;
 import org.awaitility.Awaitility;
+import org.powermock.reflect.Whitebox;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -104,7 +109,6 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
                 .withTransactionTimeout(5, TimeUnit.SECONDS)
                 .build().get();
 
-        @Cleanup
         Producer<byte[]> producer = pulsarClient
                 .newProducer()
                 .topic(TOPIC)
@@ -112,7 +116,6 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
                 .enableBatching(false)
                 .create();
 
-        @Cleanup
         Consumer<byte[]> consumer = pulsarClient.newConsumer()
                 .topic(TOPIC)
                 .subscriptionName("test")
@@ -146,8 +149,7 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
 
         PartitionedTopicMetadata partitionedTopicMetadata =
                 ((PulsarClientImpl) pulsarClient).getLookup()
-                        .getPartitionedTopicMetadata(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN, false)
-                        .get();
+                        .getPartitionedTopicMetadata(TopicName.TRANSACTION_COORDINATOR_ASSIGN).get();
         Transaction lowWaterMarkTxn = null;
         for (int i = 0; i < partitionedTopicMetadata.partitions; i++) {
             lowWaterMarkTxn = pulsarClient.newTransaction()
@@ -210,23 +212,27 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
         Message<byte[]> message = consumer.receive(2, TimeUnit.SECONDS);
         assertEquals(new String(message.getData()), TEST1);
         consumer.acknowledgeAsync(message.getMessageId(), txn).get();
-        LinkedMap<TxnID, HashMap<Position, Position>> individualAckOfTransaction = null;
+        LinkedMap<TxnID, HashMap<PositionImpl, PositionImpl>> individualAckOfTransaction = null;
 
         for (int i = 0; i < getPulsarServiceList().size(); i++) {
-            final var topics = getPulsarServiceList().get(i).getBrokerService().getTopics();
+            Field field = BrokerService.class.getDeclaredField("topics");
+            field.setAccessible(true);
+            ConcurrentOpenHashMap<String, CompletableFuture<Optional<Topic>>> topics =
+                    (ConcurrentOpenHashMap<String, CompletableFuture<Optional<Topic>>>) field
+                            .get(getPulsarServiceList().get(i).getBrokerService());
             CompletableFuture<Optional<Topic>> completableFuture = topics.get(TOPIC);
             if (completableFuture != null) {
                 Optional<Topic> topic = completableFuture.get();
                 if (topic.isPresent()) {
                     PersistentSubscription persistentSubscription = (PersistentSubscription) topic.get()
                             .getSubscription(subName);
-                    var field = PersistentSubscription.class.getDeclaredField("pendingAckHandle");
+                    field = PersistentSubscription.class.getDeclaredField("pendingAckHandle");
                     field.setAccessible(true);
                     PendingAckHandleImpl pendingAckHandle = (PendingAckHandleImpl) field.get(persistentSubscription);
                     field = PendingAckHandleImpl.class.getDeclaredField("individualAckOfTransaction");
                     field.setAccessible(true);
                     individualAckOfTransaction =
-                            (LinkedMap<TxnID, HashMap<Position, Position>>) field.get(pendingAckHandle);
+                            (LinkedMap<TxnID, HashMap<PositionImpl, PositionImpl>>) field.get(pendingAckHandle);
                 }
             }
         }
@@ -248,8 +254,7 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
 
         PartitionedTopicMetadata partitionedTopicMetadata =
                 ((PulsarClientImpl) pulsarClient).getLookup()
-                        .getPartitionedTopicMetadata(SystemTopicNames.TRANSACTION_COORDINATOR_ASSIGN, false)
-                        .get();
+                        .getPartitionedTopicMetadata(TopicName.TRANSACTION_COORDINATOR_ASSIGN).get();
         Transaction lowWaterMarkTxn = null;
         for (int i = 0; i < partitionedTopicMetadata.partitions; i++) {
             lowWaterMarkTxn = pulsarClient.newTransaction()
@@ -320,11 +325,9 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
         field.setAccessible(true);
         field.set(txn1, TransactionImpl.State.OPEN);
 
-        PersistentTopic t = (PersistentTopic) getPulsarServiceList().get(0)
-                .getBrokerService()
-                .getTopic(TopicName.get(TOPIC).toString(), false)
-                .get()
-                .orElseThrow();
+        AtomicLong pendingWriteOps = Whitebox.getInternalState(getPulsarServiceList().get(0)
+                .getBrokerService().getTopic(TopicName.get(TOPIC).toString(),
+                        false).get().get(), "pendingWriteOps");
         try {
             producer.newMessage(txn1).send();
             fail();
@@ -332,7 +335,7 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
             // no-op
         }
 
-        assertEquals(t.getPendingWriteOps().get(), 0);
+        assertEquals(pendingWriteOps.get(), 0);
     }
 
     @Test
@@ -446,8 +449,8 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
 
         Field field2 = PendingAckHandleImpl.class.getDeclaredField("individualAckOfTransaction");
         field2.setAccessible(true);
-        LinkedMap<TxnID, HashMap<Position, Position>> individualAckOfTransaction =
-                (LinkedMap<TxnID, HashMap<Position, Position>>) field2.get(pendingAckHandle);
+        LinkedMap<TxnID, HashMap<PositionImpl, PositionImpl>> individualAckOfTransaction =
+                (LinkedMap<TxnID, HashMap<PositionImpl, PositionImpl>>) field2.get(pendingAckHandle);
         return individualAckOfTransaction.containsKey(txnID);
     }
 
@@ -461,8 +464,8 @@ public class TransactionLowWaterMarkTest extends TransactionTestBase {
                 (TopicTransactionBuffer) persistentTopic.getTransactionBuffer();
         Field field3 = TopicTransactionBuffer.class.getDeclaredField("ongoingTxns");
         field3.setAccessible(true);
-        LinkedMap<TxnID, Position> ongoingTxns =
-                (LinkedMap<TxnID, Position>) field3.get(topicTransactionBuffer);
+        LinkedMap<TxnID, PositionImpl> ongoingTxns =
+                (LinkedMap<TxnID, PositionImpl>) field3.get(topicTransactionBuffer);
         return ongoingTxns.containsKey(txnID);
 
     }

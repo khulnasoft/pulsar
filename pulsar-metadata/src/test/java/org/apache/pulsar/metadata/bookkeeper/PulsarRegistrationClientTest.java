@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,11 +19,12 @@
 package org.apache.pulsar.metadata.bookkeeper;
 
 import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.mock;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -48,6 +49,7 @@ import org.apache.bookkeeper.net.BookieId;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.bookkeeper.versioning.Versioned;
+import org.apache.bookkeeper.zookeeper.ZooKeeperWatcherBase;
 import org.apache.pulsar.metadata.BaseMetadataStoreTest;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
@@ -72,8 +74,8 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
     @Test(dataProvider = "impl")
     public void testGetWritableBookies(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
-        MetadataStoreExtended store = MetadataStoreExtended.create(urlSupplier.get(),
-                MetadataStoreConfig.builder().fsyncEnable(false).build());
+        MetadataStoreExtended store =
+                MetadataStoreExtended.create(urlSupplier.get(), MetadataStoreConfig.builder().build());
 
         String ledgersRoot = "/test/ledgers-" + UUID.randomUUID();
 
@@ -92,15 +94,15 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
 
         Versioned<Set<BookieId>> result = result(rc.getWritableBookies());
 
-        assertEquals(result.getValue().size(), addresses.size());
+        assertEquals(addresses.size(), result.getValue().size());
     }
 
 
     @Test(dataProvider = "impl")
     public void testGetReadonlyBookies(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
-        MetadataStoreExtended store = MetadataStoreExtended.create(urlSupplier.get(),
-                MetadataStoreConfig.builder().fsyncEnable(false).build());
+        MetadataStoreExtended store =
+                MetadataStoreExtended.create(urlSupplier.get(), MetadataStoreConfig.builder().build());
 
         String ledgersRoot = "/test/ledgers-" + UUID.randomUUID();
 
@@ -119,14 +121,14 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
 
         Versioned<Set<BookieId>> result = result(rc.getReadOnlyBookies());
 
-        assertEquals(result.getValue().size(), addresses.size());
+        assertEquals(addresses.size(), result.getValue().size());
     }
 
     @Test(dataProvider = "impl")
     public void testGetBookieServiceInfo(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
-        MetadataStoreExtended store = MetadataStoreExtended.create(urlSupplier.get(),
-                MetadataStoreConfig.builder().fsyncEnable(false).build());
+        MetadataStoreExtended store =
+                MetadataStoreExtended.create(urlSupplier.get(), MetadataStoreConfig.builder().build());
 
         String ledgersRoot = "/test/ledgers-" + UUID.randomUUID();
 
@@ -300,7 +302,7 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
         }
 
         Versioned<Set<BookieId>> result = result(rc.getAllBookies());
-        assertEquals(result.getValue().size(), addresses.size());
+        assertEquals(addresses.size(), result.getValue().size());
     }
 
     @Test(dataProvider = "impl")
@@ -318,7 +320,7 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
 
         @Cleanup
         MetadataStoreExtended store = MetadataStoreExtended.create(urlSupplier.get(),
-                MetadataStoreConfig.builder().fsyncEnable(false).build());
+                MetadataStoreConfig.builder().build());
 
         String ledgersRoot = "/test/ledgers-" + UUID.randomUUID();
 
@@ -353,7 +355,7 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
 
         Awaitility.await().untilAsserted(() -> {
             assertFalse(updates.isEmpty());
-            assertEquals(bookies.size(), BOOKIES);
+            assertEquals(BOOKIES, bookies.size());
         });
     }
 
@@ -363,8 +365,7 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
         final String zksConnectionString = zks.getConnectionString();
         final String ledgersRoot = "/test/ledgers-" + UUID.randomUUID();
         // prepare registration manager
-        @Cleanup
-        ZooKeeper zk = new ZooKeeper(zksConnectionString, 5000, null);
+        ZooKeeper zk = new ZooKeeper(zksConnectionString, 5000, new ZooKeeperWatcherBase(1000));
         final ServerConfiguration serverConfiguration = new ServerConfiguration();
         serverConfiguration.setZkLedgersRootPath(ledgersRoot);
         final FaultInjectableZKRegistrationManager rm = new FaultInjectableZKRegistrationManager(serverConfiguration, zk);
@@ -372,7 +373,7 @@ public class PulsarRegistrationClientTest extends BaseMetadataStoreTest {
         // prepare registration client
         @Cleanup
         MetadataStoreExtended store = MetadataStoreExtended.create(zksConnectionString,
-                MetadataStoreConfig.builder().fsyncEnable(false).build());
+                MetadataStoreConfig.builder().build());
         @Cleanup
         RegistrationClient rc1 = new PulsarRegistrationClient(store, ledgersRoot);
         @Cleanup

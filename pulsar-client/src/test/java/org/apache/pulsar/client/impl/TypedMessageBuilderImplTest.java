@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,8 +27,6 @@ import org.apache.pulsar.common.schema.KeyValueEncodingType;
 import org.mockito.Mock;
 import org.testng.annotations.Test;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 
@@ -47,7 +45,7 @@ public class TypedMessageBuilderImplTest {
     protected ProducerBase producerBase;
 
     @Test
-    public void testDefaultValue() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    public void testDefaultValue() {
         producerBase = mock(ProducerBase.class);
 
         AvroSchema<SchemaTestUtils.Foo> fooSchema = AvroSchema.of(SchemaDefinition.<SchemaTestUtils.Foo>builder().withPojo(SchemaTestUtils.Foo.class).build());
@@ -65,9 +63,6 @@ public class TypedMessageBuilderImplTest {
 
         // Check kv.encoding.type default, not set value
         TypedMessageBuilderImpl<KeyValue>  typedMessageBuilder = (TypedMessageBuilderImpl)typedMessageBuilderImpl.value(keyValue);
-        Method method = TypedMessageBuilderImpl.class.getDeclaredMethod("beforeSend");
-        method.setAccessible(true);
-        method.invoke(typedMessageBuilder);
         ByteBuffer content = typedMessageBuilder.getContent();
         byte[] contentByte = new byte[content.remaining()];
         content.get(contentByte);
@@ -78,7 +73,7 @@ public class TypedMessageBuilderImplTest {
     }
 
     @Test
-    public void testInlineValue() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    public void testInlineValue() {
         producerBase = mock(ProducerBase.class);
 
         AvroSchema<SchemaTestUtils.Foo> fooSchema = AvroSchema.of(SchemaDefinition.<SchemaTestUtils.Foo>builder().withPojo(SchemaTestUtils.Foo.class).build());
@@ -96,9 +91,6 @@ public class TypedMessageBuilderImplTest {
 
         // Check kv.encoding.type INLINE
         TypedMessageBuilderImpl<KeyValue> typedMessageBuilder = (TypedMessageBuilderImpl)typedMessageBuilderImpl.value(keyValue);
-        Method method = TypedMessageBuilderImpl.class.getDeclaredMethod("beforeSend");
-        method.setAccessible(true);
-        method.invoke(typedMessageBuilder);
         ByteBuffer content = typedMessageBuilder.getContent();
         byte[] contentByte = new byte[content.remaining()];
         content.get(contentByte);
@@ -109,7 +101,7 @@ public class TypedMessageBuilderImplTest {
     }
 
     @Test
-    public void testSeparatedValue() throws Exception {
+    public void testSeparatedValue() {
         producerBase = mock(ProducerBase.class);
 
         AvroSchema<SchemaTestUtils.Foo> fooSchema = AvroSchema.of(SchemaDefinition.<SchemaTestUtils.Foo>builder().withPojo(SchemaTestUtils.Foo.class).build());
@@ -127,9 +119,6 @@ public class TypedMessageBuilderImplTest {
 
         // Check kv.encoding.type SEPARATED
         TypedMessageBuilderImpl typedMessageBuilder = (TypedMessageBuilderImpl)typedMessageBuilderImpl.value(keyValue);
-        Method method = TypedMessageBuilderImpl.class.getDeclaredMethod("beforeSend");
-        method.setAccessible(true);
-        method.invoke(typedMessageBuilder);
         ByteBuffer content = typedMessageBuilder.getContent();
         byte[] contentByte = new byte[content.remaining()];
         content.get(contentByte);

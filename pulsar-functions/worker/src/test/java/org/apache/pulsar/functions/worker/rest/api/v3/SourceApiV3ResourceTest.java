@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,6 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import com.google.common.collect.Lists;
@@ -34,7 +33,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Method;
 import java.util.LinkedList;
 import java.util.List;
 import javax.ws.rs.core.Response;
@@ -58,7 +56,6 @@ import org.apache.pulsar.functions.proto.Function.SourceSpec;
 import org.apache.pulsar.functions.source.TopicSchema;
 import org.apache.pulsar.functions.utils.SourceConfigUtils;
 import org.apache.pulsar.functions.utils.io.ConnectorUtils;
-import org.apache.pulsar.functions.worker.WorkerConfig;
 import org.apache.pulsar.functions.worker.WorkerUtils;
 import org.apache.pulsar.functions.worker.rest.api.SourcesImpl;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
@@ -80,13 +77,6 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
     @Override
     protected void doSetup() {
         this.resource = spy(new SourcesImpl(() -> mockedWorkerService));
-    }
-
-    @Override
-    protected void customizeWorkerConfig(WorkerConfig workerConfig, Method method) {
-        if (method.getName().endsWith("UploadFailure") || method.getName().contains("BKPackage")) {
-            workerConfig.setFunctionsWorkerEnablePackageManagement(false);
-        }
     }
 
     @Override
@@ -269,7 +259,7 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
         }
     }
 
-    @Test
+    @Test(expectedExceptions = RestException.class, expectedExceptionsMessageRegExp = "Topic name cannot be null")
     public void testRegisterSourceNoOutputTopic() throws IOException {
         try (InputStream inputStream = new FileInputStream(getPulsarIOTwitterNar())) {
             testRegisterSourceMissingArguments(
@@ -285,8 +275,8 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
                     null
             );
         } catch (RestException re) {
-            // https://github.com/apache/pulsar/pull/18769 releases the restriction of topic name
-            assertNotEquals(re.getResponse().getStatusInfo(), Response.Status.BAD_REQUEST);
+            assertEquals(re.getResponse().getStatusInfo(), Response.Status.BAD_REQUEST);
+            throw re;
         }
     }
 
@@ -597,8 +587,7 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
     @Test(expectedExceptions = RestException.class, expectedExceptionsMessageRegExp = "Update contains no change")
     public void testUpdateSourceMissingPackage() throws Exception {
         try {
-            mockStatic(WorkerUtils.class, ctx -> {
-            });
+            mockStatic(WorkerUtils.class, ctx -> {});
 
             testUpdateSourceMissingArguments(
                     tenant,
@@ -620,8 +609,7 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
     @Test(expectedExceptions = RestException.class, expectedExceptionsMessageRegExp = "Update contains no change")
     public void testUpdateSourceMissingTopicName() throws Exception {
         try {
-            mockStatic(WorkerUtils.class, ctx -> {
-            });
+            mockStatic(WorkerUtils.class, ctx -> {});
 
             testUpdateSourceMissingArguments(
                     tenant,
@@ -945,10 +933,8 @@ public class SourceApiV3ResourceTest extends AbstractFunctionsResourceTest {
         SourceConfig sourceConfig = createDefaultSourceConfig();
 
         when(mockedManager.containsFunction(eq(tenant), eq(namespace), eq(source))).thenReturn(true);
-        mockStatic(ConnectorUtils.class, c -> {
-        });
-        mockStatic(ClassLoaderUtils.class, c -> {
-        });
+        mockStatic(ConnectorUtils.class, c -> {});
+        mockStatic(ClassLoaderUtils.class, c -> {});
 
         this.mockedFunctionMetaData =
                 FunctionMetaData.newBuilder().setFunctionDetails(createDefaultFunctionDetails()).build();

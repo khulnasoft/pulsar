@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,6 +25,7 @@ import java.io.File;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
@@ -33,13 +34,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.admin.Source;
 import org.apache.pulsar.client.admin.Sources;
-import org.apache.pulsar.client.admin.internal.http.AsyncHttpRequestExecutor;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.common.functions.UpdateOptions;
 import org.apache.pulsar.common.functions.UpdateOptionsImpl;
 import org.apache.pulsar.common.io.ConnectorDefinition;
 import org.apache.pulsar.common.io.SourceConfig;
 import org.apache.pulsar.common.policies.data.SourceStatus;
+import org.apache.pulsar.common.util.ObjectMapperFactory;
+import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.RequestBuilder;
 import org.asynchttpclient.request.body.multipart.FilePart;
 import org.asynchttpclient.request.body.multipart.StringPart;
@@ -50,13 +52,12 @@ import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 public class SourcesImpl extends ComponentResource implements Sources, Source {
 
     private final WebTarget source;
-    private final AsyncHttpRequestExecutor asyncHttpRequestExecutor;
+    private final AsyncHttpClient asyncHttpClient;
 
-    public SourcesImpl(WebTarget web, Authentication auth, AsyncHttpRequestExecutor asyncHttpRequestExecutor,
-                       long requestTimeoutMs) {
-        super(auth, requestTimeoutMs);
+    public SourcesImpl(WebTarget web, Authentication auth, AsyncHttpClient asyncHttpClient, long readTimeoutMs) {
+        super(auth, readTimeoutMs);
         this.source = web.path("/admin/v3/source");
-        this.asyncHttpRequestExecutor = asyncHttpRequestExecutor;
+        this.asyncHttpClient = asyncHttpClient;
     }
 
     @Override
@@ -67,7 +68,24 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
     @Override
     public CompletableFuture<List<String>> listSourcesAsync(String tenant, String namespace) {
         WebTarget path = source.path(tenant).path(namespace);
-        return asyncGetRequest(path, new GenericType<List<String>>() {});
+        final CompletableFuture<List<String>> future = new CompletableFuture<>();
+        asyncGetRequest(path,
+                new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        if (response.getStatus() != Response.Status.OK.getStatusCode()) {
+                            future.completeExceptionally(getApiException(response));
+                        } else {
+                            future.complete(response.readEntity(new GenericType<List<String>>() {}));
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override
@@ -78,7 +96,24 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
     @Override
     public CompletableFuture<SourceConfig> getSourceAsync(String tenant, String namespace, String sourceName) {
         WebTarget path = source.path(tenant).path(namespace).path(sourceName);
-        return asyncGetRequest(path, SourceConfig.class);
+        final CompletableFuture<SourceConfig> future = new CompletableFuture<>();
+        asyncGetRequest(path,
+                new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        if (response.getStatus() != Response.Status.OK.getStatusCode()) {
+                            future.completeExceptionally(getApiException(response));
+                        } else {
+                            future.complete(response.readEntity(SourceConfig.class));
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override
@@ -90,7 +125,24 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
     @Override
     public CompletableFuture<SourceStatus> getSourceStatusAsync(String tenant, String namespace, String sourceName) {
         WebTarget path = source.path(tenant).path(namespace).path(sourceName).path("status");
-        return asyncGetRequest(path, SourceStatus.class);
+        final CompletableFuture<SourceStatus> future = new CompletableFuture<>();
+        asyncGetRequest(path,
+                new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        if (response.getStatus() != Response.Status.OK.getStatusCode()) {
+                            future.completeExceptionally(getApiException(response));
+                        } else {
+                            future.complete(response.readEntity(SourceStatus.class));
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override
@@ -103,7 +155,26 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
     public CompletableFuture<SourceStatus.SourceInstanceStatus.SourceInstanceStatusData> getSourceStatusAsync(
             String tenant, String namespace, String sourceName, int id) {
         WebTarget path = source.path(tenant).path(namespace).path(sourceName).path(Integer.toString(id)).path("status");
-        return asyncGetRequest(path, SourceStatus.SourceInstanceStatus.SourceInstanceStatusData.class);
+        final CompletableFuture<SourceStatus.SourceInstanceStatus.SourceInstanceStatusData> future =
+                new CompletableFuture<>();
+        asyncGetRequest(path,
+                new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        if (response.getStatus() != Response.Status.OK.getStatusCode()) {
+                            future.completeExceptionally(getApiException(response));
+                        } else {
+                            future.complete(response.readEntity(
+                                    SourceStatus.SourceInstanceStatus.SourceInstanceStatusData.class));
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override
@@ -118,14 +189,14 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
             RequestBuilder builder =
                     post(source.path(sourceConfig.getTenant())
                             .path(sourceConfig.getNamespace()).path(sourceConfig.getName()).getUri().toASCIIString())
-                    .addBodyPart(new StringPart("sourceConfig", objectWriter()
+                    .addBodyPart(new StringPart("sourceConfig", ObjectMapperFactory.getThreadLocal()
                             .writeValueAsString(sourceConfig), MediaType.APPLICATION_JSON));
 
             if (fileName != null && !fileName.startsWith("builtin://")) {
                 // If the function code is built in, we don't need to submit here
                 builder.addBodyPart(new FilePart("data", new File(fileName), MediaType.APPLICATION_OCTET_STREAM));
             }
-            asyncHttpRequestExecutor.executeRequest(addAuthHeaders(source, builder).build())
+            asyncHttpClient.executeRequest(addAuthHeaders(source, builder).build())
                     .toCompletableFuture()
                     .thenAccept(response -> {
                         if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
@@ -189,13 +260,13 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
             RequestBuilder builder =
                     put(source.path(sourceConfig.getTenant()).path(sourceConfig.getNamespace())
                             .path(sourceConfig.getName()).getUri().toASCIIString())
-                    .addBodyPart(new StringPart("sourceConfig", objectWriter()
+                    .addBodyPart(new StringPart("sourceConfig", ObjectMapperFactory.getThreadLocal()
                             .writeValueAsString(sourceConfig), MediaType.APPLICATION_JSON));
 
             UpdateOptionsImpl options = (UpdateOptionsImpl) updateOptions;
             if (options != null) {
                 builder.addBodyPart(new StringPart("updateOptions",
-                        objectWriter().writeValueAsString(options),
+                        ObjectMapperFactory.getThreadLocal().writeValueAsString(options),
                         MediaType.APPLICATION_JSON));
             }
 
@@ -203,7 +274,7 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
                 // If the function code is built in, we don't need to submit here
                 builder.addBodyPart(new FilePart("data", new File(fileName), MediaType.APPLICATION_OCTET_STREAM));
             }
-            asyncHttpRequestExecutor.executeRequest(addAuthHeaders(source, builder).build())
+            asyncHttpClient.executeRequest(addAuthHeaders(source, builder).build())
                     .toCompletableFuture()
                     .thenAccept(response -> {
                         if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
@@ -256,7 +327,7 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
             if (options != null) {
                 mp.bodyPart(new FormDataBodyPart(
                         "updateOptions",
-                        objectWriter().writeValueAsString(options),
+                        ObjectMapperFactory.getThreadLocal().writeValueAsString(options),
                         MediaType.APPLICATION_JSON_TYPE));
             }
             WebTarget path = source.path(sourceConfig.getTenant()).path(sourceConfig.getNamespace())
@@ -361,7 +432,24 @@ public class SourcesImpl extends ComponentResource implements Sources, Source {
     public CompletableFuture<List<ConnectorDefinition>> getBuiltInSourcesAsync() {
         WebTarget path = source.path("builtinsources");
         final CompletableFuture<List<ConnectorDefinition>> future = new CompletableFuture<>();
-        return asyncGetRequest(path, new GenericType<List<ConnectorDefinition>>() {});
+        asyncGetRequest(path,
+                new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        if (response.getStatus() != Response.Status.OK.getStatusCode()) {
+                            future.completeExceptionally(getApiException(response));
+                        } else {
+                            future.complete(response.readEntity(
+                                    new GenericType<List<ConnectorDefinition>>() {}));
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        future.completeExceptionally(getApiException(throwable.getCause()));
+                    }
+                });
+        return future;
     }
 
     @Override

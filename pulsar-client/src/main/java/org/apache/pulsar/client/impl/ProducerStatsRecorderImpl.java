@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,7 @@
  */
 package org.apache.pulsar.client.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.yahoo.sketches.quantiles.DoublesSketch;
@@ -29,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import org.apache.pulsar.client.api.ProducerStats;
 import org.apache.pulsar.client.impl.conf.ProducerConfigurationData;
-import org.apache.pulsar.common.util.ObjectMapperFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,8 +98,9 @@ public class ProducerStatsRecorderImpl implements ProducerStatsRecorder {
     }
 
     private void init(ProducerConfigurationData conf) {
-        ObjectWriter w = ObjectMapperFactory.getMapperWithIncludeAlways().writer()
-                .without(SerializationFeature.FAIL_ON_EMPTY_BEANS);
+        ObjectMapper m = new ObjectMapper();
+        m.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        ObjectWriter w = m.writer();
 
         try {
             log.info("Starting Pulsar producer perf with config: {}", w.writeValueAsString(conf));
@@ -175,14 +176,14 @@ public class ProducerStatsRecorderImpl implements ProducerStatsRecorder {
                 }
             }
 
-            log.info("[{}] [{}] --- Publish throughput: {} msg/s --- {} Mbit/s --- "
+            log.info("[{}] [{}] Pending messages: {} --- Publish throughput: {} msg/s --- {} Mbit/s --- "
                             + "Latency: med: {} ms - 95pct: {} ms - 99pct: {} ms - 99.9pct: {} ms - max: {} ms --- "
                             + "BatchSize: med: {} - 95pct: {} - 99pct: {} - 99.9pct: {} - max: {} --- "
                             + "MsgSize: med: {} bytes - 95pct: {} bytes - 99pct: {} bytes - 99.9pct: {} bytes "
                             + "- max: {} bytes --- "
                             + "Ack received rate: {} ack/s --- Failed messages: {} --- Pending messages: {}",
                     producer.getTopic(),
-                    producer.getProducerName(),
+                    producer.getProducerName(), producer.getPendingQueueSize(),
                     THROUGHPUT_FORMAT.format(sendMsgsRate),
                     THROUGHPUT_FORMAT.format(sendBytesRate / 1024 / 1024 * 8),
                     DEC.format(latencyPctValues[0]), DEC.format(latencyPctValues[2]),

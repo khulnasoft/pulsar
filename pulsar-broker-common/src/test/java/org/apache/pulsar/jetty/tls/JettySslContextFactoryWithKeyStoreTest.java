@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,7 +30,6 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.TrustManagerFactory;
-import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.config.RegistryBuilder;
@@ -43,9 +42,6 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.config.Configurator;
-import org.apache.pulsar.common.util.DefaultPulsarSslFactory;
-import org.apache.pulsar.common.util.PulsarSslConfiguration;
-import org.apache.pulsar.common.util.PulsarSslFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
@@ -53,38 +49,17 @@ import org.testng.annotations.Test;
 
 @Slf4j
 public class JettySslContextFactoryWithKeyStoreTest {
-    final static String brokerKeyStorePath =
-            Resources.getResource("certificate-authority/jks/broker.keystore.jks").getPath();
-    final static String brokerTrustStorePath =
-            Resources.getResource("certificate-authority/jks/broker.truststore.jks").getPath();
-    final static String clientKeyStorePath =
-            Resources.getResource("certificate-authority/jks/client.keystore.jks").getPath();
-    final static String clientTrustStorePath =
-            Resources.getResource("certificate-authority/jks/client.truststore.jks").getPath();
-    final static String keyStoreType = "JKS";
-    final static String keyStorePassword = "111111";
 
     @Test
     public void testJettyTlsServerTls() throws Exception {
-        @Cleanup("stop")
         Server server = new Server();
         List<ServerConnector> connectors = new ArrayList<>();
-        PulsarSslConfiguration sslConfiguration = PulsarSslConfiguration.builder()
-                .tlsKeyStoreType(keyStoreType)
-                .tlsKeyStorePath(brokerKeyStorePath)
-                .tlsKeyStorePassword(keyStorePassword)
-                .tlsTrustStoreType(keyStoreType)
-                .tlsTrustStorePath(clientTrustStorePath)
-                .tlsTrustStorePassword(keyStorePassword)
-                .requireTrustedClientCertOnConnect(true)
-                .tlsEnabledWithKeystore(true)
-                .isHttps(true)
-                .build();
-        PulsarSslFactory sslFactory = new DefaultPulsarSslFactory();
-        sslFactory.initialize(sslConfiguration);
-        sslFactory.createInternalSslContext();
-        SslContextFactory.Server factory = JettySslContextFactory.createSslContextFactory(null,
-                sslFactory, true, null, null);
+        SslContextFactory.Server factory = JettySslContextFactory.createServerSslContextWithKeystore(null,
+                "JKS", Resources.getResource("ssl/jetty_server_key.jks").getPath(),
+                "jetty_server_pwd", false, "JKS",
+                Resources.getResource("ssl/jetty_server_trust.jks").getPath(),
+                "jetty_server_pwd", true, null,
+                null, 600);
         factory.setHostnameVerifier((s, sslSession) -> true);
         ServerConnector connector = new ServerConnector(server, factory);
         connector.setPort(0);
@@ -98,44 +73,28 @@ public class JettySslContextFactoryWithKeyStoreTest {
                 new SSLConnectionSocketFactory(getClientSslContext(), new NoopHostnameVerifier()));
         PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(registryBuilder.build());
         httpClientBuilder.setConnectionManager(cm);
-        @Cleanup
         CloseableHttpClient httpClient = httpClientBuilder.build();
         HttpGet httpGet = new HttpGet("https://localhost:" + connector.getLocalPort());
         httpClient.execute(httpGet);
+        httpClient.close();
+        server.stop();
     }
 
     @Test(expectedExceptions = SSLHandshakeException.class)
     public void testJettyTlsServerInvalidTlsProtocol() throws Exception {
         Configurator.setRootLevel(Level.INFO);
-        @Cleanup("stop")
         Server server = new Server();
         List<ServerConnector> connectors = new ArrayList<>();
-        PulsarSslConfiguration sslConfiguration = PulsarSslConfiguration.builder()
-                .tlsKeyStoreType(keyStoreType)
-                .tlsKeyStorePath(brokerKeyStorePath)
-                .tlsKeyStorePassword(keyStorePassword)
-                .tlsTrustStoreType(keyStoreType)
-                .tlsTrustStorePath(clientTrustStorePath)
-                .tlsTrustStorePassword(keyStorePassword)
-                .tlsProtocols(new HashSet<String>() {
-                    {
-                        this.add("TLSv1.3");
-                    }
-                })
-                .requireTrustedClientCertOnConnect(true)
-                .tlsEnabledWithKeystore(true)
-                .isHttps(true)
-                .build();
-        PulsarSslFactory sslFactory = new DefaultPulsarSslFactory();
-        sslFactory.initialize(sslConfiguration);
-        sslFactory.createInternalSslContext();
-        SslContextFactory.Server factory = JettySslContextFactory.createSslContextFactory(null,
-                sslFactory, true, null,
+        SslContextFactory.Server factory = JettySslContextFactory.createServerSslContextWithKeystore(null,
+                "JKS", Resources.getResource("ssl/jetty_server_key.jks").getPath(),
+                "jetty_server_pwd", false, "JKS",
+                Resources.getResource("ssl/jetty_server_trust.jks").getPath(),
+                "jetty_server_pwd", true, null,
                 new HashSet<String>() {
                     {
                         this.add("TLSv1.3");
                     }
-                });
+                }, 600);
         factory.setHostnameVerifier((s, sslSession) -> true);
         ServerConnector connector = new ServerConnector(server, factory);
         connector.setPort(0);
@@ -149,44 +108,22 @@ public class JettySslContextFactoryWithKeyStoreTest {
                 new String[]{"TLSv1.2"}, null, new NoopHostnameVerifier()));
         PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(registryBuilder.build());
         httpClientBuilder.setConnectionManager(cm);
-        @Cleanup
         CloseableHttpClient httpClient = httpClientBuilder.build();
         HttpGet httpGet = new HttpGet("https://localhost:" + connector.getLocalPort());
         httpClient.execute(httpGet);
+        httpClient.close();
+        server.stop();
     }
 
     @Test(expectedExceptions = SSLHandshakeException.class)
     public void testJettyTlsServerInvalidCipher() throws Exception {
-        @Cleanup("stop")
         Server server = new Server();
         List<ServerConnector> connectors = new ArrayList<>();
-        PulsarSslConfiguration sslConfiguration = PulsarSslConfiguration.builder()
-                .tlsKeyStoreType(keyStoreType)
-                .tlsKeyStorePath(brokerKeyStorePath)
-                .tlsKeyStorePassword(keyStorePassword)
-                .tlsTrustStoreType(keyStoreType)
-                .tlsTrustStorePath(clientTrustStorePath)
-                .tlsTrustStorePassword(keyStorePassword)
-                .tlsCiphers(new HashSet<String>() {
-                    {
-                        this.add("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
-                    }
-                })
-                .tlsProtocols(new HashSet<String>() {
-                    {
-                        this.add("TLSv1.3");
-                    }
-                })
-                .requireTrustedClientCertOnConnect(true)
-                .tlsEnabledWithKeystore(true)
-                .isHttps(true)
-                .build();
-        PulsarSslFactory sslFactory = new DefaultPulsarSslFactory();
-        sslFactory.initialize(sslConfiguration);
-        sslFactory.createInternalSslContext();
-        SslContextFactory.Server factory = JettySslContextFactory.createSslContextFactory(null,
-                sslFactory, true,
-                new HashSet<String>() {
+        SslContextFactory.Server factory = JettySslContextFactory.createServerSslContextWithKeystore(null,
+                "JKS", Resources.getResource("ssl/jetty_server_key.jks").getPath(),
+                "jetty_server_pwd", false, "JKS",
+                Resources.getResource("ssl/jetty_server_trust.jks").getPath(),
+                "jetty_server_pwd", true, new HashSet<String>() {
                     {
                         this.add("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
                     }
@@ -194,9 +131,8 @@ public class JettySslContextFactoryWithKeyStoreTest {
                 new HashSet<String>() {
                     {
                         this.add("TLSv1.2");
-                        this.add("TLSv1.3");
                     }
-                });
+                }, 600);
         factory.setHostnameVerifier((s, sslSession) -> true);
         ServerConnector connector = new ServerConnector(server, factory);
         connector.setPort(0);
@@ -211,14 +147,18 @@ public class JettySslContextFactoryWithKeyStoreTest {
                 new NoopHostnameVerifier()));
         PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(registryBuilder.build());
         httpClientBuilder.setConnectionManager(cm);
-        @Cleanup
         CloseableHttpClient httpClient = httpClientBuilder.build();
         HttpGet httpGet = new HttpGet("https://localhost:" + connector.getLocalPort());
         httpClient.execute(httpGet);
+        httpClient.close();
+        server.stop();
     }
 
     private static SSLContext getClientSslContext() {
-        return getSslContext(clientKeyStorePath, keyStorePassword, brokerTrustStorePath, keyStorePassword);
+        return getSslContext(Resources.getResource("ssl/jetty_client_key.jks").getPath(),
+                "jetty_client_pwd",
+                Resources.getResource("ssl/jetty_client_trust.jks").getPath(),
+                "jetty_client_pwd");
     }
 
     private static SSLContext getSslContext(String keyStorePath, String keyStorePassword,
@@ -249,4 +189,5 @@ public class JettySslContextFactoryWithKeyStoreTest {
             return null;
         }
     }
+
 }

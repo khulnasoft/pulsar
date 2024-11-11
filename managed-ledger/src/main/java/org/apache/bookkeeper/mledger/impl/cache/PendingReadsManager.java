@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -292,7 +292,8 @@ public class PendingReadsManager {
                         }
                     }
                 }
-            }, rangeEntryCache.getManagedLedger().getExecutor()).exceptionally(exception -> {
+            }, rangeEntryCache.getManagedLedger().getExecutor()
+                    .chooseThread(rangeEntryCache.getManagedLedger().getName())).exceptionally(exception -> {
                 synchronized (PendingRead.this) {
                     for (ReadEntriesCallbackWithContext callback : callbacks) {
                         ManagedLedgerException mlException = createManagedLedgerException(exception);

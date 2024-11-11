@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,11 +22,11 @@ import com.google.gson.Gson;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
-import org.apache.pulsar.client.api.CompressionType;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.ProducerConfig;
 import org.apache.pulsar.common.functions.Resources;
 import org.apache.pulsar.common.io.BatchSourceConfig;
+import org.apache.pulsar.common.io.ConnectorDefinition;
 import org.apache.pulsar.common.io.SourceConfig;
 import org.apache.pulsar.config.validation.ConfigValidationAnnotations;
 import org.apache.pulsar.functions.proto.Function;
@@ -34,6 +34,7 @@ import org.apache.pulsar.io.core.BatchSourceTriggerer;
 import org.apache.pulsar.io.core.SourceContext;
 import org.testng.annotations.Test;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
@@ -48,6 +49,8 @@ import static org.testng.Assert.expectThrows;
  * Unit test of {@link SourceConfigUtilsTest}.
  */
 public class SourceConfigUtilsTest {
+
+    private ConnectorDefinition defn;
 
     @Data
     @Accessors(chain = true)
@@ -76,7 +79,7 @@ public class SourceConfigUtilsTest {
     }
 
     @Test
-    public void testConvertBackFidelity() {
+    public void testConvertBackFidelity() throws IOException  {
         SourceConfig sourceConfig = createSourceConfig();
         Function.FunctionDetails functionDetails = SourceConfigUtils.convert(sourceConfig, new SourceConfigUtils.ExtractedSourceDetails(null, null));
         SourceConfig convertedConfig = SourceConfigUtils.convertFromDetails(functionDetails);
@@ -90,7 +93,7 @@ public class SourceConfigUtilsTest {
     }
 
     @Test
-    public void testConvertBackFidelityWithBatch() {
+    public void testConvertBackFidelityWithBatch() throws IOException  {
         SourceConfig sourceConfig = createSourceConfigWithBatch();
         Function.FunctionDetails functionDetails = SourceConfigUtils.convert(sourceConfig, new SourceConfigUtils.ExtractedSourceDetails(null, null));
         SourceConfig convertedConfig = SourceConfigUtils.convertFromDetails(functionDetails);
@@ -212,7 +215,7 @@ public class SourceConfigUtilsTest {
         SourceConfig mergedConfig = SourceConfigUtils.validateUpdate(sourceConfig, newSourceConfig);
         assertEquals(
                 mergedConfig.getParallelism(),
-                Integer.valueOf(101)
+                new Integer(101)
         );
         mergedConfig.setParallelism(sourceConfig.getParallelism());
         assertEquals(
@@ -226,8 +229,8 @@ public class SourceConfigUtilsTest {
         SourceConfig sourceConfig = createSourceConfig();
         Resources resources = new Resources();
         resources.setCpu(0.3);
-        resources.setRam(1232L);
-        resources.setDisk(123456L);
+        resources.setRam(1232l);
+        resources.setDisk(123456l);
         SourceConfig newSourceConfig = createUpdatedSourceConfig("resources", resources);
         SourceConfig mergedConfig = SourceConfigUtils.validateUpdate(sourceConfig, newSourceConfig);
         assertEquals(
@@ -286,47 +289,7 @@ public class SourceConfigUtilsTest {
     }
 
     @Test
-    public void testMergeDifferentProducerConfig() {
-        SourceConfig sourceConfig = createSourceConfig();
-
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setMaxPendingMessages(100);
-        producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
-        producerConfig.setUseThreadLocalProducers(true);
-        producerConfig.setBatchBuilder("DEFAULT");
-        producerConfig.setCompressionType(CompressionType.ZLIB);
-        SourceConfig newSourceConfig = createUpdatedSourceConfig("producerConfig", producerConfig);
-
-        SourceConfig mergedConfig = SourceConfigUtils.validateUpdate(sourceConfig, newSourceConfig);
-        assertEquals(
-                mergedConfig.getProducerConfig(),
-                producerConfig
-        );
-        mergedConfig.setProducerConfig(sourceConfig.getProducerConfig());
-        assertEquals(
-                new Gson().toJson(sourceConfig),
-                new Gson().toJson(mergedConfig)
-        );
-    }
-
-    @Test
-    public void testMergeDifferentLogTopic() {
-        SourceConfig sourceConfig = createSourceConfig();
-        SourceConfig newSourceConfig = createUpdatedSourceConfig("logTopic", "Different");
-        SourceConfig mergedConfig = SourceConfigUtils.validateUpdate(sourceConfig, newSourceConfig);
-        assertEquals(
-                mergedConfig.getLogTopic(),
-                "Different"
-        );
-        mergedConfig.setLogTopic(sourceConfig.getLogTopic());
-        assertEquals(
-                new Gson().toJson(sourceConfig),
-                new Gson().toJson(mergedConfig)
-        );
-    }
-
-    @Test
-    public void testValidateConfig() {
+    public void testValidateConfig() throws IOException {
         SourceConfig sourceConfig = createSourceConfig();
 
         // Good config
@@ -411,11 +374,9 @@ public class SourceConfigUtilsTest {
         producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
         producerConfig.setUseThreadLocalProducers(true);
         producerConfig.setBatchBuilder("DEFAULT");
-        producerConfig.setCompressionType(CompressionType.ZSTD);
         sourceConfig.setProducerConfig(producerConfig);
 
         sourceConfig.setConfigs(configs);
-        sourceConfig.setLogTopic("log-topic");
         return sourceConfig;
     }
 

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,7 +29,7 @@ import org.testng.annotations.Test;
 
 public class LeaderElectionImplTest extends BaseMetadataStoreTest {
 
-    @Test(dataProvider = "impl", timeOut = 20000)
+    @Test(dataProvider = "impl", timeOut = 10000)
     public void validateDeadLock(String provider, Supplier<String> urlSupplier)
             throws Exception {
         if (provider.equals("Memory") || provider.equals("RocksDB")) {

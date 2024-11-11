@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -44,12 +44,6 @@ public interface AsyncCallbacks {
         void openReadOnlyCursorComplete(ReadOnlyCursor cursor, Object ctx);
 
         void openReadOnlyCursorFailed(ManagedLedgerException exception, Object ctx);
-    }
-
-    interface OpenReadOnlyManagedLedgerCallback {
-        void openReadOnlyManagedLedgerComplete(ReadOnlyManagedLedger managedLedger, Object ctx);
-
-        void openReadOnlyManagedLedgerFailed(ManagedLedgerException exception, Object ctx);
     }
 
     interface DeleteLedgerCallback {

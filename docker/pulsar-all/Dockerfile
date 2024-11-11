@@ -17,7 +17,6 @@
 # under the License.
 #
 
-ARG PULSAR_IMAGE
 FROM busybox as pulsar-all
 
 ARG PULSAR_IO_DIR
@@ -27,6 +26,13 @@ ADD ${PULSAR_IO_DIR} /connectors
 ADD ${PULSAR_OFFLOADER_TARBALL} /
 RUN mv /apache-pulsar-offloaders-*/offloaders /offloaders
 
-FROM $PULSAR_IMAGE
-COPY --from=pulsar-all /connectors /pulsar/connectors
+FROM apachepulsar/pulsar:latest
+COPY --from=pulsar-all /connectors/pulsar-io-elastic-search-*.nar /pulsar/connectors/
+COPY --from=pulsar-all /connectors/pulsar-io-kinesis-*.nar /pulsar/connectors/
+# Exclude kafka-connect connector
+COPY --from=pulsar-all "/connectors/pulsar-io-kafka-[^connect-adaptor*]*.nar" /pulsar/connectors/
+COPY --from=pulsar-all /connectors/pulsar-io-jdbc-*.nar /pulsar/connectors/
+COPY --from=pulsar-all /connectors/pulsar-io-debezium-*.nar /pulsar/connectors/
+COPY --from=pulsar-all /connectors/pulsar-io-data-generator-*.nar /pulsar/connectors/
+COPY --from=pulsar-all /connectors/pulsar-io-http-*.nar /pulsar/connectors/
 COPY --from=pulsar-all /offloaders /pulsar/offloaders

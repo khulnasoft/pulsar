@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -74,12 +74,33 @@ import org.apache.pulsar.functions.worker.FunctionMetaDataManager;
 import org.apache.pulsar.functions.worker.FunctionRuntimeInfo;
 import org.apache.pulsar.functions.worker.FunctionRuntimeManager;
 import org.apache.pulsar.functions.worker.PulsarWorkerService;
-import org.apache.pulsar.functions.worker.WorkerConfig;
 import org.apache.pulsar.functions.worker.WorkerUtils;
+import org.apache.pulsar.functions.worker.WorkerConfig;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+
+import java.io.InputStream;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertTrue;
 
 public class FunctionsImplTest {
 
@@ -100,7 +121,7 @@ public class FunctionsImplTest {
     private Function.SubscriptionType subscriptionType = Function.SubscriptionType.FAILOVER;
     private static final Map<String, String> topicsToSerDeClassName = new HashMap<>();
     static {
-        topicsToSerDeClassName.put("test_src", TopicSchema.DEFAULT_SERDE);
+        topicsToSerDeClassName.put("persistent://sample/standalone/ns1/test_src", TopicSchema.DEFAULT_SERDE);
     }
     private static final int parallelism = 1;
     private static final String workerId = "worker-0";
@@ -136,8 +157,7 @@ public class FunctionsImplTest {
         this.mockedPulsarAdmin = mock(PulsarAdmin.class);
         this.mockedTenants = mock(Tenants.class);
         this.mockedNamespaces = mock(Namespaces.class);
-        this.mockedFunctionMetadata =
-                Function.FunctionMetaData.newBuilder().setFunctionDetails(createDefaultFunctionDetails()).build();
+        this.mockedFunctionMetadata = Function.FunctionMetaData.newBuilder().setFunctionDetails(createDefaultFunctionDetails()).build();
         namespaceList.add(tenant + "/" + namespace);
 
         this.mockedWorkerService = mock(PulsarWorkerService.class);
@@ -158,7 +178,7 @@ public class FunctionsImplTest {
                         .setWorkerId(workerId)
                         .build());
 
-        Function.FunctionDetails.Builder functionDetailsBuilder = createDefaultFunctionDetails().toBuilder();
+        Function.FunctionDetails.Builder functionDetailsBuilder =  createDefaultFunctionDetails().toBuilder();
         InstanceConfig instanceConfig = new InstanceConfig();
         instanceConfig.setFunctionDetails(functionDetailsBuilder.build());
         instanceConfig.setMaxBufferedTuples(1024);
@@ -171,8 +191,7 @@ public class FunctionsImplTest {
         Runtime runtime = mock(Runtime.class);
         doReturn(metricsDataCompletableFuture).when(runtime).getMetrics(anyInt());
 
-        CompletableFuture<InstanceCommunication.FunctionStatus> functionStatusCompletableFuture =
-                new CompletableFuture<>();
+        CompletableFuture<InstanceCommunication.FunctionStatus> functionStatusCompletableFuture = new CompletableFuture<>();
         functionStatusCompletableFuture.complete(javaInstanceRunnable.getFunctionStatus().build());
 
         RuntimeSpawner runtimeSpawner = mock(RuntimeSpawner.class);
@@ -212,8 +231,8 @@ public class FunctionsImplTest {
     }
 
     @Test
-    public void testMetricsEmpty() throws PulsarClientException {
-        Function.FunctionDetails.Builder functionDetailsBuilder = createDefaultFunctionDetails().toBuilder();
+    public void testMetricsEmpty() throws PulsarClientException  {
+        Function.FunctionDetails.Builder functionDetailsBuilder =  createDefaultFunctionDetails().toBuilder();
         InstanceConfig instanceConfig = new InstanceConfig();
         instanceConfig.setFunctionDetails(functionDetailsBuilder.build());
         instanceConfig.setMaxBufferedTuples(1024);
@@ -268,7 +287,8 @@ public class FunctionsImplTest {
         NamespaceResources namespaceResources = mock(NamespaceResources.class);
         when(pulsarResources.getNamespaceResources()).thenReturn(namespaceResources);
         Policies p = new Policies();
-        p.auth_policies.getNamespaceAuthentication().put("test-function-user", Set.of(AuthAction.functions));
+        p.auth_policies.getNamespaceAuthentication().put("test-function-user",
+                Collections.singleton(AuthAction.functions));
         when(namespaceResources.getPoliciesAsync(NamespaceName.get("test-tenant/test-ns")))
                 .thenReturn(CompletableFuture.completedFuture(Optional.of(p)));
 
@@ -338,7 +358,7 @@ public class FunctionsImplTest {
         assertTrue(functionImpl.isSuperUser(superUser, null));
 
         assertFalse(functionImpl.isSuperUser("normal-user", null));
-        assertFalse(functionImpl.isSuperUser(null, null));
+        assertFalse(functionImpl.isSuperUser( null, null));
 
         // test super roles is null and it's not a pulsar super user
         when(authorizationService.isSuperUser(AuthenticationParameters.builder().clientRole(superUser).build()))

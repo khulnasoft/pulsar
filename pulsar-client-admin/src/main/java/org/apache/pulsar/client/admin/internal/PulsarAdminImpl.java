@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -65,6 +65,7 @@ import org.glassfish.jersey.jackson.JacksonFeature;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 
 /**
  * Pulsar client admin API client.
@@ -73,7 +74,10 @@ import org.slf4j.LoggerFactory;
 public class PulsarAdminImpl implements PulsarAdmin {
     private static final Logger LOG = LoggerFactory.getLogger(PulsarAdmin.class);
 
+    public static final int DEFAULT_CONNECT_TIMEOUT_SECONDS = 60;
+    public static final int DEFAULT_READ_TIMEOUT_SECONDS = 60;
     public static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
+    public static final int DEFAULT_CERT_REFRESH_SECONDS = 300;
 
     private final Clusters clusters;
     private final Brokers brokers;
@@ -103,17 +107,56 @@ public class PulsarAdminImpl implements PulsarAdmin {
     private final Transactions transactions;
     protected final WebTarget root;
     protected final Authentication auth;
+    private final int connectTimeout;
+    private final TimeUnit connectTimeoutUnit;
+    private final int readTimeout;
+    private final TimeUnit readTimeoutUnit;
+    private final int requestTimeout;
+    private final TimeUnit requestTimeoutUnit;
 
-    public PulsarAdminImpl(String serviceUrl, ClientConfigurationData clientConfigData,
-                           ClassLoader clientBuilderClassLoader) throws PulsarClientException {
-        this(serviceUrl, clientConfigData, clientBuilderClassLoader, true);
+    static {
+        /**
+         * The presence of slf4j-jdk14.jar, that is the jul binding for SLF4J, will force SLF4J calls to be delegated to
+         * jul. On the other hand, the presence of jul-to-slf4j.jar, plus the installation of SLF4JBridgeHandler, by
+         * invoking "SLF4JBridgeHandler.install()" will route jul records to SLF4J. Thus, if both jar are present
+         * simultaneously (and SLF4JBridgeHandler is installed), slf4j calls will be delegated to jul and jul records
+         * will be routed to SLF4J, resulting in an endless loop. We avoid this loop by detecting if slf4j-jdk14 is used
+         * in the client class path. If slf4j-jdk14 is found, we don't use the slf4j bridge.
+         */
+        try {
+            Class.forName("org.slf4j.impl.JDK14LoggerFactory");
+        } catch (Exception ex) {
+            // Setup the bridge for java.util.logging to SLF4J
+            SLF4JBridgeHandler.removeHandlersForRootLogger();
+            SLF4JBridgeHandler.install();
+        }
     }
 
-    public PulsarAdminImpl(String serviceUrl, ClientConfigurationData clientConfigData,
-                           ClassLoader clientBuilderClassLoader, boolean acceptGzipCompression)
-            throws PulsarClientException {
+    public PulsarAdminImpl(String serviceUrl, ClientConfigurationData clientConfigData) throws PulsarClientException {
+        this(serviceUrl, clientConfigData, DEFAULT_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS,
+                DEFAULT_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS, DEFAULT_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS,
+                DEFAULT_CERT_REFRESH_SECONDS, TimeUnit.SECONDS, null);
+    }
+
+    public PulsarAdminImpl(String serviceUrl,
+                       ClientConfigurationData clientConfigData,
+                       int connectTimeout,
+                       TimeUnit connectTimeoutUnit,
+                       int readTimeout,
+                       TimeUnit readTimeoutUnit,
+                       int requestTimeout,
+                       TimeUnit requestTimeoutUnit,
+                       int autoCertRefreshTime,
+                       TimeUnit autoCertRefreshTimeUnit,
+                       ClassLoader clientBuilderClassLoader) throws PulsarClientException {
         checkArgument(StringUtils.isNotBlank(serviceUrl), "Service URL needs to be specified");
 
+        this.connectTimeout = connectTimeout;
+        this.connectTimeoutUnit = connectTimeoutUnit;
+        this.readTimeout = readTimeout;
+        this.readTimeoutUnit = readTimeoutUnit;
+        this.requestTimeout = requestTimeout;
+        this.requestTimeoutUnit = requestTimeoutUnit;
         this.clientConfigData = clientConfigData;
         this.auth = clientConfigData != null ? clientConfigData.getAuthentication() : new AuthenticationDisabled();
         LOG.debug("created: serviceUrl={}, authMethodName={}", serviceUrl, auth.getAuthMethodName());
@@ -125,7 +168,7 @@ public class PulsarAdminImpl implements PulsarAdmin {
         }
 
         AsyncHttpConnectorProvider asyncConnectorProvider = new AsyncHttpConnectorProvider(clientConfigData,
-                clientConfigData.getAutoCertRefreshSeconds(), acceptGzipCompression);
+                (int) autoCertRefreshTimeUnit.toSeconds(autoCertRefreshTime));
 
         ClientConfig httpConfig = new ClientConfig();
         httpConfig.property(ClientProperties.FOLLOW_REDIRECTS, true);
@@ -141,8 +184,8 @@ public class PulsarAdminImpl implements PulsarAdmin {
 
         ClientBuilder clientBuilder = ClientBuilder.newBuilder()
                 .withConfig(httpConfig)
-                .connectTimeout(this.clientConfigData.getConnectionTimeoutMs(), TimeUnit.MILLISECONDS)
-                .readTimeout(this.clientConfigData.getReadTimeoutMs(), TimeUnit.MILLISECONDS)
+                .connectTimeout(this.connectTimeout, this.connectTimeoutUnit)
+                .readTimeout(this.readTimeout, this.readTimeoutUnit)
                 .register(JacksonConfigurator.class).register(JacksonFeature.class);
 
         boolean useTls = clientConfigData.getServiceUrl().startsWith("https://");
@@ -154,34 +197,34 @@ public class PulsarAdminImpl implements PulsarAdmin {
         root = client.target(serviceUri.selectOne());
 
         this.asyncHttpConnector = asyncConnectorProvider.getConnector(
-                Math.toIntExact(clientConfigData.getConnectionTimeoutMs()),
-                Math.toIntExact(clientConfigData.getReadTimeoutMs()),
-                Math.toIntExact(clientConfigData.getRequestTimeoutMs()),
-                clientConfigData.getAutoCertRefreshSeconds());
+                Math.toIntExact(connectTimeoutUnit.toMillis(this.connectTimeout)),
+                Math.toIntExact(readTimeoutUnit.toMillis(this.readTimeout)),
+                Math.toIntExact(requestTimeoutUnit.toMillis(this.requestTimeout)),
+                (int) autoCertRefreshTimeUnit.toSeconds(autoCertRefreshTime));
 
-        long requestTimeoutMs = clientConfigData.getRequestTimeoutMs();
-        this.clusters = new ClustersImpl(root, auth, requestTimeoutMs);
-        this.brokers = new BrokersImpl(root, auth, requestTimeoutMs);
-        this.brokerStats = new BrokerStatsImpl(root, auth, requestTimeoutMs);
-        this.proxyStats = new ProxyStatsImpl(root, auth, requestTimeoutMs);
-        this.tenants = new TenantsImpl(root, auth, requestTimeoutMs);
-        this.resourcegroups = new ResourceGroupsImpl(root, auth, requestTimeoutMs);
-        this.properties = new TenantsImpl(root, auth, requestTimeoutMs);
-        this.namespaces = new NamespacesImpl(root, auth, requestTimeoutMs);
-        this.topics = new TopicsImpl(root, auth, requestTimeoutMs);
-        this.localTopicPolicies = new TopicPoliciesImpl(root, auth, requestTimeoutMs, false);
-        this.globalTopicPolicies = new TopicPoliciesImpl(root, auth, requestTimeoutMs, true);
-        this.nonPersistentTopics = new NonPersistentTopicsImpl(root, auth, requestTimeoutMs);
-        this.resourceQuotas = new ResourceQuotasImpl(root, auth, requestTimeoutMs);
-        this.lookups = new LookupImpl(root, auth, useTls, requestTimeoutMs, topics);
-        this.functions = new FunctionsImpl(root, auth, asyncHttpConnector, requestTimeoutMs);
-        this.sources = new SourcesImpl(root, auth, asyncHttpConnector, requestTimeoutMs);
-        this.sinks = new SinksImpl(root, auth, asyncHttpConnector, requestTimeoutMs);
-        this.worker = new WorkerImpl(root, auth, requestTimeoutMs);
-        this.schemas = new SchemasImpl(root, auth, requestTimeoutMs);
-        this.bookies = new BookiesImpl(root, auth, requestTimeoutMs);
-        this.packages = new PackagesImpl(root, auth, asyncHttpConnector, requestTimeoutMs);
-        this.transactions = new TransactionsImpl(root, auth, requestTimeoutMs);
+        long readTimeoutMs = readTimeoutUnit.toMillis(this.readTimeout);
+        this.clusters = new ClustersImpl(root, auth, readTimeoutMs);
+        this.brokers = new BrokersImpl(root, auth, readTimeoutMs);
+        this.brokerStats = new BrokerStatsImpl(root, auth, readTimeoutMs);
+        this.proxyStats = new ProxyStatsImpl(root, auth, readTimeoutMs);
+        this.tenants = new TenantsImpl(root, auth, readTimeoutMs);
+        this.resourcegroups = new ResourceGroupsImpl(root, auth, readTimeoutMs);
+        this.properties = new TenantsImpl(root, auth, readTimeoutMs);
+        this.namespaces = new NamespacesImpl(root, auth, readTimeoutMs);
+        this.topics = new TopicsImpl(root, auth, readTimeoutMs);
+        this.localTopicPolicies = new TopicPoliciesImpl(root, auth, readTimeoutMs, false);
+        this.globalTopicPolicies = new TopicPoliciesImpl(root, auth, readTimeoutMs, true);
+        this.nonPersistentTopics = new NonPersistentTopicsImpl(root, auth, readTimeoutMs);
+        this.resourceQuotas = new ResourceQuotasImpl(root, auth, readTimeoutMs);
+        this.lookups = new LookupImpl(root, auth, useTls, readTimeoutMs, topics);
+        this.functions = new FunctionsImpl(root, auth, asyncHttpConnector.getHttpClient(), readTimeoutMs);
+        this.sources = new SourcesImpl(root, auth, asyncHttpConnector.getHttpClient(), readTimeoutMs);
+        this.sinks = new SinksImpl(root, auth, asyncHttpConnector.getHttpClient(), readTimeoutMs);
+        this.worker = new WorkerImpl(root, auth, readTimeoutMs);
+        this.schemas = new SchemasImpl(root, auth, readTimeoutMs);
+        this.bookies = new BookiesImpl(root, auth, readTimeoutMs);
+        this.packages = new PackagesImpl(root, auth, asyncHttpConnector.getHttpClient(), readTimeoutMs);
+        this.transactions = new TransactionsImpl(root, auth, readTimeoutMs);
 
         if (originalCtxLoader != null) {
             Thread.currentThread().setContextClassLoader(originalCtxLoader);
@@ -201,7 +244,7 @@ public class PulsarAdminImpl implements PulsarAdmin {
      */
     @Deprecated
     public PulsarAdminImpl(URL serviceUrl, Authentication auth) throws PulsarClientException {
-        this(serviceUrl.toString(), getConfigData(auth), null);
+        this(serviceUrl.toString(), getConfigData(auth));
     }
 
     private static ClientConfigurationData getConfigData(Authentication auth) {

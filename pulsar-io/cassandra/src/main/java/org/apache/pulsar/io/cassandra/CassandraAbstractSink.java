@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,14 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.cassandra;
 
-import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.ResultSetFuture;
-import com.datastax.driver.core.Session;
+import com.khulnasoft.driver.core.BoundStatement;
+import com.khulnasoft.driver.core.Cluster;
+import com.khulnasoft.driver.core.PreparedStatement;
+import com.khulnasoft.driver.core.ResultSet;
+import com.khulnasoft.driver.core.ResultSetFuture;
+import com.khulnasoft.driver.core.Session;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -98,7 +99,7 @@ public abstract class CassandraAbstractSink<K, V> implements Sink<byte[]> {
                 b.withPort(Integer.parseInt(hostPort[1]));
             }
         }
-        cluster = b.withoutJMXReporting().build();
+        cluster = b.build();
         session = cluster.connect();
         session.execute("USE " + cassandraSinkConfig.getKeyspace());
     }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,19 +29,8 @@ import org.apache.pulsar.broker.service.Consumer;
 public interface CompactedTopic {
     CompletableFuture<CompactedTopicContext> newCompactedLedger(Position p, long compactedLedgerId);
     CompletableFuture<Void> deleteCompactedLedger(long compactedLedgerId);
-
-    /**
-     * Read entries from compacted topic.
-     *
-     * @deprecated Use {@link CompactedTopicUtils#asyncReadCompactedEntries(TopicCompactionService, ManagedCursor,
-     * int, long, org.apache.bookkeeper.mledger.Position, boolean, ReadEntriesCallback, boolean, Consumer)}
-     * instead.
-     */
-    @Deprecated
     void asyncReadEntriesOrWait(ManagedCursor cursor,
-                                int maxEntries,
-                                long bytesToRead,
-                                Position maxReadPosition,
+                                int numberOfEntriesToRead,
                                 boolean isFirstRead,
                                 ReadEntriesCallback callback,
                                 Consumer consumer);

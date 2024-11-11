@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,43 +18,41 @@
  */
 package org.apache.pulsar;
 
-import org.apache.pulsar.docs.tools.CmdGenerateDocs;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.ScopeType;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import org.apache.pulsar.common.util.CmdGenerateDocs;
 
 /**
  * Pulsar version entry point.
  */
 public class PulsarVersionStarter {
 
-    @Command(name = "version", showDefaultValues = true, scope = ScopeType.INHERIT)
     private static class Arguments {
-        @Option(names = {"-h", "--help"}, usageHelp = true, description = "Show this help message")
+        @Parameter(names = {"-h", "--help"}, description = "Show this help message")
         private boolean help = false;
 
-        @Option(names = {"-g", "--generate-docs"}, description = "Generate docs")
+        @Parameter(names = {"-g", "--generate-docs"}, description = "Generate docs")
         private boolean generateDocs = false;
     }
 
-    public static void main(String[] args) {
+    public static void main(String args[]) {
         Arguments arguments = new Arguments();
-        CommandLine commander = new CommandLine(arguments);
+        JCommander jcommander = new JCommander();
         try {
-            commander.parseArgs(args);
+            jcommander.addObject(arguments);
+            jcommander.parse(args);
             if (arguments.help) {
-                commander.usage(commander.getOut());
+                jcommander.usage();
                 return;
             }
             if (arguments.generateDocs) {
                 CmdGenerateDocs cmd = new CmdGenerateDocs("pulsar");
-                cmd.addCommand("version", commander);
+                cmd.addCommand("version", arguments);
                 cmd.run(null);
                 return;
             }
         } catch (Exception e) {
-            commander.getErr().println(e);
+            jcommander.usage();
             return;
         }
         System.out.println("Current version of pulsar is: " + PulsarVersion.getVersion());

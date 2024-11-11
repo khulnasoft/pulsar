@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,7 +19,6 @@
 package org.apache.pulsar.client.impl.schema.reader;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
 import java.io.IOException;
 import java.io.InputStream;
 import org.apache.pulsar.client.api.SchemaSerializationException;
@@ -34,17 +33,17 @@ import org.slf4j.LoggerFactory;
  */
 public class JacksonJsonReader<T> implements SchemaReader<T> {
     private final Class<T> pojo;
-    private final ObjectReader objectReader;
+    private final ObjectMapper objectMapper;
 
     public JacksonJsonReader(ObjectMapper objectMapper, Class<T> pojo) {
         this.pojo = pojo;
-        this.objectReader = pojo != null ? objectMapper.readerFor(pojo) : objectMapper.reader();
+        this.objectMapper = objectMapper;
     }
 
     @Override
     public T read(byte[] bytes, int offset, int length) {
         try {
-            return objectReader.readValue(bytes, offset, length);
+            return objectMapper.readValue(bytes, offset, length, this.pojo);
         } catch (IOException e) {
             throw new SchemaSerializationException(e);
         }
@@ -53,7 +52,7 @@ public class JacksonJsonReader<T> implements SchemaReader<T> {
     @Override
     public T read(InputStream inputStream) {
         try {
-            return objectReader.readValue(inputStream, pojo);
+            return objectMapper.readValue(inputStream, pojo);
         } catch (IOException e) {
             throw new SchemaSerializationException(e);
         } finally {

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,16 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
-import com.fasterxml.jackson.annotation.JsonIgnoreType;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -43,17 +37,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.apache.pulsar.client.api.BatchReceivePolicy;
 import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.ConsumerCryptoFailureAction;
 import org.apache.pulsar.client.api.ConsumerEventListener;
 import org.apache.pulsar.client.api.CryptoKeyReader;
 import org.apache.pulsar.client.api.DeadLetterPolicy;
 import org.apache.pulsar.client.api.KeySharedPolicy;
-import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageCrypto;
 import org.apache.pulsar.client.api.MessageListener;
-import org.apache.pulsar.client.api.MessagePayload;
-import org.apache.pulsar.client.api.MessagePayloadContext;
 import org.apache.pulsar.client.api.MessagePayloadProcessor;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.RedeliveryBackoff;
@@ -63,10 +53,13 @@ import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionMode;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
-import org.apache.pulsar.client.impl.conf.TopicConsumerConfigurationData;
 import org.apache.pulsar.client.impl.crypto.MessageCryptoBc;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
 
 /**
  * Unit tests of {@link ConsumerBuilderImpl}.
@@ -79,23 +72,10 @@ public class ConsumerBuilderImplTest {
     @BeforeMethod(alwaysRun = true)
     public void setup() {
         PulsarClientImpl client = mock(PulsarClientImpl.class);
-        ConnectionPool connectionPool = mock(ConnectionPool.class);
-        when(client.getCnxPool()).thenReturn(connectionPool);
         ConsumerConfigurationData consumerConfigurationData = mock(ConsumerConfigurationData.class);
         when(consumerConfigurationData.getTopicsPattern()).thenReturn(Pattern.compile("\\w+"));
         when(consumerConfigurationData.getSubscriptionName()).thenReturn("testSubscriptionName");
         consumerBuilderImpl = new ConsumerBuilderImpl(client, consumerConfigurationData, Schema.BYTES);
-    }
-
-    @Test
-    public void testMaxAcknowledgmentGroupSizeInvalid() {
-        try {
-            consumerBuilderImpl.maxAcknowledgmentGroupSize(0);
-            fail("Should throw exception");
-        } catch (IllegalArgumentException e) {
-            // expect exception
-            assertEquals(e.getMessage(), "acknowledgementsGroupSize needs to be > 0");
-        }
     }
 
     @Test
@@ -104,15 +84,6 @@ public class ConsumerBuilderImplTest {
         when(consumerBuilderImpl.subscribeAsync())
                 .thenReturn(CompletableFuture.completedFuture(consumer));
         assertNotNull(consumerBuilderImpl.topic(TOPIC_NAME).subscribe());
-    }
-
-    @Test(expectedExceptions = IllegalArgumentException.class)
-    public void testConsumerBuilderImplWhenSchemaIsNull() {
-        PulsarClientImpl client = mock(PulsarClientImpl.class);
-        ConnectionPool connectionPool = mock(ConnectionPool.class);
-        when(client.getCnxPool()).thenReturn(connectionPool);
-        ConsumerConfigurationData consumerConfigurationData = mock(ConsumerConfigurationData.class);
-        new ConsumerBuilderImpl(client, consumerConfigurationData, null);
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
@@ -381,21 +352,6 @@ public class ConsumerBuilderImplTest {
         consumerBuilderImpl.startPaused(true);
         verify(consumerBuilderImpl.getConf()).setStartPaused(true);
     }
-
-    @Test
-    public void testTopicConsumerBuilder() {
-        List<TopicConsumerConfigurationData> topicConsumerConfigurationDataList = new ArrayList<>();
-        when(consumerBuilderImpl.getConf().getTopicConfigurations()).thenReturn(topicConsumerConfigurationDataList);
-
-        ConsumerBuilder<?> consumerBuilder = consumerBuilderImpl.topicConfiguration(Pattern.compile("foo")).priorityLevel(1).build();
-
-        assertThat(consumerBuilder).isSameAs(consumerBuilderImpl);
-        assertThat(topicConsumerConfigurationDataList).hasSize(1);
-        TopicConsumerConfigurationData topicConsumerConfigurationData = topicConsumerConfigurationDataList.get(0);
-        assertThat(topicConsumerConfigurationData.getTopicNameMatcher().matches("foo")).isTrue();
-        assertThat(topicConsumerConfigurationData.getPriorityLevel()).isEqualTo(1);
-    }
-
     @Test
     public void testLoadConf() throws Exception {
         ConsumerBuilderImpl<byte[]> consumerBuilder = createConsumerBuilder();
@@ -411,7 +367,6 @@ public class ConsumerBuilderImplTest {
             + "    'subscriptionMode' : 'NonDurable',\n"
             + "    'receiverQueueSize' : 2,\n"
             + "    'acknowledgementsGroupTimeMicros' : 2,\n"
-            + "    'maxAcknowledgmentGroupSize' : 2,\n"
             + "    'negativeAckRedeliveryDelayMicros' : 2,\n"
             + "    'maxTotalReceiverQueueSizeAcrossPartitions' : 2,\n"
             + "    'consumerName' : 'new-consumer',\n"
@@ -443,15 +398,14 @@ public class ConsumerBuilderImplTest {
             + "    'batchIndexAckEnabled' : true,\n"
             + "    'ackReceiptEnabled' : true,\n"
             + "    'poolMessages' : true,\n"
-            + "    'startPaused' : true,\n"
-            + "    'autoScaledReceiverQueueSizeEnabled' : true\n"
+            + "    'startPaused' : true\n"
             + "  }").replace("'", "\"");
 
         Map<String, Object> conf = new ObjectMapper().readValue(jsonConf, new TypeReference<HashMap<String,Object>>() {});
 
         MessageListener<byte[]> messageListener = (consumer, message) -> {};
         conf.put("messageListener", messageListener);
-        ConsumerEventListener consumerEventListener = createMockConsumerEventListener();
+        ConsumerEventListener consumerEventListener = mock(ConsumerEventListener.class);
         conf.put("consumerEventListener", consumerEventListener);
         RedeliveryBackoff negativeAckRedeliveryBackoff = MultiplierRedeliveryBackoff.builder().build();
         conf.put("negativeAckRedeliveryBackoff", negativeAckRedeliveryBackoff);
@@ -465,7 +419,7 @@ public class ConsumerBuilderImplTest {
         conf.put("batchReceivePolicy", batchReceivePolicy);
         KeySharedPolicy keySharedPolicy = KeySharedPolicy.stickyHashRange();
         conf.put("keySharedPolicy", keySharedPolicy);
-        MessagePayloadProcessor payloadProcessor = createMockMessagePayloadProcessor();
+        MessagePayloadProcessor payloadProcessor = mock(MessagePayloadProcessor.class);
         conf.put("payloadProcessor", payloadProcessor);
 
         consumerBuilder.loadConf(conf);
@@ -480,7 +434,7 @@ public class ConsumerBuilderImplTest {
         assertEquals(configurationData.getSubscriptionMode(), SubscriptionMode.NonDurable);
         assertEquals(configurationData.getReceiverQueueSize(), 2);
         assertEquals(configurationData.getAcknowledgementsGroupTimeMicros(), 2);
-        assertEquals(configurationData.getMaxAcknowledgmentGroupSize(), 2);
+
         assertEquals(configurationData.getNegativeAckRedeliveryDelayMicros(), 2);
         assertEquals(configurationData.getMaxTotalReceiverQueueSizeAcrossPartitions(), 2);
         assertEquals(configurationData.getConsumerName(), "new-consumer");
@@ -510,7 +464,6 @@ public class ConsumerBuilderImplTest {
         assertTrue(configurationData.isAckReceiptEnabled());
         assertTrue(configurationData.isPoolMessages());
         assertTrue(configurationData.isStartPaused());
-        assertTrue(configurationData.isAutoScaledReceiverQueueSizeEnabled());
 
         assertNull(configurationData.getMessageListener());
         assertNull(configurationData.getConsumerEventListener());
@@ -540,11 +493,10 @@ public class ConsumerBuilderImplTest {
         assertEquals(configurationData.getSubscriptionMode(), SubscriptionMode.Durable);
         assertEquals(configurationData.getReceiverQueueSize(), 1000);
         assertEquals(configurationData.getAcknowledgementsGroupTimeMicros(), TimeUnit.MILLISECONDS.toMicros(100));
-        assertEquals(configurationData.getMaxAcknowledgmentGroupSize(), 1000);
         assertEquals(configurationData.getNegativeAckRedeliveryDelayMicros(), TimeUnit.MINUTES.toMicros(1));
         assertEquals(configurationData.getMaxTotalReceiverQueueSizeAcrossPartitions(), 50000);
         assertEquals(configurationData.getConsumerName(), "consumer");
-        assertEquals(configurationData.getAckTimeoutMillis(), 0);
+        assertEquals(configurationData.getAckTimeoutMillis(), 30000);
         assertEquals(configurationData.getTickDurationMillis(), 1000);
         assertEquals(configurationData.getPriorityLevel(), 0);
         assertEquals(configurationData.getMaxPendingChunkedMessage(), 10);
@@ -570,7 +522,6 @@ public class ConsumerBuilderImplTest {
         assertFalse(configurationData.isAckReceiptEnabled());
         assertFalse(configurationData.isPoolMessages());
         assertFalse(configurationData.isStartPaused());
-        assertFalse(configurationData.isAutoScaledReceiverQueueSizeEnabled());
 
         assertNull(configurationData.getMessageListener());
         assertNull(configurationData.getConsumerEventListener());
@@ -596,7 +547,7 @@ public class ConsumerBuilderImplTest {
             .subscriptionName("subscription")
             .subscriptionProperties(subscriptionProperties)
             .messageListener((consumer, message) -> {})
-            .consumerEventListener(createMockConsumerEventListener())
+            .consumerEventListener(mock(ConsumerEventListener.class))
             .negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder().build())
             .ackTimeoutRedeliveryBackoff(MultiplierRedeliveryBackoff.builder().build())
             .consumerName("consumer")
@@ -606,37 +557,7 @@ public class ConsumerBuilderImplTest {
             .deadLetterPolicy(DeadLetterPolicy.builder().deadLetterTopic("dlq").retryLetterTopic("retry").initialSubscriptionName("dlq-sub").maxRedeliverCount(1).build())
             .batchReceivePolicy(BatchReceivePolicy.builder().maxNumBytes(1).build())
             .keySharedPolicy(KeySharedPolicy.autoSplitHashRange())
-            .messagePayloadProcessor(createMockMessagePayloadProcessor());
+            .messagePayloadProcessor(mock(MessagePayloadProcessor.class));
         return consumerBuilder;
-    }
-
-    private static ConsumerEventListener createMockConsumerEventListener() {
-        return new MyConsumerEventListener();
-    }
-
-    private static MessagePayloadProcessor createMockMessagePayloadProcessor() {
-        return new MyMessagePayloadProcessor();
-    }
-
-    @JsonIgnoreType
-    private static class MyMessagePayloadProcessor implements MessagePayloadProcessor {
-        @Override
-        public <T> void process(MessagePayload payload, MessagePayloadContext context, Schema<T> schema,
-                                java.util.function.Consumer<Message<T>> messageConsumer) throws Exception {
-
-        }
-    }
-
-    @JsonIgnoreType
-    private static class MyConsumerEventListener implements ConsumerEventListener {
-        @Override
-        public void becameActive(Consumer<?> consumer, int partitionId) {
-
-        }
-
-        @Override
-        public void becameInactive(Consumer<?> consumer, int partitionId) {
-
-        }
     }
 }

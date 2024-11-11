@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -35,10 +35,6 @@ public class PulsarMetadataClientDriver extends AbstractMetadataDriver implement
     // register myself to driver manager
     static {
         MetadataDrivers.registerClientDriver(METADATA_STORE_SCHEME, PulsarMetadataClientDriver.class);
-    }
-
-    public static void init() {
-        // cause <cinit> to be invoked
     }
 
     @Override

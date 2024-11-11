@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,7 +19,6 @@
 package org.apache.bookkeeper.mledger.impl;
 
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +27,6 @@ import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerInfo;
 import org.apache.bookkeeper.mledger.ManagedLedgerInfo.CursorInfo;
 import org.apache.bookkeeper.mledger.ManagedLedgerInfo.MessageRangeInfo;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.test.MockedBookKeeperTestCase;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
@@ -43,9 +41,9 @@ public class ManagedLedgerFactoryTest extends MockedBookKeeperTestCase {
         ManagedLedgerImpl ledger = (ManagedLedgerImpl) factory.open("testGetManagedLedgerInfo", conf);
         ManagedCursor c1 = ledger.openCursor("c1");
 
-        Position p1 = ledger.addEntry("entry1".getBytes());
-        Position p2 = ledger.addEntry("entry2".getBytes());
-        Position p3 = ledger.addEntry("entry3".getBytes());
+        PositionImpl p1 = (PositionImpl) ledger.addEntry("entry1".getBytes());
+        PositionImpl p2 = (PositionImpl) ledger.addEntry("entry2".getBytes());
+        PositionImpl p3 = (PositionImpl) ledger.addEntry("entry3".getBytes());
         ledger.addEntry("entry4".getBytes());
 
         c1.delete(p2);
@@ -55,16 +53,12 @@ public class ManagedLedgerFactoryTest extends MockedBookKeeperTestCase {
 
         ManagedLedgerInfo info = factory.getManagedLedgerInfo("testGetManagedLedgerInfo");
 
-        assertEquals(info.ledgers.size(), 5);
+        assertEquals(info.ledgers.size(), 4);
 
         assertEquals(info.ledgers.get(0).ledgerId, 3);
-        assertEquals(info.ledgers.get(1).ledgerId, 4);
-        assertEquals(info.ledgers.get(2).ledgerId, 5);
-        assertEquals(info.ledgers.get(3).ledgerId, 6);
-
-        for (ManagedLedgerInfo.LedgerInfo linfo : info.ledgers) {
-            assertNotNull(linfo.timestamp);
-        }
+        assertEquals(info.ledgers.get(1).ledgerId, 5);
+        assertEquals(info.ledgers.get(2).ledgerId, 6);
+        assertEquals(info.ledgers.get(3).ledgerId, 7);
 
         assertEquals(info.cursors.size(), 1);
 

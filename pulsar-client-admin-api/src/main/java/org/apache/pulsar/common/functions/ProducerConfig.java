@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,7 +23,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-import org.apache.pulsar.client.api.CompressionType;
 
 /**
  * Configuration of the producer inside the function.
@@ -39,5 +38,4 @@ public class ProducerConfig {
     private Boolean useThreadLocalProducers;
     private CryptoConfig cryptoConfig;
     private String batchBuilder;
-    private CompressionType compressionType;
 }

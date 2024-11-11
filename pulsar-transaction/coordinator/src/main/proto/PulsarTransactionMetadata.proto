@@ -53,8 +53,3 @@ message TransactionMetadataEntry {
   optional uint64 max_local_txn_id = 11;
   optional string owner          = 12;
 }
-
-message BatchedTransactionMetadataEntry{
-  // Array for buffer transaction log data.
-  repeated TransactionMetadataEntry transaction_logs = 1;
-}

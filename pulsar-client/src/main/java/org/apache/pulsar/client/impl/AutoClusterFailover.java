@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.client.impl;
 import static org.apache.pulsar.common.util.Runnables.catchingAndLoggingThrowables;
 import com.google.common.base.Strings;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.List;
 import java.util.Map;
@@ -58,8 +57,8 @@ public class AutoClusterFailover implements ServiceUrlProvider {
     private final long failoverDelayNs;
     private final long switchBackDelayNs;
     private final ScheduledExecutorService executor;
-    private volatile long recoverTimestamp;
-    private volatile long failedTimestamp;
+    private long recoverTimestamp;
+    private long failedTimestamp;
     private final long intervalMs;
     private static final int TIMEOUT = 30_000;
     private final PulsarServiceNameResolver resolver;
@@ -127,9 +126,8 @@ public class AutoClusterFailover implements ServiceUrlProvider {
     boolean probeAvailable(String url) {
         try {
             resolver.updateServiceUrl(url);
-            InetSocketAddress endpoint = resolver.resolveHost();
             Socket socket = new Socket();
-            socket.connect(new InetSocketAddress(endpoint.getHostName(), endpoint.getPort()), TIMEOUT);
+            socket.connect(resolver.resolveHost(), TIMEOUT);
             socket.close();
             return true;
         } catch (Exception e) {

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,16 +19,15 @@
 package org.apache.pulsar.broker.loadbalance.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.broker.BrokerData;
+import org.apache.pulsar.broker.BundleData;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.TimeAverageMessageData;
 import org.apache.pulsar.broker.loadbalance.LoadData;
 import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.policies.data.loadbalancer.BrokerData;
-import org.apache.pulsar.policies.data.loadbalancer.BundleData;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.NamespaceBundleStats;
-import org.apache.pulsar.policies.data.loadbalancer.TimeAverageMessageData;
-import org.apache.pulsar.utils.ResourceUtils;
 import org.apache.pulsar.zookeeper.LocalBookkeeperEnsemble;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
@@ -38,6 +37,7 @@ import org.testng.annotations.Test;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author hezhangjian
@@ -45,13 +45,6 @@ import java.util.Optional;
 @Slf4j
 @Test(groups = "broker")
 public class BundleSplitterTaskTest {
-
-    public final static String CA_CERT_FILE_PATH =
-            ResourceUtils.getAbsolutePath("certificate-authority/certs/ca.cert.pem");
-    public final static String BROKER_CERT_FILE_PATH =
-            ResourceUtils.getAbsolutePath("certificate-authority/server-keys/broker.cert.pem");
-    public final static String BROKER_KEY_FILE_PATH =
-            ResourceUtils.getAbsolutePath("certificate-authority/server-keys/broker.key-pk8.pem");
 
     private LocalBookkeeperEnsemble bkEnsemble;
 
@@ -67,7 +60,7 @@ public class BundleSplitterTaskTest {
         config.setLoadManagerClassName(ModularLoadManagerImpl.class.getName());
         config.setClusterName("use");
         config.setWebServicePort(Optional.of(0));
-        config.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble.getZookeeperPort());
+        config.setZookeeperServers("127.0.0.1" + ":" + bkEnsemble.getZookeeperPort());
 
         config.setAdvertisedAddress("localhost");
         config.setBrokerShutdownTimeoutMs(0L);
@@ -75,9 +68,6 @@ public class BundleSplitterTaskTest {
         config.setBrokerServicePort(Optional.of(0));
         config.setBrokerServicePortTls(Optional.of(0));
         config.setWebServicePortTls(Optional.of(0));
-        config.setTlsCertificateFilePath(CA_CERT_FILE_PATH);
-        config.setTlsCertificateFilePath(BROKER_CERT_FILE_PATH);
-        config.setTlsKeyFilePath(BROKER_KEY_FILE_PATH);
         pulsar = new PulsarService(config);
         pulsar.start();
     }
@@ -102,7 +92,7 @@ public class BundleSplitterTaskTest {
         bundleData.setLongTermData(averageMessageData);
         loadData.getBundleData().put("ten/ns/0x00000000_0x80000000", bundleData);
 
-        final Map<String, String> bundlesToSplit = bundleSplitterTask.findBundlesToSplit(loadData, pulsar);
+        final Set<String> bundlesToSplit = bundleSplitterTask.findBundlesToSplit(loadData, pulsar);
         Assert.assertEquals(bundlesToSplit.size(), 0);
     }
 
@@ -152,7 +142,7 @@ public class BundleSplitterTaskTest {
         loadData.getBundleData().put("ten/ns/0x40000000_0x60000000", bundleData3);
 
         int currentBundleCount = pulsar.getNamespaceService().getBundleCount(NamespaceName.get("ten/ns"));
-        final Map<String, String> bundlesToSplit = bundleSplitterTask.findBundlesToSplit(loadData, pulsar);
+        final Set<String> bundlesToSplit = bundleSplitterTask.findBundlesToSplit(loadData, pulsar);
         Assert.assertEquals(bundlesToSplit.size() + currentBundleCount,
                 pulsar.getConfiguration().getLoadBalancerNamespaceMaximumBundles());
     }
@@ -161,14 +151,8 @@ public class BundleSplitterTaskTest {
     @AfterMethod(alwaysRun = true)
     void shutdown() throws Exception {
         log.info("--- Shutting down ---");
-        if (pulsar != null) {
-            pulsar.close();
-            pulsar = null;
-        }
-        if (bkEnsemble != null) {
-            bkEnsemble.stop();
-            bkEnsemble = null;
-        }
+        pulsar.close();
+        bkEnsemble.stop();
     }
 
 }

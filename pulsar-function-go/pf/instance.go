@@ -42,7 +42,7 @@ type goInstance struct {
 	producer          pulsar.Producer
 	consumers         map[string]pulsar.Consumer
 	client            pulsar.Client
-	lastHealthCheckTS int64
+	lastHealthCheckTs int64
 	properties        map[string]string
 	stats             StatWithLabelValues
 }
@@ -77,7 +77,7 @@ func newGoInstance() *goInstance {
 		return producer
 	}
 
-	goInstance.lastHealthCheckTS = now.UnixNano()
+	goInstance.lastHealthCheckTs = now.UnixNano()
 	goInstance.properties = make(map[string]string)
 	goInstance.stats = NewStatWithLabelValues(goInstance.getMetricsLabels()...)
 	return goInstance
@@ -87,7 +87,7 @@ func (gi *goInstance) processSpawnerHealthCheckTimer(tkr *time.Ticker) {
 	log.Info("Starting processSpawnerHealthCheckTimer")
 	now := time.Now()
 	maxIdleTime := gi.context.GetMaxIdleTime()
-	timeSinceLastCheck := now.UnixNano() - gi.lastHealthCheckTS
+	timeSinceLastCheck := now.UnixNano() - gi.lastHealthCheckTs
 	if (timeSinceLastCheck) > (maxIdleTime) {
 		log.Error("Haven't received health check from spawner in a while. Stopping instance...")
 		gi.close()
@@ -114,7 +114,7 @@ func (gi *goInstance) startFunction(function function) error {
 
 	// start process spawner health check timer
 	now := time.Now()
-	gi.lastHealthCheckTS = now.UnixNano()
+	gi.lastHealthCheckTs = now.UnixNano()
 
 	gi.startScheduler()
 
@@ -178,6 +178,7 @@ CLOSE:
 
 			gi.stats.processTimeEnd()
 			gi.processResult(msgInput, output)
+			gi.stats.incrTotalProcessedSuccessfully()
 		case <-idleTimer.C:
 			close(channel)
 			break CLOSE
@@ -260,19 +261,7 @@ func (gi *goInstance) getProducer(topicName string) (pulsar.Producer, error) {
 
 	batchBuilderType := pulsar.DefaultBatchBuilder
 
-	compressionType := pulsar.LZ4
 	if gi.context.instanceConf.funcDetails.Sink.ProducerSpec != nil {
-		switch gi.context.instanceConf.funcDetails.Sink.ProducerSpec.CompressionType {
-		case pb.CompressionType_NONE:
-			compressionType = pulsar.NoCompression
-		case pb.CompressionType_ZLIB:
-			compressionType = pulsar.ZLib
-		case pb.CompressionType_ZSTD:
-			compressionType = pulsar.ZSTD
-		default:
-			compressionType = pulsar.LZ4 // go doesn't support SNAPPY yet
-		}
-
 		batchBuilder := gi.context.instanceConf.funcDetails.Sink.ProducerSpec.BatchBuilder
 		if batchBuilder != "" {
 			if batchBuilder == "KEY_BASED" {
@@ -284,7 +273,7 @@ func (gi *goInstance) getProducer(topicName string) (pulsar.Producer, error) {
 	producer, err := gi.client.CreateProducer(pulsar.ProducerOptions{
 		Topic:                   topicName,
 		Properties:              properties,
-		CompressionType:         compressionType,
+		CompressionType:         pulsar.LZ4,
 		BatchingMaxPublishDelay: time.Millisecond * 10,
 		BatcherBuilderType:      batchBuilderType,
 		SendTimeout:             0,
@@ -396,44 +385,35 @@ func (gi *goInstance) handlerMsg(input pulsar.Message) (output []byte, err error
 
 func (gi *goInstance) processResult(msgInput pulsar.Message, output []byte) {
 	atLeastOnce := gi.context.instanceConf.funcDetails.ProcessingGuarantees == pb.ProcessingGuarantees_ATLEAST_ONCE
+	atMostOnce := gi.context.instanceConf.funcDetails.ProcessingGuarantees == pb.ProcessingGuarantees_ATMOST_ONCE
 	autoAck := gi.context.instanceConf.funcDetails.AutoAck
 
-	// If the function had an output and the user has specified an output topic, the output needs to be sent to the
-	// assigned output topic.
 	if output != nil && gi.context.instanceConf.funcDetails.Sink.Topic != "" {
 		asyncMsg := pulsar.ProducerMessage{
 			Payload: output,
 		}
-		// Dispatch an async send for the message with callback in case of error.
-		gi.producer.SendAsync(context.Background(), &asyncMsg,
-			func(_ pulsar.MessageID, _ *pulsar.ProducerMessage, err error) {
-				// Callback after message async send:
-				// If there was an error, the SDK is entrusted with responding, and we have at-least-once delivery
-				// semantics, ensure we nack so someone else can get it, in case we are the only handler. Then mark
-				// exception and fail out.
-				if err != nil {
-					if autoAck && atLeastOnce {
-						gi.nackInputMessage(msgInput)
-					}
-					gi.stats.incrTotalSysExceptions(err)
-					log.Fatal(err)
-				}
-				// Otherwise the message succeeded. If the SDK is entrusted with responding and we are using
-				// atLeastOnce delivery semantics, ack the message.
+		// Attempt to send the message and handle the response
+		gi.producer.SendAsync(context.Background(), &asyncMsg, func(messageID pulsar.MessageID,
+			message *pulsar.ProducerMessage, err error) {
+			if err != nil {
 				if autoAck && atLeastOnce {
+					gi.nackInputMessage(msgInput)
+				}
+				gi.stats.incrTotalSysExceptions(err)
+				log.Fatal(err)
+			} else {
+				if autoAck && !atMostOnce {
 					gi.ackInputMessage(msgInput)
 				}
 				gi.stats.incrTotalProcessedSuccessfully()
-			},
-		)
-		return
-	}
-
-	// No output from the function or no output topic. Ack if we need to and mark the success before rturning.
-	if autoAck && atLeastOnce {
+			}
+		})
+	} else if autoAck && atLeastOnce {
 		gi.ackInputMessage(msgInput)
+		// Report that we processed successfully even though it's not going to an output topic?
+		// We probably shouldn't...
+		// gi.stats.incrTotalProcessedSuccessfully()
 	}
-	gi.stats.incrTotalProcessedSuccessfully()
 }
 
 // ackInputMessage doesn't produce any result, or the user doesn't want the result.
@@ -488,6 +468,7 @@ func (gi *goInstance) addLogTopicHandler() {
 	}()
 
 	if gi.context.logAppender == nil {
+		log.Error("the logAppender is nil, if you want to use it, please specify `--log-topic` at startup.")
 		return
 	}
 
@@ -522,7 +503,7 @@ func (gi *goInstance) close() {
 
 func (gi *goInstance) healthCheck() *pb.HealthCheckResult {
 	now := time.Now()
-	gi.lastHealthCheckTS = now.UnixNano()
+	gi.lastHealthCheckTs = now.UnixNano()
 	healthCheckResult := pb.HealthCheckResult{Success: true}
 	return &healthCheckResult
 }
@@ -575,7 +556,6 @@ func (gi *goInstance) getMetrics() *pb.MetricsData {
 	totalUserExceptions1min := gi.getTotalUserExceptions1min()
 	totalSysExceptions1min := gi.getTotalSysExceptions1min()
 	//avg_process_latency_ms_1min := gi.get_avg_process_latency_1min()
-	userMetricsMap := gi.getUserMetricsMap()
 
 	metricsData := pb.MetricsData{}
 	// total metrics
@@ -590,9 +570,6 @@ func (gi *goInstance) getMetrics() *pb.MetricsData {
 	metricsData.ProcessedSuccessfullyTotal_1Min = int64(totalProcessedSuccessfully1min)
 	metricsData.SystemExceptionsTotal_1Min = int64(totalSysExceptions1min)
 	metricsData.UserExceptionsTotal_1Min = int64(totalUserExceptions1min)
-
-	// user metrics
-	metricsData.UserMetrics = userMetricsMap
 
 	return &metricsData
 }
@@ -618,16 +595,6 @@ func (gi *goInstance) getMatchingMetricFunc() func(lbl *prometheus_client.LabelP
 }
 
 func (gi *goInstance) getMatchingMetricFromRegistry(metricName string) prometheus_client.Metric {
-	filteredMetricFamilies := gi.getFilteredMetricFamilies(metricName)
-	if len(filteredMetricFamilies) == 0 {
-		return prometheus_client.Metric{}
-	}
-	metricFunc := gi.getMatchingMetricFunc()
-	matchingMetric := getFirstMatch(filteredMetricFamilies[0].Metric, metricFunc)
-	return *matchingMetric
-}
-
-func (gi *goInstance) getFilteredMetricFamilies(metricName string) []*prometheus_client.MetricFamily {
 	metricFamilies, err := reg.Gather()
 	if err != nil {
 		log.Errorf("Something went wrong when calling reg.Gather(), the metricName is: %s", metricName)
@@ -640,7 +607,9 @@ func (gi *goInstance) getFilteredMetricFamilies(metricName string) []*prometheus
 		// handle this.
 		log.Errorf("Too many metric families for metricName: %s " + metricName)
 	}
-	return filteredMetricFamilies
+	metricFunc := gi.getMatchingMetricFunc()
+	matchingMetric := getFirstMatch(filteredMetricFamilies[0].Metric, metricFunc)
+	return *matchingMetric
 }
 
 func (gi *goInstance) getTotalReceived() float32 {
@@ -715,43 +684,4 @@ func (gi *goInstance) getTotalReceived1min() float32 {
 	// "pulsar_function_" +  "received_total_1min", GaugeVec
 	val := metric.GetGauge().Value
 	return float32(*val)
-}
-
-func (gi *goInstance) getUserMetricsMap() map[string]float64 {
-	userMetricMap := map[string]float64{}
-	filteredMetricFamilies := gi.getFilteredMetricFamilies(PulsarFunctionMetricsPrefix + UserMetric)
-	if len(filteredMetricFamilies) == 0 {
-		return userMetricMap
-	}
-	for _, m := range filteredMetricFamilies[0].GetMetric() {
-		var isFuncMetric bool
-		var userLabelName string
-	VERIFY_USER_METRIC:
-		for _, l := range m.GetLabel() {
-			switch l.GetName() {
-			case "fqfn":
-				if l.GetValue() == gi.context.GetTenantAndNamespaceAndName() {
-					isFuncMetric = true
-					if userLabelName != "" {
-						break VERIFY_USER_METRIC
-					}
-				}
-			case "metric":
-				userLabelName = l.GetValue()
-				if isFuncMetric {
-					break VERIFY_USER_METRIC
-				}
-			}
-		}
-		if isFuncMetric && userLabelName != "" {
-			summary := m.GetSummary()
-			count := summary.GetSampleCount()
-			if count <= 0 {
-				userMetricMap[userLabelName] = 0
-			} else {
-				userMetricMap[userLabelName] = summary.GetSampleSum() / float64(count)
-			}
-		}
-	}
-	return userMetricMap
 }

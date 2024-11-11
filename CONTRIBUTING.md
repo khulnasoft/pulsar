@@ -21,4 +21,6 @@
 
 ## Contributing to Apache Pulsar
 
-We would love for you to contribute to Apache Pulsar and make it even better! Please check the [Apache Pulsar Contributing Guide](https://pulsar.apache.org/contribute/) before starting to work on the project.
+We would love for you to contribute to Apache Pulsar and make it even better!
+Please check the [Contributing to Apache Pulsar](https://pulsar.apache.org/en/contributing/) 
+page before starting to work on the project.

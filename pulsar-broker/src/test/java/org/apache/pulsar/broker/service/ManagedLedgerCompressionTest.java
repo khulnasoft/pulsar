@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -34,7 +34,7 @@ import org.testng.annotations.Test;
  * ManagedLedgerInfo compression configuration test.
  */
 
-@Test(groups = {"broker"})
+@Test(groups = {"broker", "broker-jdk8"})
 public class ManagedLedgerCompressionTest extends BrokerTestBase {
 
     @BeforeClass
@@ -50,7 +50,7 @@ public class ManagedLedgerCompressionTest extends BrokerTestBase {
         super.internalCleanup();
     }
 
-    @Test(timeOut = 1000 * 60)
+    @Test(timeOut = 1000 * 20)
     public void testRestartBrokerEnableManagedLedgerInfoCompression() throws Exception {
         String topic = newTopicName();
         @Cleanup
@@ -81,8 +81,7 @@ public class ManagedLedgerCompressionTest extends BrokerTestBase {
         try {
             startBroker();
             Assert.fail("The managedLedgerInfo compression type is invalid, should fail.");
-        } catch (Exception rte) {
-            Throwable e = rte.getCause();
+        } catch (Exception e) {
             Assert.assertEquals(e.getCause().getClass(), IllegalArgumentException.class);
             Assert.assertEquals(
                     "No enum constant org.apache.bookkeeper.mledger.proto.MLDataFormats.CompressionType.INVALID",
@@ -100,7 +99,7 @@ public class ManagedLedgerCompressionTest extends BrokerTestBase {
             producer.newMessage().value("test".getBytes()).send();
         }
         for (int i = 0; i < messageCnt; i++) {
-            Message<byte[]> message = consumer.receive(1000, TimeUnit.MILLISECONDS);
+            Message<byte[]> message = consumer.receive(1000, TimeUnit.SECONDS);
             consumer.acknowledge(message);
             Assert.assertNotNull(message);
         }

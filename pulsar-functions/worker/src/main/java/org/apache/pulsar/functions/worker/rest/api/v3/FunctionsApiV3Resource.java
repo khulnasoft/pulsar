@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,20 +22,6 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.List;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.StreamingOutput;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.FunctionDefinition;
@@ -50,6 +36,21 @@ import org.apache.pulsar.functions.worker.rest.FunctionApiResource;
 import org.apache.pulsar.functions.worker.service.api.Functions;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
+
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.StreamingOutput;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
 
 @Slf4j
 @Path("/functions")
@@ -420,11 +421,10 @@ public class FunctionsApiV3Resource extends FunctionApiResource {
     @Path("/leader/{tenant}/{namespace}/{functionName}")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public void updateFunctionOnWorkerLeader(final @PathParam("tenant") String tenant,
-                                             final @PathParam("namespace") String namespace,
-                                             final @PathParam("functionName") String functionName,
-                                             final @FormDataParam("functionMetaData")
-                                                     InputStream uploadedInputStream,
-                                             final @FormDataParam("delete") boolean delete) {
+                                                 final @PathParam("namespace") String namespace,
+                                                 final @PathParam("functionName") String functionName,
+                                                 final @FormDataParam("functionMetaData") InputStream uploadedInputStream,
+                                                 final @FormDataParam("delete") boolean delete) {
 
         functions().updateFunctionOnWorkerLeader(tenant, namespace, functionName, uploadedInputStream,
                 delete, uri.getRequestUri(), authParams());

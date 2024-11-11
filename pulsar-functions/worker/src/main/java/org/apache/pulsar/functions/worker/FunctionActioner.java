@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -451,7 +451,7 @@ public class FunctionActioner {
                     if (sub != null) {
                         try {
                             finalErrorMsg = String.format("%s - existing consumers: %s",
-                              errorMsg, ObjectMapperFactory.getMapper().writer().writeValueAsString(sub));
+                              errorMsg, ObjectMapperFactory.getThreadLocal().writeValueAsString(sub));
                         } catch (JsonProcessingException jsonProcessingException) {
                             finalErrorMsg = errorMsg;
                         }
@@ -494,7 +494,7 @@ public class FunctionActioner {
                     if (stats != null) {
                         try {
                             finalErrorMsg = String.format("%s - topic stats: %s",
-                              errorMsg, ObjectMapperFactory.getMapper().writer().writeValueAsString(stats));
+                              errorMsg, ObjectMapperFactory.getThreadLocal().writeValueAsString(stats));
                         } catch (JsonProcessingException jsonProcessingException) {
                             finalErrorMsg = errorMsg;
                         }

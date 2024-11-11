@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.kafka.connect.schema;
 
 import com.google.common.cache.Cache;
@@ -24,7 +25,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.ExecutionError;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import io.confluent.connect.avro.AvroData;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +41,7 @@ import org.apache.kafka.connect.data.Timestamp;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.pulsar.client.api.schema.KeyValueSchema;
 import org.apache.pulsar.common.schema.SchemaType;
+import org.apache.pulsar.kafka.shade.io.confluent.connect.avro.AvroData;
 
 @Slf4j
 public class PulsarSchemaToKafkaSchema {
@@ -162,8 +163,9 @@ public class PulsarSchemaToKafkaSchema {
     }
 
     // Parse json to shaded schema
-    private static org.apache.avro.Schema parseAvroSchema(String schemaJson) {
-        final org.apache.avro.Schema.Parser parser = new org.apache.avro.Schema.Parser();
+    private static org.apache.pulsar.kafka.shade.avro.Schema parseAvroSchema(String schemaJson) {
+        final org.apache.pulsar.kafka.shade.avro.Schema.Parser parser =
+                new org.apache.pulsar.kafka.shade.avro.Schema.Parser();
         parser.setValidateDefaults(false);
         return parser.parse(schemaJson);
     }
@@ -246,8 +248,9 @@ public class PulsarSchemaToKafkaSchema {
                                 .optional()
                                 .build();
                 }
-                org.apache.avro.Schema avroSchema = parseAvroSchema(
-                        new String(pulsarSchema.getSchemaInfo().getSchema(), StandardCharsets.UTF_8));
+                org.apache.pulsar.kafka.shade.avro.Schema avroSchema =
+                        parseAvroSchema(new String(pulsarSchema.getSchemaInfo().getSchema(),
+                                StandardCharsets.UTF_8));
                 return avroData.toConnectSchema(avroSchema);
             });
         } catch (ExecutionException | UncheckedExecutionException | ExecutionError ee) {

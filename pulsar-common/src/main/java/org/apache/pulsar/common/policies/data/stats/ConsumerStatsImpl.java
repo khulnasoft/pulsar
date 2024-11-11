@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,22 +18,18 @@
  */
 package org.apache.pulsar.common.policies.data.stats;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.Data;
 import org.apache.pulsar.common.policies.data.ConsumerStats;
-import org.apache.pulsar.common.policies.data.DrainingHash;
-import org.apache.pulsar.common.util.DateFormatter;
 
 /**
  * Consumer statistics.
  */
 @Data
 public class ConsumerStatsImpl implements ConsumerStats {
-    /** the app id. */
-    public String appId;
-
     /** Total rate of messages delivered to the consumer (msg/s). */
     public double msgRateOut;
 
@@ -50,7 +46,7 @@ public class ConsumerStatsImpl implements ConsumerStats {
     public double msgRateRedeliver;
 
     /**
-     * Total rate of message ack (msg/s).
+     * Total rate of message ack(msg/s).
      */
     public double messageAckRate;
 
@@ -63,13 +59,7 @@ public class ConsumerStatsImpl implements ConsumerStats {
     /** Number of available message permits for the consumer. */
     public int availablePermits;
 
-    /**
-     * Number of unacknowledged messages for the consumer, where an unacknowledged message is one that has been
-     * sent to the consumer but not yet acknowledged. This field is only meaningful when using a
-     * {@link org.apache.pulsar.client.api.SubscriptionType} that tracks individual message acknowledgement, like
-     * {@link org.apache.pulsar.client.api.SubscriptionType#Shared} or
-     * {@link org.apache.pulsar.client.api.SubscriptionType#Key_Shared}.
-     */
+    /** Number of unacknowledged messages for the consumer. */
     public int unackedMessages;
 
     /** Number of average messages per entry for the consumer consumed. */
@@ -81,61 +71,39 @@ public class ConsumerStatsImpl implements ConsumerStats {
     /** The read position of the cursor when the consumer joining. */
     public String readPositionWhenJoining;
 
-    /**
-     * For Key_Shared AUTO_SPLIT ordered subscriptions: The current number of hashes in the draining state.
-     */
-    public int drainingHashesCount;
-
-    /**
-     * For Key_Shared AUTO_SPLIT ordered subscriptions: The total number of hashes cleared from the draining state for
-     * the consumer.
-     */
-    public long drainingHashesClearedTotal;
-
-    /**
-     * For Key_Shared AUTO_SPLIT ordered subscriptions: The total number of unacked messages for all draining hashes.
-     */
-    public int drainingHashesUnackedMessages;
-
-    /**
-     * For Key_Shared subscription in AUTO_SPLIT ordered mode:
-     * Retrieves the draining hashes for this consumer.
-     *
-     * @return a list of draining hashes for this consumer
-     */
-    public List<DrainingHash> drainingHashes;
-
     /** Address of this consumer. */
-    private String address;
-    /** Timestamp of connection. */
-    private String connectedSince;
-    /** Client library version. */
-    private String clientVersion;
+    @JsonIgnore
+    private int addressOffset = -1;
+    @JsonIgnore
+    private int addressLength;
 
-    // ignore this json field to skip from stats in future release. replaced with readable #getLastAckedTime().
-    @Deprecated
+    /** Timestamp of connection. */
+    @JsonIgnore
+    private int connectedSinceOffset = -1;
+    @JsonIgnore
+    private int connectedSinceLength;
+
+    /** Client library version. */
+    @JsonIgnore
+    private int clientVersionOffset = -1;
+    @JsonIgnore
+    private int clientVersionLength;
+
     public long lastAckedTimestamp;
-    // ignore this json field to skip from stats in future release. replaced with readable #getLastConsumedTime().
-    @Deprecated
     public long lastConsumedTimestamp;
 
-    public long lastConsumedFlowTimestamp;
-
-    /**
-     * Hash ranges assigned to this consumer if in Key_Shared subscription mode.
-     * This format and field is used when `subscriptionKeySharedUseClassicPersistentImplementation` is set to `false`
-     * (default).
-     */
-    public List<int[]> keyHashRangeArrays;
-
-    /**
-     * Hash ranges assigned to this consumer if in Key_Shared subscription mode.
-     * This format and field is used when `subscriptionKeySharedUseClassicPersistentImplementation` is set to `true`.
-     */
+    /** Hash ranges assigned to this consumer if is Key_Shared sub mode. **/
     public List<String> keyHashRanges;
 
     /** Metadata (key/value strings) associated with this consumer. */
     public Map<String, String> metadata;
+
+    /**
+     * In order to prevent multiple string object allocation under stats: create a string-buffer
+     * that stores data for all string place-holders.
+     */
+    @JsonIgnore
+    private StringBuilder stringBuffer = new StringBuilder();
 
     public ConsumerStatsImpl add(ConsumerStatsImpl stats) {
         Objects.requireNonNull(stats);
@@ -149,48 +117,54 @@ public class ConsumerStatsImpl implements ConsumerStats {
         this.unackedMessages += stats.unackedMessages;
         this.blockedConsumerOnUnackedMsgs = stats.blockedConsumerOnUnackedMsgs;
         this.readPositionWhenJoining = stats.readPositionWhenJoining;
-        this.drainingHashesCount = stats.drainingHashesCount;
-        this.drainingHashesClearedTotal += stats.drainingHashesClearedTotal;
-        this.drainingHashesUnackedMessages = stats.drainingHashesUnackedMessages;
-        this.drainingHashes = stats.drainingHashes;
-        this.keyHashRanges = stats.keyHashRanges;
-        this.keyHashRangeArrays = stats.keyHashRangeArrays;
         return this;
     }
 
     public String getAddress() {
-        return address;
+        return addressOffset == -1 ? null : stringBuffer.substring(addressOffset, addressOffset + addressLength);
     }
 
     public void setAddress(String address) {
-        this.address = address;
+        if (address == null) {
+            this.addressOffset = -1;
+            return;
+        }
+        this.addressOffset = this.stringBuffer.length();
+        this.addressLength = address.length();
+        this.stringBuffer.append(address);
     }
 
     public String getConnectedSince() {
-        return connectedSince;
+        return connectedSinceOffset == -1 ? null
+                : stringBuffer.substring(connectedSinceOffset, connectedSinceOffset + connectedSinceLength);
     }
 
     public void setConnectedSince(String connectedSince) {
-        this.connectedSince = connectedSince;
+        if (connectedSince == null) {
+            this.connectedSinceOffset = -1;
+            return;
+        }
+        this.connectedSinceOffset = this.stringBuffer.length();
+        this.connectedSinceLength = connectedSince.length();
+        this.stringBuffer.append(connectedSince);
     }
 
     public String getClientVersion() {
-        return clientVersion;
+        return clientVersionOffset == -1 ? null
+                : stringBuffer.substring(clientVersionOffset, clientVersionOffset + clientVersionLength);
     }
 
     public void setClientVersion(String clientVersion) {
-        this.clientVersion = clientVersion;
+        if (clientVersion == null) {
+            this.clientVersionOffset = -1;
+            return;
+        }
+        this.clientVersionOffset = this.stringBuffer.length();
+        this.clientVersionLength = clientVersion.length();
+        this.stringBuffer.append(clientVersion);
     }
 
     public String getReadPositionWhenJoining() {
         return readPositionWhenJoining;
-    }
-
-    public String getLastAckedTime() {
-        return DateFormatter.format(lastAckedTimestamp);
-    }
-
-    public String getLastConsumedTime() {
-        return DateFormatter.format(lastConsumedTimestamp);
     }
 }

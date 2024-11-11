@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -41,8 +41,6 @@ import org.apache.pulsar.common.api.proto.KeySharedMeta;
 import org.apache.pulsar.common.api.proto.KeySharedMode;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersistentDispatcherMultipleConsumers {
 
@@ -88,11 +86,6 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersis
 
     @Override
     public synchronized CompletableFuture<Void> addConsumer(Consumer consumer) {
-        if (IS_CLOSED_UPDATER.get(this) == TRUE) {
-            log.warn("[{}] Dispatcher is already closed. Closing consumer {}", name, consumer);
-            consumer.disconnect();
-            return CompletableFuture.completedFuture(null);
-        }
         return super.addConsumer(consumer).thenCompose(__ ->
                 selector.addConsumer(consumer).handle((value, ex) -> {
                     if (ex != null) {
@@ -101,10 +94,10 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersis
                             consumerList.remove(consumer);
                         }
                         throw FutureUtil.wrapToCompletionException(ex);
+                    } else {
+                        return value;
                     }
-                    return value;
-                })).thenAccept(__ -> {
-        });
+                }));
     }
 
     @Override
@@ -126,14 +119,6 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersis
                 }
             };
 
-    private static final FastThreadLocal<Map<Consumer, List<Integer>>> localGroupedStickyKeyHashes =
-            new FastThreadLocal<Map<Consumer, List<Integer>>>() {
-                @Override
-                protected Map<Consumer, List<Integer>> initialValue() throws Exception {
-                    return new HashMap<>();
-                }
-            };
-
     @Override
     public void sendMessages(List<Entry> entries) {
         if (entries.isEmpty()) {
@@ -147,38 +132,28 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersis
 
         final Map<Consumer, List<Entry>> groupedEntries = localGroupedEntries.get();
         groupedEntries.clear();
-        final Map<Consumer, List<Integer>> consumerStickyKeyHashesMap = localGroupedStickyKeyHashes.get();
-        consumerStickyKeyHashesMap.clear();
 
         for (Entry entry : entries) {
-            byte[] stickyKey = peekStickyKey(entry.getDataBuffer());
-            int stickyKeyHash = selector.makeStickyKeyHash(stickyKey);
-
-            Consumer consumer = selector.select(stickyKeyHash);
+            Consumer consumer = selector.select(peekStickyKey(entry.getDataBuffer()));
             if (consumer != null) {
-                int startingSize = Math.max(10, entries.size() / (2 * consumerSet.size()));
-                groupedEntries.computeIfAbsent(consumer, k -> new ArrayList<>(startingSize)).add(entry);
-                consumerStickyKeyHashesMap
-                        .computeIfAbsent(consumer, k -> new ArrayList<>(startingSize)).add(stickyKeyHash);
+                groupedEntries.computeIfAbsent(consumer, k -> new ArrayList<>()).add(entry);
             } else {
                 entry.release();
             }
         }
 
         for (Map.Entry<Consumer, List<Entry>> entriesByConsumer : groupedEntries.entrySet()) {
-            final Consumer consumer = entriesByConsumer.getKey();
-            final List<Entry> entriesForConsumer = entriesByConsumer.getValue();
-            final List<Integer> stickyKeysForConsumer = consumerStickyKeyHashesMap.get(consumer);
+            Consumer consumer = entriesByConsumer.getKey();
+            List<Entry> entriesForConsumer = entriesByConsumer.getValue();
 
             SendMessageInfo sendMessageInfo = SendMessageInfo.getThreadLocal();
             EntryBatchSizes batchSizes = EntryBatchSizes.get(entriesForConsumer.size());
             filterEntriesForConsumer(entriesForConsumer, batchSizes, sendMessageInfo, null, null, false, consumer);
 
             if (consumer.getAvailablePermits() > 0 && consumer.isWritable()) {
-                consumer.sendMessages(entriesForConsumer, stickyKeysForConsumer, batchSizes,
-                        null, sendMessageInfo.getTotalMessages(),
+                consumer.sendMessages(entriesForConsumer, batchSizes, null, sendMessageInfo.getTotalMessages(),
                         sendMessageInfo.getTotalBytes(), sendMessageInfo.getTotalChunkedMessages(),
-                        getRedeliveryTracker(), Commands.DEFAULT_CONSUMER_EPOCH);
+                        getRedeliveryTracker());
                 TOTAL_AVAILABLE_PERMITS_UPDATER.addAndGet(this, -sendMessageInfo.getTotalMessages());
             } else {
                 entriesForConsumer.forEach(e -> {
@@ -199,6 +174,4 @@ public class NonPersistentStickyKeyDispatcherMultipleConsumers extends NonPersis
     public boolean hasSameKeySharedPolicy(KeySharedMeta ksm) {
         return (ksm.getKeySharedMode() == this.keySharedMode);
     }
-
-    private static final Logger log = LoggerFactory.getLogger(NonPersistentStickyKeyDispatcherMultipleConsumers.class);
 }

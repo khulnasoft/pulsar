@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,7 @@
 package org.apache.pulsar.broker.service;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 import lombok.Cleanup;
@@ -37,6 +38,8 @@ public class TopicDispatchRateLimiterTest extends BrokerTestBase {
     protected void setup() throws Exception {
         conf.setDispatchThrottlingRatePerTopicInMsg(0);
         conf.setDispatchThrottlingRatePerTopicInByte(0L);
+        conf.setSystemTopicEnabled(true);
+        conf.setTopicLevelPoliciesEnabled(true);
         super.baseSetup();
     }
 
@@ -54,7 +57,7 @@ public class TopicDispatchRateLimiterTest extends BrokerTestBase {
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
         assertNotNull(topic);
-        assertTrue(topic.getDispatchRateLimiter().isEmpty());
+        assertFalse(topic.getDispatchRateLimiter().isPresent());
 
         admin.brokers().updateDynamicConfiguration("dispatchThrottlingRatePerTopicInMsg", "100");
         Awaitility.await().untilAsserted(() ->
@@ -73,7 +76,7 @@ public class TopicDispatchRateLimiterTest extends BrokerTestBase {
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
         assertNotNull(topic);
-        assertTrue(topic.getDispatchRateLimiter().isEmpty());
+        assertFalse(topic.getDispatchRateLimiter().isPresent());
 
         admin.brokers().updateDynamicConfiguration("dispatchThrottlingRatePerTopicInByte", "1000");
         Awaitility.await().untilAsserted(() ->
@@ -92,7 +95,7 @@ public class TopicDispatchRateLimiterTest extends BrokerTestBase {
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
         assertNotNull(topic);
-        assertTrue(topic.getDispatchRateLimiter().isEmpty());
+        assertFalse(topic.getDispatchRateLimiter().isPresent());
 
         DispatchRate dispatchRate = DispatchRate
             .builder()
@@ -120,7 +123,7 @@ public class TopicDispatchRateLimiterTest extends BrokerTestBase {
         Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).create();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
         assertNotNull(topic);
-        assertTrue(topic.getDispatchRateLimiter().isEmpty());
+        assertFalse(topic.getDispatchRateLimiter().isPresent());
 
         DispatchRate dispatchRate = DispatchRate
             .builder()

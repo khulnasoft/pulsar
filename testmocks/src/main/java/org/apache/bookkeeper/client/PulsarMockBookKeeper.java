@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.bookkeeper.client;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import com.google.common.collect.Lists;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -90,9 +89,7 @@ public class PulsarMockBookKeeper extends BookKeeper {
     }
 
     final Queue<Long> addEntryDelaysMillis = new ConcurrentLinkedQueue<>();
-    final Queue<Long> addEntryResponseDelaysMillis = new ConcurrentLinkedQueue<>();
     final List<CompletableFuture<Void>> failures = new ArrayList<>();
-    final List<CompletableFuture<Void>> addEntryFailures = new ArrayList<>();
 
     public PulsarMockBookKeeper(OrderedExecutor orderedExecutor) throws Exception {
         this.orderedExecutor = orderedExecutor;
@@ -320,13 +317,6 @@ public class PulsarMockBookKeeper extends BookKeeper {
         return shouldFailNow;
     }
 
-    synchronized CompletableFuture<Void> getAddEntryFailure() {
-        if (!addEntryFailures.isEmpty()){
-            return addEntryFailures.remove(0);
-        }
-        return failures.isEmpty() ? defaultResponse : failures.remove(0);
-    }
-
     synchronized CompletableFuture<Void> getProgrammedFailure() {
         return failures.isEmpty() ? defaultResponse : failures.remove(0);
     }
@@ -336,11 +326,7 @@ public class PulsarMockBookKeeper extends BookKeeper {
     }
 
     public void failAfter(int steps, int rc) {
-        promiseAfter(steps, failures).completeExceptionally(BKException.create(rc));
-    }
-
-    public void addEntryFailAfter(int steps, int rc) {
-        promiseAfter(steps, addEntryFailures).completeExceptionally(BKException.create(rc));
+        promiseAfter(steps).completeExceptionally(BKException.create(rc));
     }
 
     private int emptyLedgerAfter = -1;
@@ -353,10 +339,6 @@ public class PulsarMockBookKeeper extends BookKeeper {
     }
 
     public synchronized CompletableFuture<Void> promiseAfter(int steps) {
-        return promiseAfter(steps, failures);
-    }
-
-    public synchronized CompletableFuture<Void> promiseAfter(int steps, List<CompletableFuture<Void>> failures) {
         while (failures.size() <= steps) {
             failures.add(defaultResponse);
         }
@@ -367,11 +349,6 @@ public class PulsarMockBookKeeper extends BookKeeper {
 
     public synchronized void addEntryDelay(long delay, TimeUnit unit) {
         addEntryDelaysMillis.add(unit.toMillis(delay));
-    }
-
-    public synchronized void addEntryResponseDelay(long delay, TimeUnit unit) {
-        checkArgument(delay >= 0, "The delay time must not be negative.");
-        addEntryResponseDelaysMillis.add(unit.toMillis(delay));
     }
 
     static int getExceptionCode(Throwable t) {

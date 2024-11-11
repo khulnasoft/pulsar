@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,33 +19,28 @@
 package org.apache.pulsar.broker.service;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.loadbalance.extensions.data.BrokerLookupData;
 import org.apache.pulsar.broker.service.BrokerServiceException.ConsumerBusyException;
 import org.apache.pulsar.broker.service.BrokerServiceException.ServerMetadataException;
-import org.apache.pulsar.broker.service.persistent.DispatchRateLimiter;
-import org.apache.pulsar.client.impl.Murmur3Hash32;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBaseDispatcher {
 
     protected final String topicName;
+    protected static final AtomicReferenceFieldUpdater<AbstractDispatcherSingleActiveConsumer, Consumer>
+            ACTIVE_CONSUMER_UPDATER = AtomicReferenceFieldUpdater.newUpdater(
+            AbstractDispatcherSingleActiveConsumer.class, Consumer.class, "activeConsumer");
     private volatile Consumer activeConsumer = null;
     protected final CopyOnWriteArrayList<Consumer> consumers;
     protected StickyKeyConsumerSelector stickyKeyConsumerSelector;
@@ -63,7 +58,6 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
     private volatile int isClosed = FALSE;
 
     protected boolean isFirstRead = true;
-    private static final int CONSUMER_CONSISTENT_HASH_REPLICAS = 100;
 
     public AbstractDispatcherSingleActiveConsumer(SubType subscriptionType, int partitionIndex,
                                                   String topicName, Subscription subscription,
@@ -74,16 +68,13 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
         this.partitionIndex = partitionIndex;
         this.subscriptionType = subscriptionType;
         this.cursor = cursor;
+        ACTIVE_CONSUMER_UPDATER.set(this, null);
     }
 
-    /**
-     * @apiNote this method does not need to be thread safe
-     */
     protected abstract void scheduleReadOnActiveConsumer();
 
-    /**
-     * @apiNote this method does not need to be thread safe
-     */
+    protected abstract void readMoreEntries(Consumer consumer);
+
     protected abstract void cancelPendingRead();
 
     protected void notifyActiveConsumerChanged(Consumer activeConsumer) {
@@ -100,91 +91,60 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
      * distributed partitions evenly across consumers with highest priority level.
      *
      * @return the true consumer if the consumer is changed, otherwise false.
-     * @apiNote this method is not thread safe
      */
     protected boolean pickAndScheduleActiveConsumer() {
         checkArgument(!consumers.isEmpty());
-        AtomicBoolean hasPriorityConsumer = new AtomicBoolean(false);
-        consumers.sort((c1, c2) -> {
-            int priority = c1.getPriorityLevel() - c2.getPriorityLevel();
-            if (priority != 0) {
-                hasPriorityConsumer.set(true);
-                return priority;
-            }
-            return c1.consumerName().compareTo(c2.consumerName());
-        });
+        // By default always pick the first connected consumer for non partitioned topic.
+        int index = 0;
 
-        int consumersSize = consumers.size();
-        // find number of consumers which are having the highest priorities. so partitioned-topic assignment happens
-        // evenly across highest priority consumers
-        if (hasPriorityConsumer.get()) {
-            int highestPriorityLevel = consumers.get(0).getPriorityLevel();
-            for (int i = 0; i < consumers.size(); i++) {
-                if (highestPriorityLevel != consumers.get(i).getPriorityLevel()) {
-                    consumersSize = i;
-                    break;
+        // If it's a partitioned topic, sort consumers based on priority level then consumer name.
+        if (partitionIndex >= 0) {
+            AtomicBoolean hasPriorityConsumer = new AtomicBoolean(false);
+            consumers.sort((c1, c2) -> {
+                int priority = c1.getPriorityLevel() - c2.getPriorityLevel();
+                if (priority != 0) {
+                    hasPriorityConsumer.set(true);
+                    return priority;
+                }
+                return c1.consumerName().compareTo(c2.consumerName());
+            });
+
+            int consumersSize = consumers.size();
+            // find number of consumers which are having the highest priorities. so partitioned-topic assignment happens
+            // evenly across highest priority consumers
+            if (hasPriorityConsumer.get()) {
+                int highestPriorityLevel = consumers.get(0).getPriorityLevel();
+                for (int i = 0; i < consumers.size(); i++) {
+                    if (highestPriorityLevel != consumers.get(i).getPriorityLevel()) {
+                        consumersSize = i;
+                        break;
+                    }
                 }
             }
+            index = partitionIndex % consumersSize;
         }
-        int index = partitionIndex >= 0
-                ? partitionIndex % consumersSize
-                : peekConsumerIndexFromHashRing(makeHashRing(consumersSize));
 
-        Consumer selectedConsumer = consumers.get(index);
+        Consumer prevConsumer = ACTIVE_CONSUMER_UPDATER.getAndSet(this, consumers.get(index));
 
-        if (selectedConsumer == activeConsumer) {
+        Consumer activeConsumer = ACTIVE_CONSUMER_UPDATER.get(this);
+        if (prevConsumer == activeConsumer) {
             // Active consumer did not change. Do nothing at this point
             return false;
         } else {
             // If the active consumer is changed, send notification.
-            activeConsumer = selectedConsumer;
             scheduleReadOnActiveConsumer();
             return true;
         }
-    }
-
-    private int peekConsumerIndexFromHashRing(NavigableMap<Integer, Integer> hashRing) {
-        int hash = Murmur3Hash32.getInstance().makeHash(topicName);
-        Map.Entry<Integer, Integer> ceilingEntry = hashRing.ceilingEntry(hash);
-        return ceilingEntry != null ? ceilingEntry.getValue() : hashRing.firstEntry().getValue();
-    }
-
-    private NavigableMap<Integer, Integer> makeHashRing(int consumerSize) {
-        NavigableMap<Integer, Integer> hashRing = new TreeMap<>();
-        for (int i = 0; i < consumerSize; i++) {
-            for (int j = 0; j < CONSUMER_CONSISTENT_HASH_REPLICAS; j++) {
-                String key = consumers.get(i).consumerName() + j;
-                int hash = Murmur3_32Hash.getInstance().makeHash(key.getBytes());
-                hashRing.put(hash, i);
-            }
-        }
-        return Collections.unmodifiableNavigableMap(hashRing);
     }
 
     public synchronized CompletableFuture<Void> addConsumer(Consumer consumer) {
         if (IS_CLOSED_UPDATER.get(this) == TRUE) {
             log.warn("[{}] Dispatcher is already closed. Closing consumer {}", this.topicName, consumer);
             consumer.disconnect();
-            return CompletableFuture.completedFuture(null);
         }
 
         if (subscriptionType == SubType.Exclusive && !consumers.isEmpty()) {
-            Consumer actConsumer = getActiveConsumer();
-            if (actConsumer != null) {
-                return actConsumer.cnx().checkConnectionLiveness().thenCompose(actConsumerStillAlive -> {
-                    if (actConsumerStillAlive.isEmpty() || actConsumerStillAlive.get()) {
-                        return FutureUtil.failedFuture(new ConsumerBusyException("Exclusive consumer is already"
-                                + " connected"));
-                    } else {
-                        return addConsumer(consumer);
-                    }
-                });
-            } else {
-                // It should never happen.
-
-                return FutureUtil.failedFuture(new ConsumerBusyException("Active consumer is in a strange state."
-                        + " Active consumer is null, but there are " + consumers.size() + " registered."));
-            }
+            return FutureUtil.failedFuture(new ConsumerBusyException("Exclusive consumer is already connected"));
         }
 
         if (subscriptionType == SubType.Failover && isConsumersExceededOnSubscription()) {
@@ -212,7 +172,7 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
 
         if (!pickAndScheduleActiveConsumer()) {
             // the active consumer is not changed
-            Consumer currentActiveConsumer = getActiveConsumer();
+            Consumer currentActiveConsumer = ACTIVE_CONSUMER_UPDATER.get(this);
             if (null == currentActiveConsumer) {
                 if (log.isDebugEnabled()) {
                     log.debug("Current active consumer disappears while adding consumer {}", consumer);
@@ -232,7 +192,7 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
         }
 
         if (consumers.isEmpty()) {
-            activeConsumer = null;
+            ACTIVE_CONSUMER_UPDATER.set(this, null);
         }
 
         if (closeFuture == null && !consumers.isEmpty()) {
@@ -257,16 +217,12 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
      *            Calling consumer object
      */
     public synchronized boolean canUnsubscribe(Consumer consumer) {
-        return (consumers.size() == 1) && Objects.equals(consumer, activeConsumer);
+        return (consumers.size() == 1) && Objects.equals(consumer, ACTIVE_CONSUMER_UPDATER.get(this));
     }
 
-    @Override
-    public CompletableFuture<Void> close(boolean disconnectConsumers,
-                                         Optional<BrokerLookupData> assignedBrokerLookupData) {
+    public CompletableFuture<Void> close() {
         IS_CLOSED_UPDATER.set(this, TRUE);
-        getRateLimiter().ifPresent(DispatchRateLimiter::close);
-        return disconnectConsumers
-                ? disconnectAllConsumers(false, assignedBrokerLookupData) : CompletableFuture.completedFuture(null);
+        return disconnectAllConsumers();
     }
 
     public boolean isClosed() {
@@ -275,23 +231,15 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
 
     /**
      * Disconnect all consumers on this dispatcher (server side close). This triggers channelInactive on the inbound
-     * handler which calls dispatcher.removeConsumer(), where the closeFuture is completed.
+     * handler which calls dispatcher.removeConsumer(), where the closeFuture is completed
      *
-     * @param isResetCursor
-     *              Specifies if the cursor has been reset.
-     * @param assignedBrokerLookupData
-     *              Optional target broker redirect information. Allows the consumer to quickly reconnect to a broker
-     *              during bundle unloading.
-     *
-     * @return CompletableFuture indicating the completion of the operation.
+     * @return
      */
-    @Override
-    public synchronized CompletableFuture<Void> disconnectAllConsumers(
-            boolean isResetCursor, Optional<BrokerLookupData> assignedBrokerLookupData) {
+    public synchronized CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor) {
         closeFuture = new CompletableFuture<>();
 
         if (!consumers.isEmpty()) {
-            consumers.forEach(consumer -> consumer.disconnect(isResetCursor, assignedBrokerLookupData));
+            consumers.forEach(consumer -> consumer.disconnect(isResetCursor));
             cancelPendingRead();
         } else {
             // no consumer connected, complete disconnect immediately
@@ -324,7 +272,7 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
     }
 
     public Consumer getActiveConsumer() {
-        return activeConsumer;
+        return ACTIVE_CONSUMER_UPDATER.get(this);
     }
 
     @Override
@@ -333,7 +281,7 @@ public abstract class AbstractDispatcherSingleActiveConsumer extends AbstractBas
     }
 
     public boolean isConsumerConnected() {
-        return activeConsumer != null;
+        return ACTIVE_CONSUMER_UPDATER.get(this) != null;
     }
 
     private static final Logger log = LoggerFactory.getLogger(AbstractDispatcherSingleActiveConsumer.class);

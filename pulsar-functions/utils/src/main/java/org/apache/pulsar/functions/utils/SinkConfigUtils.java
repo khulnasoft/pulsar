@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.utils;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
@@ -74,9 +75,7 @@ public class SinkConfigUtils {
     public static FunctionDetails convert(SinkConfig sinkConfig, ExtractedSinkDetails sinkDetails) throws IOException {
         FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder();
 
-        boolean isBuiltin =
-                !org.apache.commons.lang3.StringUtils.isEmpty(sinkConfig.getArchive()) && sinkConfig.getArchive()
-                        .startsWith(org.apache.pulsar.common.functions.Utils.BUILTIN);
+        boolean isBuiltin = !org.apache.commons.lang3.StringUtils.isEmpty(sinkConfig.getArchive()) && sinkConfig.getArchive().startsWith(org.apache.pulsar.common.functions.Utils.BUILTIN);
 
         if (sinkConfig.getTenant() != null) {
             functionDetailsBuilder.setTenant(sinkConfig.getTenant());
@@ -86,9 +85,6 @@ public class SinkConfigUtils {
         }
         if (sinkConfig.getName() != null) {
             functionDetailsBuilder.setName(sinkConfig.getName());
-        }
-        if (sinkConfig.getLogTopic() != null) {
-            functionDetailsBuilder.setLogTopic(sinkConfig.getLogTopic());
         }
         functionDetailsBuilder.setRuntime(FunctionDetails.Runtime.JAVA);
         if (sinkConfig.getParallelism() != null) {
@@ -173,6 +169,8 @@ public class SinkConfigUtils {
         }
         if (isNotBlank(sinkConfig.getSourceSubscriptionName())) {
             sourceSpecBuilder.setSubscriptionName(sinkConfig.getSourceSubscriptionName());
+        }  else if (FunctionConfigUtils.DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME) {
+            sourceSpecBuilder.setSubscriptionName(sinkConfig.getName());
         }
 
         // Set subscription type
@@ -192,7 +190,6 @@ public class SinkConfigUtils {
         } else {
             functionDetailsBuilder.setAutoAck(true);
         }
-
         if (sinkConfig.getTimeoutMs() != null) {
             sourceSpecBuilder.setTimeoutMs(sinkConfig.getTimeoutMs());
         }
@@ -205,6 +202,12 @@ public class SinkConfigUtils {
             sourceSpecBuilder.setNegativeAckRedeliveryDelayMs(sinkConfig.getNegativeAckRedeliveryDelayMs());
         }
 
+        if (sinkConfig.getCleanupSubscription() != null) {
+            sourceSpecBuilder.setCleanupSubscription(sinkConfig.getCleanupSubscription());
+        } else {
+            sourceSpecBuilder.setCleanupSubscription(true);
+        }
+
         if (sinkConfig.getSourceSubscriptionPosition() == SubscriptionInitialPosition.Earliest) {
             sourceSpecBuilder.setSubscriptionPosition(Function.SubscriptionPosition.EARLIEST);
         } else {
@@ -212,13 +215,6 @@ public class SinkConfigUtils {
         }
 
         functionDetailsBuilder.setSource(sourceSpecBuilder);
-
-        if (sinkConfig.getRetainKeyOrdering() != null) {
-            functionDetailsBuilder.setRetainKeyOrdering(sinkConfig.getRetainKeyOrdering());
-        }
-        if (sinkConfig.getRetainOrdering() != null) {
-            functionDetailsBuilder.setRetainOrdering(sinkConfig.getRetainOrdering());
-        }
 
         if (sinkConfig.getMaxMessageRetries() != null && sinkConfig.getMaxMessageRetries() > 0) {
             Function.RetryDetails.Builder retryDetails = Function.RetryDetails.newBuilder();
@@ -284,12 +280,10 @@ public class SinkConfigUtils {
         sinkConfig.setNamespace(functionDetails.getNamespace());
         sinkConfig.setName(functionDetails.getName());
         sinkConfig.setParallelism(functionDetails.getParallelism());
-        sinkConfig.setProcessingGuarantees(
-                FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
+        sinkConfig.setProcessingGuarantees(FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
         Map<String, ConsumerConfig> consumerConfigMap = new HashMap<>();
         List<String> inputs = new ArrayList<>();
-        for (Map.Entry<String, Function.ConsumerSpec> input : functionDetails.getSource().getInputSpecsMap()
-                .entrySet()) {
+        for (Map.Entry<String, Function.ConsumerSpec> input : functionDetails.getSource().getInputSpecsMap().entrySet()) {
             ConsumerConfig consumerConfig = new ConsumerConfig();
             if (!isEmpty(input.getValue().getSerdeClassName())) {
                 consumerConfig.setSerdeClassName(input.getValue().getSerdeClassName());
@@ -313,6 +307,8 @@ public class SinkConfigUtils {
         sinkConfig.setInputSpecs(consumerConfigMap);
         if (!isEmpty(functionDetails.getSource().getSubscriptionName())) {
             sinkConfig.setSourceSubscriptionName(functionDetails.getSource().getSubscriptionName());
+        } else if (FunctionConfigUtils.DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME) {
+            sinkConfig.setSourceSubscriptionName(functionDetails.getName());
         }
         if (functionDetails.getSource().getSubscriptionType() == Function.SubscriptionType.FAILOVER) {
             sinkConfig.setRetainOrdering(true);
@@ -324,9 +320,6 @@ public class SinkConfigUtils {
             sinkConfig.setRetainOrdering(false);
             sinkConfig.setRetainKeyOrdering(false);
         }
-        if (!isEmpty(functionDetails.getLogTopic())) {
-            sinkConfig.setLogTopic(functionDetails.getLogTopic());
-        }
 
         sinkConfig.setProcessingGuarantees(convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
 
@@ -336,6 +329,7 @@ public class SinkConfigUtils {
         // Set subscription position
         sinkConfig.setSourceSubscriptionPosition(
                 convertFromFunctionDetailsSubscriptionPosition(functionDetails.getSource().getSubscriptionPosition()));
+        sinkConfig.setCleanupSubscription(functionDetails.getSource().getCleanupSubscription());
 
         if (functionDetails.getSource().getTimeoutMs() != 0) {
             sinkConfig.setTimeoutMs(functionDetails.getSource().getTimeoutMs());
@@ -350,24 +344,19 @@ public class SinkConfigUtils {
             sinkConfig.setArchive("builtin://" + functionDetails.getSink().getBuiltin());
         }
         if (!org.apache.commons.lang3.StringUtils.isEmpty(functionDetails.getSink().getConfigs())) {
-            TypeReference<HashMap<String, Object>> typeRef =
-                    new TypeReference<HashMap<String, Object>>() {
-            };
+            TypeReference<HashMap<String,Object>> typeRef
+                    = new TypeReference<HashMap<String,Object>>() {};
             Map<String, Object> configMap;
             try {
-                configMap =
-                        ObjectMapperFactory.getMapper().getObjectMapper()
-                                .readValue(functionDetails.getSink().getConfigs(), typeRef);
+               configMap = ObjectMapperFactory.getThreadLocal().readValue(functionDetails.getSink().getConfigs(), typeRef);
             } catch (IOException e) {
-                log.error("Failed to read configs for sink {}", FunctionCommon.getFullyQualifiedName(functionDetails),
-                        e);
+                log.error("Failed to read configs for sink {}", FunctionCommon.getFullyQualifiedName(functionDetails), e);
                 throw new RuntimeException(e);
             }
             sinkConfig.setConfigs(configMap);
         }
         if (!isEmpty(functionDetails.getSecretsMap())) {
-            Type type = new TypeToken<Map<String, Object>>() {
-            }.getType();
+            Type type = new TypeToken<Map<String, Object>>() {}.getType();
             Map<String, Object> secretsMap = new Gson().fromJson(functionDetails.getSecretsMap(), type);
             sinkConfig.setSecrets(secretsMap);
         }
@@ -424,18 +413,12 @@ public class SinkConfigUtils {
         // make we sure we have one source of input
         Collection<String> allInputs = collectAllInputTopics(sinkConfig);
         if (allInputs.isEmpty()) {
-            throw new IllegalArgumentException("Must specify at least one topic of input via topicToSerdeClassName, "
-                    + "topicsPattern, topicToSchemaType or inputSpecs");
+            throw new IllegalArgumentException("Must specify at least one topic of input via topicToSerdeClassName, " +
+                    "topicsPattern, topicToSchemaType or inputSpecs");
         }
         for (String topic : allInputs) {
             if (!TopicName.isValid(topic)) {
                 throw new IllegalArgumentException(String.format("Input topic %s is invalid", topic));
-            }
-        }
-        if (!isEmpty(sinkConfig.getLogTopic())) {
-            if (!TopicName.isValid(sinkConfig.getLogTopic())) {
-                throw new IllegalArgumentException(
-                        String.format("LogTopic topic %s is invalid", sinkConfig.getLogTopic()));
             }
         }
 
@@ -572,7 +555,7 @@ public class SinkConfigUtils {
         return new ExtractedSinkDetails(sinkClassName, typeArg.asErasure().getTypeName(), functionClassName);
     }
 
-    public static Collection<String> collectAllInputTopics(SinkConfig sinkConfig) {
+    private static Collection<String> collectAllInputTopics(SinkConfig sinkConfig) {
         List<String> retval = new LinkedList<>();
         if (sinkConfig.getInputs() != null) {
             retval.addAll(sinkConfig.getInputs());
@@ -594,8 +577,8 @@ public class SinkConfigUtils {
 
     @SneakyThrows
     public static SinkConfig clone(SinkConfig sinkConfig) {
-        return ObjectMapperFactory.getMapper().reader().readValue(
-                ObjectMapperFactory.getMapper().writer().writeValueAsBytes(sinkConfig), SinkConfig.class);
+        return ObjectMapperFactory.getThreadLocal().readValue(
+                ObjectMapperFactory.getThreadLocal().writeValueAsBytes(sinkConfig), SinkConfig.class);
     }
 
     public static SinkConfig validateUpdate(SinkConfig existingConfig, SinkConfig newConfig) {
@@ -613,8 +596,7 @@ public class SinkConfigUtils {
         if (!StringUtils.isEmpty(newConfig.getClassName())) {
             mergedConfig.setClassName(newConfig.getClassName());
         }
-        if (!StringUtils.isEmpty(newConfig.getSourceSubscriptionName()) && !newConfig.getSourceSubscriptionName()
-                .equals(existingConfig.getSourceSubscriptionName())) {
+        if (!StringUtils.isEmpty(newConfig.getSourceSubscriptionName()) && !newConfig.getSourceSubscriptionName().equals(existingConfig.getSourceSubscriptionName())) {
             throw new IllegalArgumentException("Subscription Name cannot be altered");
         }
 
@@ -624,9 +606,6 @@ public class SinkConfigUtils {
 
         if (mergedConfig.getInputSpecs() == null) {
             mergedConfig.setInputSpecs(new HashMap<>());
-        }
-        if (!StringUtils.isEmpty(newConfig.getLogTopic())) {
-            mergedConfig.setLogTopic(newConfig.getLogTopic());
         }
 
         if (newConfig.getInputs() != null) {
@@ -666,14 +645,12 @@ public class SinkConfigUtils {
                     throw new IllegalArgumentException("Input Topics cannot be altered");
                 }
                 if (consumerConfig.isRegexPattern() != existingConfig.getInputSpecs().get(topicName).isRegexPattern()) {
-                    throw new IllegalArgumentException(
-                            "isRegexPattern for input topic " + topicName + " cannot be altered");
+                    throw new IllegalArgumentException("isRegexPattern for input topic " + topicName + " cannot be altered");
                 }
                 finalMergedConfig.getInputSpecs().put(topicName, consumerConfig);
             });
         }
-        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees()
-                .equals(existingConfig.getProcessingGuarantees())) {
+        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees().equals(existingConfig.getProcessingGuarantees())) {
             throw new IllegalArgumentException("Processing Guarantees cannot be altered");
         }
         if (newConfig.getConfigs() != null) {
@@ -685,20 +662,17 @@ public class SinkConfigUtils {
         if (newConfig.getParallelism() != null) {
             mergedConfig.setParallelism(newConfig.getParallelism());
         }
-        if (newConfig.getRetainOrdering() != null && !newConfig.getRetainOrdering()
-                .equals(existingConfig.getRetainOrdering())) {
+        if (newConfig.getRetainOrdering() != null && !newConfig.getRetainOrdering().equals(existingConfig.getRetainOrdering())) {
             throw new IllegalArgumentException("Retain Ordering cannot be altered");
         }
-        if (newConfig.getRetainKeyOrdering() != null && !newConfig.getRetainKeyOrdering()
-                .equals(existingConfig.getRetainKeyOrdering())) {
+        if (newConfig.getRetainKeyOrdering() != null && !newConfig.getRetainKeyOrdering().equals(existingConfig.getRetainKeyOrdering())) {
             throw new IllegalArgumentException("Retain Key Ordering cannot be altered");
         }
         if (newConfig.getAutoAck() != null && !newConfig.getAutoAck().equals(existingConfig.getAutoAck())) {
             throw new IllegalArgumentException("AutoAck cannot be altered");
         }
         if (newConfig.getResources() != null) {
-            mergedConfig
-                    .setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
+            mergedConfig.setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
         }
         if (newConfig.getTimeoutMs() != null) {
             mergedConfig.setTimeoutMs(newConfig.getTimeoutMs());
@@ -715,6 +689,9 @@ public class SinkConfigUtils {
         if (!StringUtils.isEmpty(newConfig.getCustomRuntimeOptions())) {
             mergedConfig.setCustomRuntimeOptions(newConfig.getCustomRuntimeOptions());
         }
+        if (newConfig.getCleanupSubscription() != null) {
+            mergedConfig.setCleanupSubscription(newConfig.getCleanupSubscription());
+        }
         if (newConfig.getTransformFunction() != null) {
             mergedConfig.setTransformFunction(newConfig.getTransformFunction());
         }
@@ -724,9 +701,7 @@ public class SinkConfigUtils {
         if (newConfig.getTransformFunctionConfig() != null) {
             mergedConfig.setTransformFunctionConfig(newConfig.getTransformFunctionConfig());
         }
-        if (newConfig.getSourceSubscriptionPosition() != null) {
-            mergedConfig.setSourceSubscriptionPosition(newConfig.getSourceSubscriptionPosition());
-        }
+
         return mergedConfig;
     }
 
@@ -745,8 +720,7 @@ public class SinkConfigUtils {
     public static void validateSinkConfig(SinkConfig sinkConfig, Class configClass) {
         try {
             Object configObject =
-                    ObjectMapperFactory.getMapper().getObjectMapper()
-                            .convertValue(sinkConfig.getConfigs(), configClass);
+                    ObjectMapperFactory.getThreadLocal().convertValue(sinkConfig.getConfigs(), configClass);
             if (configObject != null) {
                 ConfigValidation.validateConfig(configObject);
             }

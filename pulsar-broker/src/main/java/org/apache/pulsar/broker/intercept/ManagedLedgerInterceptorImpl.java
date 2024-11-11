@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,7 +23,9 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.client.LedgerHandle;
+import org.apache.bookkeeper.client.api.LedgerEntry;
+import org.apache.bookkeeper.mledger.impl.OpAddEntry;
 import org.apache.bookkeeper.mledger.intercept.ManagedLedgerInterceptor;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
@@ -38,27 +40,12 @@ public class ManagedLedgerInterceptorImpl implements ManagedLedgerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerInterceptorImpl.class);
     private static final String INDEX = "index";
     private final Set<BrokerEntryMetadataInterceptor> brokerEntryMetadataInterceptors;
-
-    private final AppendIndexMetadataInterceptor appendIndexMetadataInterceptor;
     private final Set<ManagedLedgerPayloadProcessor.Processor> inputProcessors;
     private final Set<ManagedLedgerPayloadProcessor.Processor> outputProcessors;
 
     public ManagedLedgerInterceptorImpl(Set<BrokerEntryMetadataInterceptor> brokerEntryMetadataInterceptors,
                                         Set<ManagedLedgerPayloadProcessor> brokerEntryPayloadProcessors) {
         this.brokerEntryMetadataInterceptors = brokerEntryMetadataInterceptors;
-
-        // save appendIndexMetadataInterceptor to field
-        AppendIndexMetadataInterceptor appendIndexMetadataInterceptor = null;
-
-        for (BrokerEntryMetadataInterceptor interceptor : this.brokerEntryMetadataInterceptors) {
-            if (interceptor instanceof AppendIndexMetadataInterceptor) {
-                appendIndexMetadataInterceptor = (AppendIndexMetadataInterceptor) interceptor;
-                break;
-            }
-        }
-
-        this.appendIndexMetadataInterceptor = appendIndexMetadataInterceptor;
-
         if (brokerEntryPayloadProcessors != null) {
             this.inputProcessors = new LinkedHashSet<>();
             this.outputProcessors = new LinkedHashSet<>();
@@ -74,26 +61,29 @@ public class ManagedLedgerInterceptorImpl implements ManagedLedgerInterceptor {
 
     public long getIndex() {
         long index = -1;
-
-        if (appendIndexMetadataInterceptor != null) {
-            return appendIndexMetadataInterceptor.getIndex();
+        for (BrokerEntryMetadataInterceptor interceptor : brokerEntryMetadataInterceptors) {
+            if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                index = ((AppendIndexMetadataInterceptor) interceptor).getIndex();
+            }
         }
-
         return index;
     }
 
     @Override
-    public void beforeAddEntry(AddEntryOperation op, int numberOfMessages) {
+    public OpAddEntry beforeAddEntry(OpAddEntry op, int numberOfMessages) {
        if (op == null || numberOfMessages <= 0) {
-           return;
+           return op;
        }
         op.setData(Commands.addBrokerEntryMetadata(op.getData(), brokerEntryMetadataInterceptors, numberOfMessages));
+        return op;
     }
 
     @Override
     public void afterFailedAddEntry(int numberOfMessages) {
-        if (appendIndexMetadataInterceptor != null) {
-            appendIndexMetadataInterceptor.decreaseWithNumberOfMessages(numberOfMessages);
+        for (BrokerEntryMetadataInterceptor interceptor : brokerEntryMetadataInterceptors) {
+            if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                ((AppendIndexMetadataInterceptor) interceptor).decreaseWithNumberOfMessages(numberOfMessages);
+            }
         }
     }
 
@@ -104,36 +94,66 @@ public class ManagedLedgerInterceptorImpl implements ManagedLedgerInterceptor {
         }
 
         if (propertiesMap.containsKey(INDEX)) {
-            if (appendIndexMetadataInterceptor != null) {
-                appendIndexMetadataInterceptor.recoveryIndexGenerator(
-                        Long.parseLong(propertiesMap.get(INDEX)));
+            for (BrokerEntryMetadataInterceptor interceptor : brokerEntryMetadataInterceptors) {
+                if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                  ((AppendIndexMetadataInterceptor) interceptor)
+                          .recoveryIndexGenerator(Long.parseLong(propertiesMap.get(INDEX)));
+                }
             }
         }
     }
 
     @Override
-    public CompletableFuture<Void> onManagedLedgerLastLedgerInitialize(String name, LastEntryHandle lh) {
-        return lh.readLastEntryAsync().thenAccept(lastEntryOptional -> {
-            if (lastEntryOptional.isPresent()) {
-                Entry lastEntry = lastEntryOptional.get();
-                try {
-                    BrokerEntryMetadata brokerEntryMetadata =
-                            Commands.parseBrokerEntryMetadataIfExist(lastEntry.getDataBuffer());
-                    if (brokerEntryMetadata != null && brokerEntryMetadata.hasIndex()) {
-                        appendIndexMetadataInterceptor.recoveryIndexGenerator(
-                                brokerEntryMetadata.getIndex());
+    public CompletableFuture<Void> onManagedLedgerLastLedgerInitialize(String name, LedgerHandle lh) {
+        CompletableFuture<Void> promise = new CompletableFuture<>();
+        boolean hasAppendIndexMetadataInterceptor = brokerEntryMetadataInterceptors.stream()
+                .anyMatch(interceptor -> interceptor instanceof AppendIndexMetadataInterceptor);
+        if (hasAppendIndexMetadataInterceptor && lh.getLastAddConfirmed() >= 0) {
+            lh.readAsync(lh.getLastAddConfirmed(), lh.getLastAddConfirmed()).whenComplete((entries, ex) -> {
+                if (ex != null) {
+                    log.error("[{}] Read last entry error.", name, ex);
+                    promise.completeExceptionally(ex);
+                } else {
+                    if (entries != null) {
+                        try {
+                            LedgerEntry ledgerEntry = entries.getEntry(lh.getLastAddConfirmed());
+                            if (ledgerEntry != null) {
+                                BrokerEntryMetadata brokerEntryMetadata =
+                                        Commands.parseBrokerEntryMetadataIfExist(ledgerEntry.getEntryBuffer());
+                                for (BrokerEntryMetadataInterceptor interceptor : brokerEntryMetadataInterceptors) {
+                                    if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                                        if (brokerEntryMetadata != null && brokerEntryMetadata.hasIndex()) {
+                                            ((AppendIndexMetadataInterceptor) interceptor)
+                                                    .recoveryIndexGenerator(brokerEntryMetadata.getIndex());
+                                        }
+                                    }
+                                }
+                            }
+                            entries.close();
+                            promise.complete(null);
+                        } catch (Exception e) {
+                            entries.close();
+                            log.error("[{}] Failed to recover the index generator from the last add confirmed entry.",
+                                    name, e);
+                            promise.completeExceptionally(e);
+                        }
+                    } else {
+                        promise.complete(null);
                     }
-                } finally {
-                    lastEntry.release();
                 }
-            }
-        });
+            });
+        } else {
+            promise.complete(null);
+        }
+        return promise;
     }
 
     @Override
     public void onUpdateManagedLedgerInfo(Map<String, String> propertiesMap) {
-        if (appendIndexMetadataInterceptor != null) {
-            propertiesMap.put(INDEX, String.valueOf(appendIndexMetadataInterceptor.getIndex()));
+        for (BrokerEntryMetadataInterceptor interceptor : brokerEntryMetadataInterceptors) {
+            if (interceptor instanceof AppendIndexMetadataInterceptor) {
+                propertiesMap.put(INDEX, String.valueOf(((AppendIndexMetadataInterceptor) interceptor).getIndex()));
+            }
         }
     }
 
@@ -165,11 +185,11 @@ public class ManagedLedgerInterceptorImpl implements ManagedLedgerInterceptor {
         };
     }
     @Override
-    public PayloadProcessorHandle processPayloadBeforeLedgerWrite(Object ctx, ByteBuf ledgerData) {
+    public PayloadProcessorHandle processPayloadBeforeLedgerWrite(OpAddEntry op, ByteBuf ledgerData) {
         if (this.inputProcessors == null || this.inputProcessors.size() == 0) {
             return null;
         }
-        return processPayload(this.inputProcessors, ctx, ledgerData);
+        return processPayload(this.inputProcessors, op.getCtx(), ledgerData);
     }
 
     @Override

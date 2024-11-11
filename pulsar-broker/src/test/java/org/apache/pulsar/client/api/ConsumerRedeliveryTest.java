@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,21 +18,13 @@
  */
 package org.apache.pulsar.client.api;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertTrue;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.Cleanup;
@@ -40,13 +32,19 @@ import org.apache.pulsar.client.impl.ConsumerImpl;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+
+import com.google.common.collect.Sets;
+
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.assertEquals;
 
 @Test(groups = "broker-api")
 public class ConsumerRedeliveryTest extends ProducerConsumerBase {
@@ -56,7 +54,7 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        conf.setManagedLedgerCacheEvictionIntervalMs(10000);
+        conf.setManagedLedgerCacheEvictionFrequency(0.1);
         super.internalSetup();
         super.producerBaseSetup();
     }
@@ -121,7 +119,7 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
 
 
         int consumedCount = 0;
-        Set<MessageId> messageIds = new HashSet<>();
+        Set<MessageId> messageIds = Sets.newHashSet();
         for (int i = 0; i < totalMsgs; i++) {
             Message<byte[]> message = consumer1.receive(5, TimeUnit.SECONDS);
             if (message != null && (consumedCount % 2) == 0) {
@@ -267,60 +265,6 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
     }
 
     @Test(timeOut = 30000)
-    public void testMessageRedeliveryWhenTimeoutInListener() throws Exception {
-        final String subName = "sub_testMessageRedeliveryWhenTimeoutInListener";
-        final String topicName = "testMessageRedeliveryWhenTimeoutInListener" + UUID.randomUUID();
-
-        final int messages = 10;
-
-        @Cleanup
-        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
-                .topic(topicName)
-                .enableBatching(false)
-                .create();
-
-        final String redeliveryMsg = "Hello-0";
-        final AtomicInteger index = new AtomicInteger(0);
-        BlockingQueue<Message<byte[]>> receivedMsgs = new LinkedBlockingQueue<>();
-        MessageListener<byte[]> listener = (consumer, msg) -> {
-            try {
-                // the first "Hello-0" will wait until timeout
-                if (index.getAndDecrement() == 0 && new String(msg.getData()).equals(redeliveryMsg)) {
-                    Thread.sleep(3000);
-                }
-                receivedMsgs.add(msg);
-                consumer.acknowledge(msg);
-            } catch (Exception e) {
-            }
-        };
-
-        @Cleanup
-        Consumer<byte[]> consumer = pulsarClient.newConsumer()
-                .topic(topicName)
-                .subscriptionName(subName)
-                .subscriptionType(SubscriptionType.Shared)
-                .ackTimeout(1, TimeUnit.SECONDS)
-                .acknowledgmentGroupTime(0, TimeUnit.SECONDS)
-                .messageListener(listener)
-                .subscribe();
-
-        for (int i = 0; i < messages; i++) {
-            producer.sendAsync("Hello-" + i);
-        }
-        producer.flush();
-
-        // assert only redelivery the "Hello-0" msg
-        Awaitility.await().untilAsserted(() -> assertEquals(receivedMsgs.size(), messages + 1));
-        List<Message<byte[]>> redeliveryMsgList = receivedMsgs.stream()
-                .filter(msg -> new String(msg.getData()).equals(redeliveryMsg))
-                .collect(Collectors.toList());
-        assertEquals(redeliveryMsgList.size(), 2);
-        for (int i = 0; i < redeliveryMsgList.size(); i++) {
-            assertEquals(i, redeliveryMsgList.get(i).getRedeliveryCount());
-        }
-    }
-
-    @Test(timeOut = 30000)
     public void testMessageRedeliveryAfterUnloadedWithEarliestPosition() throws Exception {
 
         final String subName = "my-subscriber-name";
@@ -423,29 +367,5 @@ public class ConsumerRedeliveryTest extends ProducerConsumerBase {
         } else {
             assertTrue(values.isEmpty());
         }
-    }
-
-    @Test
-    public void testRedeliverMessagesWithoutValue() throws Exception {
-        String topic = "persistent://my-property/my-ns/testRedeliverMessagesWithoutValue";
-        @Cleanup Consumer<Integer> consumer = pulsarClient.newConsumer(Schema.INT32)
-                .topic(topic)
-                .subscriptionName("sub")
-                .enableRetry(true)
-                .subscribe();
-        @Cleanup Producer<Integer> producer = pulsarClient.newProducer(Schema.INT32)
-                .topic(topic)
-                .enableBatching(true)
-                .create();
-        for (int i = 0; i < 10; i++) {
-            producer.newMessage().key("messages without value").send();
-        }
-
-        Message<Integer> message = consumer.receive();
-        consumer.reconsumeLater(message, 2, TimeUnit.SECONDS);
-        for (int i = 0; i < 9; i++) {
-            assertNotNull(consumer.receive(5, TimeUnit.SECONDS));
-        }
-        assertTrue(consumer.receive(5, TimeUnit.SECONDS).getTopicName().contains("sub-RETRY"));
     }
 }

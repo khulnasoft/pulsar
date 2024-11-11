@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -36,7 +36,6 @@ import org.apache.bookkeeper.client.api.ReadHandle;
 import org.apache.bookkeeper.mledger.LedgerOffloaderStats;
 import org.apache.bookkeeper.mledger.offload.jcloud.BlockAwareSegmentInputStream;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
-import org.apache.pulsar.common.naming.TopicName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,7 +73,6 @@ public class BlockAwareSegmentInputStreamImpl extends BlockAwareSegmentInputStre
     // Keep a list of all entries ByteBuf, each ByteBuf contains 2 buf: entry header and entry content.
     private List<ByteBuf> entriesByteBuf = null;
     private LedgerOffloaderStats offloaderStats;
-    private String managedLedgerName;
     private String topicName;
     private int currentOffset = 0;
     private final AtomicBoolean close = new AtomicBoolean(false);
@@ -93,8 +91,7 @@ public class BlockAwareSegmentInputStreamImpl extends BlockAwareSegmentInputStre
                                             LedgerOffloaderStats offloaderStats, String ledgerName) {
         this(ledger, startEntryId, blockSize);
         this.offloaderStats = offloaderStats;
-        this.managedLedgerName = ledgerName;
-        this.topicName = TopicName.fromPersistenceNamingEncoding(ledgerName);
+        this.topicName = ledgerName;
     }
 
     private ByteBuf readEntries(int len) throws IOException {
@@ -186,7 +183,7 @@ public class BlockAwareSegmentInputStreamImpl extends BlockAwareSegmentInputStre
                 log.debug("read ledger entries. start: {}, end: {} cost {}", start, end,
                         TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTime));
             }
-            if (offloaderStats != null && managedLedgerName != null) {
+            if (offloaderStats != null && topicName != null) {
                 offloaderStats.recordReadLedgerLatency(topicName, System.nanoTime() - startTime,
                         TimeUnit.NANOSECONDS);
             }

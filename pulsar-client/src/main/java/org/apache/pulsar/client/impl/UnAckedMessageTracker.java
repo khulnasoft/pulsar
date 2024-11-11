@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,7 +22,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.FastThreadLocal;
-import io.opentelemetry.api.common.Attributes;
 import java.io.Closeable;
 import java.util.ArrayDeque;
 import java.util.Collections;
@@ -36,9 +35,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
-import org.apache.pulsar.client.impl.metrics.Counter;
-import org.apache.pulsar.client.impl.metrics.InstrumentProvider;
-import org.apache.pulsar.client.impl.metrics.Unit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,8 +51,6 @@ public class UnAckedMessageTracker implements Closeable {
             new UnAckedMessageTrackerDisabled();
     protected final long ackTimeoutMillis;
     protected final long tickDurationInMs;
-
-    private final Counter consumerAckTimeoutsCounter;
 
     private static class UnAckedMessageTrackerDisabled extends UnAckedMessageTracker {
         @Override
@@ -95,14 +89,13 @@ public class UnAckedMessageTracker implements Closeable {
 
     protected Timeout timeout;
 
-    private UnAckedMessageTracker() {
+    public UnAckedMessageTracker() {
         readLock = null;
         writeLock = null;
         timePartitions = null;
         messageIdPartitionMap = null;
         this.ackTimeoutMillis = 0;
         this.tickDurationInMs = 0;
-        this.consumerAckTimeoutsCounter = null;
     }
 
     protected static final FastThreadLocal<HashSet<MessageId>> TL_MESSAGE_IDS_SET =
@@ -121,14 +114,6 @@ public class UnAckedMessageTracker implements Closeable {
         ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
         this.readLock = readWriteLock.readLock();
         this.writeLock = readWriteLock.writeLock();
-
-        InstrumentProvider ip = client.instrumentProvider();
-        consumerAckTimeoutsCounter = ip.newCounter("pulsar.client.consumer.message.ack.timeout", Unit.Messages,
-                "The number of messages that were not acknowledged in the configured timeout period, hence, were "
-                        + "requested by the client to be redelivered",
-                consumerBase.getTopic(),
-                Attributes.builder().put("pulsar.subscription", consumerBase.getSubscription()).build());
-
         if (conf.getAckTimeoutRedeliveryBackoff() == null) {
             this.messageIdPartitionMap = new HashMap<>();
             this.timePartitions = new ArrayDeque<>();
@@ -151,14 +136,10 @@ public class UnAckedMessageTracker implements Closeable {
                     try {
                         HashSet<MessageId> headPartition = timePartitions.removeFirst();
                         if (!headPartition.isEmpty()) {
-                            consumerAckTimeoutsCounter.add(headPartition.size());
                             log.info("[{}] {} messages will be re-delivered", consumerBase, headPartition.size());
                             headPartition.forEach(messageId -> {
-                                if (messageId instanceof ChunkMessageIdImpl) {
-                                    addChunkedMessageIdsAndRemoveFromSequenceMap(messageId, messageIds, consumerBase);
-                                } else {
-                                    messageIds.add(messageId);
-                                }
+                                addChunkedMessageIdsAndRemoveFromSequenceMap(messageId, messageIds, consumerBase);
+                                messageIds.add(messageId);
                                 messageIdPartitionMap.remove(messageId);
                             });
                         }
@@ -208,10 +189,6 @@ public class UnAckedMessageTracker implements Closeable {
     }
 
     public boolean add(MessageId messageId) {
-        if (messageId == null) {
-            return false;
-        }
-
         writeLock.lock();
         try {
             HashSet<MessageId> partition = timePartitions.peekLast();
@@ -240,10 +217,6 @@ public class UnAckedMessageTracker implements Closeable {
     }
 
     public boolean remove(MessageId messageId) {
-        if (messageId == null) {
-            return false;
-        }
-
         writeLock.lock();
         try {
             boolean removed = false;

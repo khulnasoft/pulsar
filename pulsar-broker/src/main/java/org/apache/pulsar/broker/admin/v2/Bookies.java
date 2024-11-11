@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,7 +20,6 @@ package org.apache.pulsar.broker.admin.v2;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import java.util.ArrayList;
@@ -114,7 +113,7 @@ public class Bookies extends AdminResource {
                         asyncResponse.resume(bi.get());
                     } else {
                         asyncResponse.resume(new RestException(Status.NOT_FOUND,
-                                "Bookie rack placement configuration not found: " + bookieAddress));
+                                "Bookie address not found: " + bookieAddress));
                     }
                 }).exceptionally(ex -> {
             asyncResponse.resume(ex);
@@ -125,10 +124,7 @@ public class Bookies extends AdminResource {
     @DELETE
     @Path("/racks-info/{bookie}")
     @ApiOperation(value = "Removed the rack placement information for a specific bookie in the cluster")
-    @ApiResponses(value = {
-            @ApiResponse(code = 204, message = "Operation successful"),
-            @ApiResponse(code = 403, message = "Don't have admin permission")
-    })
+    @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission")})
     public void deleteBookieRackInfo(@Suspended final AsyncResponse asyncResponse,
                                      @PathParam("bookie") String bookieAddress) throws Exception {
         validateSuperUserAccess();
@@ -140,7 +136,7 @@ public class Bookies extends AdminResource {
 
                     if (!brc.removeBookie(bookieAddress)) {
                         asyncResponse.resume(new RestException(Status.NOT_FOUND,
-                                "Bookie rack placement configuration not found: " + bookieAddress));
+                                "Bookie address not found: " + bookieAddress));
                     }
 
                     return brc;
@@ -157,17 +153,11 @@ public class Bookies extends AdminResource {
     @Path("/racks-info/{bookie}")
     @ApiOperation(value = "Updates the rack placement information for a specific bookie in the cluster (note."
             + " bookie address format:`address:port`)")
-    @ApiResponses(value = {
-            @ApiResponse(code = 204, message = "Operation successful"),
-            @ApiResponse(code = 403, message = "Don't have admin permission")}
-    )
+    @ApiResponses(value = {@ApiResponse(code = 403, message = "Don't have admin permission")})
     public void updateBookieRackInfo(@Suspended final AsyncResponse asyncResponse,
-                                     @ApiParam(value = "The bookie address", required = true)
                                      @PathParam("bookie") String bookieAddress,
-                                     @ApiParam(value = "The group", required = true)
                                      @QueryParam("group") String group,
-                                     @ApiParam(value = "The bookie info", required = true)
-                                     BookieInfo bookieInfo) throws Exception {
+            BookieInfo bookieInfo) throws Exception {
         validateSuperUserAccess();
 
         if (group == null) {

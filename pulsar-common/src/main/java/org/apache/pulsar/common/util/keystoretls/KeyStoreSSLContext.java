@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -34,7 +34,6 @@ import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
-import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -151,30 +150,25 @@ public class KeyStoreSSLContext {
         }
 
         // trust store
-        TrustManagerFactory trustManagerFactory = null;
+        TrustManagerFactory trustManagerFactory;
         if (this.allowInsecureConnection) {
             trustManagerFactory = InsecureTrustManagerFactory.INSTANCE;
         } else {
-            if (!Strings.isNullOrEmpty(trustStorePath)) {
-                trustManagerFactory = provider != null
-                        ? TrustManagerFactory.getInstance(tmfAlgorithm, provider)
-                        : TrustManagerFactory.getInstance(tmfAlgorithm);
-                KeyStore trustStore = KeyStore.getInstance(trustStoreTypeString);
-                char[] passwordChars = trustStorePassword.toCharArray();
-                try (FileInputStream inputStream = new FileInputStream(trustStorePath)) {
-                    trustStore.load(inputStream, passwordChars);
-                }
-                trustManagerFactory.init(trustStore);
+            trustManagerFactory = provider != null
+                    ? TrustManagerFactory.getInstance(tmfAlgorithm, provider)
+                    : TrustManagerFactory.getInstance(tmfAlgorithm);
+            KeyStore trustStore = KeyStore.getInstance(trustStoreTypeString);
+            char[] passwordChars = trustStorePassword.toCharArray();
+            try (FileInputStream inputStream = new FileInputStream(trustStorePath)) {
+                trustStore.load(inputStream, passwordChars);
             }
-        }
-
-        TrustManager[] trustManagers = null;
-        if (trustManagerFactory != null) {
-            trustManagers = SecurityUtility.processConscryptTrustManagers(trustManagerFactory.getTrustManagers());
+            trustManagerFactory.init(trustStore);
         }
 
         // init
-        sslContext.init(keyManagers, trustManagers, new SecureRandom());
+        sslContext.init(keyManagers, SecurityUtility
+                        .processConscryptTrustManagers(trustManagerFactory.getTrustManagers()),
+                new SecureRandom());
         this.sslContext = sslContext;
         return sslContext;
     }
@@ -201,11 +195,7 @@ public class KeyStoreSSLContext {
         }
 
         if (this.mode == Mode.SERVER) {
-            if (needClientAuth) {
-                sslEngine.setNeedClientAuth(true);
-            } else {
-                sslEngine.setWantClientAuth(true);
-            }
+            sslEngine.setNeedClientAuth(this.needClientAuth);
             sslEngine.setUseClientMode(false);
         } else {
             sslEngine.setUseClientMode(true);

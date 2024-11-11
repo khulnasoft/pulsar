@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -162,51 +162,6 @@ public interface Namespaces {
      *            Namespace name
      */
     CompletableFuture<List<String>> getTopicsAsync(String namespace);
-
-    /**
-     * Get the list of topics.
-     * <p/>
-     * Get the list of all the topics under a certain namespace.
-     * <p/>
-     * Response Example:
-     *
-     * <pre>
-     * <code>["persistent://my-tenant/use/namespace1/my-topic-1",
-     *  "persistent://my-tenant/use/namespace1/my-topic-2"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param options
-     *            List namespace topics options
-     *
-     * @throws NotAuthorizedException
-     *             You don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    List<String> getTopics(String namespace, ListNamespaceTopicsOptions options) throws PulsarAdminException;
-
-    /**
-     * Get the list of topics asynchronously.
-     * <p/>
-     * Get the list of all the topics under a certain namespace.
-     * <p/>
-     * Response Example:
-     *
-     * <pre>
-     * <code>["persistent://my-tenant/use/namespace1/my-topic-1",
-     *  "persistent://my-tenant/use/namespace1/my-topic-2"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param options
-     *            List namespace topics options
-     */
-    CompletableFuture<List<String>> getTopicsAsync(String namespace, ListNamespaceTopicsOptions options);
 
     /**
      * Get the list of bundles.
@@ -702,34 +657,6 @@ public interface Namespaces {
      *            Auth actions (produce and consume)
      */
     CompletableFuture<Void> grantPermissionOnNamespaceAsync(String namespace, String role, Set<AuthAction> actions);
-
-    /**
-     * Grant permissions on topics asynchronously.
-     * @param options
-     * @return
-     */
-    CompletableFuture<Void> grantPermissionOnTopicsAsync(List<GrantTopicPermissionOptions> options);
-
-    /**
-     * Grant permissions on topics.
-     * @param options
-     * @throws PulsarAdminException
-     */
-    void grantPermissionOnTopics(List<GrantTopicPermissionOptions> options) throws PulsarAdminException;
-
-    /**
-     * Revoke permissions on topics asynchronously.
-     * @param options
-     * @return
-     */
-    CompletableFuture<Void> revokePermissionOnTopicsAsync(List<RevokeTopicPermissionOptions> options);
-
-    /**
-     * Revoke permissions on topics.
-     * @param options
-     * @throws PulsarAdminException
-     */
-    void revokePermissionOnTopics(List<RevokeTopicPermissionOptions> options) throws PulsarAdminException;
 
     /**
      * Revoke permissions on a namespace.
@@ -1262,7 +1189,7 @@ public interface Namespaces {
      * @param namespace
      *            Namespace name
      * @param enableDeduplication
-     *            whether to enable or disable deduplication feature
+     *            wether to enable or disable deduplication feature
      */
     CompletableFuture<Void> setDeduplicationStatusAsync(String namespace, boolean enableDeduplication);
 
@@ -2119,20 +2046,6 @@ public interface Namespaces {
     void unloadNamespaceBundle(String namespace, String bundle) throws PulsarAdminException;
 
     /**
-     * Unload namespace bundle and assign the bundle to specified broker.
-     *
-     * @param namespace
-     * @param bundle
-     *           range of bundle to unload
-     * @param destinationBroker
-     *           Target broker url to which the bundle should be assigned to
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    void unloadNamespaceBundle(String namespace, String bundle, String destinationBroker) throws PulsarAdminException;
-
-
-    /**
      * Unload namespace bundle asynchronously.
      *
      * @param namespace
@@ -2142,19 +2055,6 @@ public interface Namespaces {
      * @return a future that can be used to track when the bundle is unloaded
      */
     CompletableFuture<Void> unloadNamespaceBundleAsync(String namespace, String bundle);
-
-    /**
-     * Unload namespace bundle asynchronously.
-     *
-     * @param namespace
-     * @param bundle
-     *           range of bundle to unload
-     * @param destinationBroker
-     *           Target broker url to which the bundle should be assigned to
-     *
-     * @return a future that can be used to track when the bundle is unloaded
-     */
-    CompletableFuture<Void> unloadNamespaceBundleAsync(String namespace, String bundle, String destinationBroker);
 
     /**
      * Split namespace bundle.
@@ -3587,45 +3487,6 @@ public interface Namespaces {
      */
     CompletableFuture<Long> getOffloadThresholdAsync(String namespace);
 
-
-    /**
-     * Get the offloadThresholdInSeconds for a namespace.
-     *
-     * <p/>
-     * Response example:
-     *
-     * <pre>
-     * <code>10000000</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     *
-     * @throws NotAuthorizedException
-     *             Don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    long getOffloadThresholdInSeconds(String namespace) throws PulsarAdminException;
-
-
-    /**
-     * Get the offloadThresholdInSeconds for a namespace.
-     *
-     * <p/>
-     * Response example:
-     *
-     * <pre>
-     * <code>10000000</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     */
-    CompletableFuture<Long> getOffloadThresholdInSecondsAsync(String namespace);
-
     /**
      * Set the offloadThreshold for a namespace.
      * <p/>
@@ -3674,50 +3535,6 @@ public interface Namespaces {
      *            maximum number of bytes stored before offloading is triggered
      */
     CompletableFuture<Void> setOffloadThresholdAsync(String namespace, long offloadThreshold);
-
-
-    /**
-     * Set the offloadThresholdInSeconds for a namespace.
-     * <p/>
-     * Negative values disabled automatic offloading. Setting a threshold of 0 will offload data as soon as possible.
-     * <p/>
-     * Request example:
-     *
-     * <pre>
-     * <code>10000000</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param offloadThresholdInSeconds
-     *            maximum number of bytes stored before offloading is triggered
-     *
-     * @throws NotAuthorizedException
-     *             Don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    void setOffloadThresholdInSeconds(String namespace, long offloadThresholdInSeconds) throws PulsarAdminException;
-
-    /**
-     * Set the offloadThresholdInSeconds for a namespace.
-     * <p/>
-     * Negative values disabled automatic offloading. Setting a threshold of 0 will offload data as soon as possible.
-     * <p/>
-     * Request example:
-     *
-     * <pre>
-     * <code>10000000</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param offloadThresholdInSeconds
-     *            maximum number of seconds stored before offloading is triggered
-     */
-    CompletableFuture<Void> setOffloadThresholdInSecondsAsync(String namespace, long offloadThresholdInSeconds);
 
     /**
      * Get the offload deletion lag for a namespace, in milliseconds.
@@ -4651,144 +4468,4 @@ public interface Namespaces {
      * @return
      */
     CompletableFuture<Void> removeNamespaceEntryFiltersAsync(String namespace);
-
-    /**
-     * Enable migration for all topics within a namespace.
-     * <p/>
-     * Migrate all topics of a namespace to new broker.
-     * <p/>
-     * Request example:
-     *
-     * <pre>
-     * <code>true</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param migrated
-     *            Flag to determine namespace is migrated or not
-     * @throws NotAuthorizedException
-     *             Don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    void updateMigrationState(String namespace, boolean migrated) throws PulsarAdminException;
-
-    /**
-     * Set DispatcherPauseOnAckStatePersistent for a namespace asynchronously.
-     */
-    CompletableFuture<Void> setDispatcherPauseOnAckStatePersistentAsync(String namespace);
-
-    /**
-     * Remove entry filters of a namespace.
-     * @param namespace    Namespace name
-     * @throws PulsarAdminException
-     */
-    void setDispatcherPauseOnAckStatePersistent(String namespace) throws PulsarAdminException;
-
-    /**
-     * Removes the dispatcherPauseOnAckStatePersistentEnabled policy for a given namespace asynchronously.
-     */
-    CompletableFuture<Void> removeDispatcherPauseOnAckStatePersistentAsync(String namespace);
-
-    /**
-     * Removes the dispatcherPauseOnAckStatePersistentEnabled policy for a given namespace.
-     */
-    void removeDispatcherPauseOnAckStatePersistent(String namespace) throws PulsarAdminException;
-
-    /**
-     * Get the dispatcherPauseOnAckStatePersistentEnabled policy for a given namespace asynchronously.
-     */
-    CompletableFuture<Boolean> getDispatcherPauseOnAckStatePersistentAsync(String namespace);
-
-    /**
-     * Get the dispatcherPauseOnAckStatePersistentEnabled policy for a given namespace.
-     */
-    boolean getDispatcherPauseOnAckStatePersistent(String namespace) throws PulsarAdminException;
-
-    /**
-     * Get the allowed clusters for a namespace.
-     * <p/>
-     * Response example:
-     *
-     * <pre>
-     * <code>["use", "usw", "usc"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @throws NotAuthorizedException
-     *             Don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PreconditionFailedException
-     *             Namespace is not global
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    List<String> getNamespaceAllowedClusters(String namespace) throws PulsarAdminException;
-
-    /**
-     * Get the allowed clusters for a namespace asynchronously.
-     * <p/>
-     * Response example:
-     *
-     * <pre>
-     * <code>["use", "usw", "usc"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     */
-    CompletableFuture<List<String>> getNamespaceAllowedClustersAsync(String namespace);
-
-    /**
-     * Set the allowed clusters for a namespace.
-     * <p/>
-     * Request example:
-     *
-     * <pre>
-     * <code>["us-west", "us-east", "us-cent"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param clusterIds
-     *            Pulsar Cluster Ids
-     *
-     * @throws ConflictException
-     *             Peer-cluster cannot be part of an allowed-cluster
-     * @throws NotAuthorizedException
-     *             Don't have admin permission
-     * @throws NotFoundException
-     *             Namespace does not exist
-     * @throws PreconditionFailedException
-     *             Namespace is not global
-     * @throws PreconditionFailedException
-     *             Invalid cluster ids
-     * @throws PulsarAdminException
-     *             The list of allowed clusters should include all replication clusters.
-     * @throws PulsarAdminException
-     *             Unexpected error
-     */
-    void setNamespaceAllowedClusters(String namespace, Set<String> clusterIds) throws PulsarAdminException;
-
-    /**
-     * Set the allowed clusters for a namespace asynchronously.
-     * <p/>
-     * Request example:
-     *
-     * <pre>
-     * <code>["us-west", "us-east", "us-cent"]</code>
-     * </pre>
-     *
-     * @param namespace
-     *            Namespace name
-     * @param clusterIds
-     *            Pulsar Cluster Ids
-     */
-    CompletableFuture<Void> setNamespaceAllowedClustersAsync(String namespace, Set<String> clusterIds);
-
 }

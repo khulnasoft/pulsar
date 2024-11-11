@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -70,7 +70,7 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
     private BookiesRackConfiguration racksWithHost = new BookiesRackConfiguration();
     private Map<String, BookieInfo> bookieInfoMap = new HashMap<>();
 
-    static MetadataStore getMetadataStore(Configuration conf) throws MetadataException {
+    public static MetadataStore createMetadataStore(Configuration conf) throws MetadataException {
         MetadataStore store;
         Object storeProperty = conf.getProperty(METADATA_STORE_INSTANCE);
         if (storeProperty != null) {
@@ -101,7 +101,6 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
                 int zkTimeout = Integer.parseInt((String) conf.getProperty("zkTimeout"));
                 store = MetadataStoreExtended.create(url,
                         MetadataStoreConfig.builder()
-                                .metadataStoreName(MetadataStoreConfig.METADATA_STORE)
                                 .sessionTimeoutMillis(zkTimeout)
                                 .build());
             } catch (MetadataStoreException e) {
@@ -116,20 +115,14 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
         super.setConf(conf);
         MetadataStore store;
         try {
-            store = getMetadataStore(conf);
-        } catch (MetadataException e) {
-            throw new RuntimeException(METADATA_STORE_INSTANCE + " failed to init BookieId list");
-        }
-
-        bookieMappingCache = store.getMetadataCache(BookiesRackConfiguration.class);
-        store.registerListener(this::handleUpdates);
-
-        try {
-            var racksWithHost = bookieMappingCache.get(BOOKIE_INFO_ROOT_PATH)
-                    .thenApply(optRes -> optRes.orElseGet(BookiesRackConfiguration::new))
-                    .get();
-
-            for (var bookieMapping : racksWithHost.values()) {
+            store = createMetadataStore(conf);
+            bookieMappingCache = store.getMetadataCache(BookiesRackConfiguration.class);
+            store.registerListener(this::handleUpdates);
+            racksWithHost = bookieMappingCache.get(BOOKIE_INFO_ROOT_PATH).get()
+                    .orElseGet(BookiesRackConfiguration::new);
+            updateRacksWithHost(racksWithHost);
+            watchAvailableBookies();
+            for (Map<String, BookieInfo> bookieMapping : racksWithHost.values()) {
                 for (String address : bookieMapping.keySet()) {
                     bookieAddressListLastTime.add(BookieId.parse(address));
                 }
@@ -138,13 +131,9 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
                             bookieAddressListLastTime);
                 }
             }
-            updateRacksWithHost(racksWithHost);
-        } catch (ExecutionException | InterruptedException e) {
-            LOG.error("Failed to update rack info. ", e);
-            throw new RuntimeException(e);
+        } catch (InterruptedException | ExecutionException | MetadataException e) {
+            throw new RuntimeException(METADATA_STORE_INSTANCE + " failed to init BookieId list");
         }
-
-        watchAvailableBookies();
     }
 
     private void watchAvailableBookies() {
@@ -155,13 +144,13 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
                 field.setAccessible(true);
                 RegistrationClient registrationClient = (RegistrationClient) field.get(bookieAddressResolver);
                 registrationClient.watchWritableBookies(versioned -> {
-                    bookieMappingCache.get(BOOKIE_INFO_ROOT_PATH)
-                            .thenApply(optRes -> optRes.orElseGet(BookiesRackConfiguration::new))
-                            .thenAccept(this::updateRacksWithHost)
-                            .exceptionally(ex -> {
-                                LOG.error("Failed to update rack info. ", ex);
-                                return null;
-                            });
+                    try {
+                        racksWithHost = bookieMappingCache.get(BOOKIE_INFO_ROOT_PATH).get()
+                                .orElseGet(BookiesRackConfiguration::new);
+                        updateRacksWithHost(racksWithHost);
+                    } catch (InterruptedException | ExecutionException e) {
+                        LOG.error("Failed to update rack info. ", e);
+                    }
                 });
             } catch (NoSuchFieldException | IllegalAccessException e) {
                 LOG.error("Failed watch available bookies.", e);
@@ -255,7 +244,6 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
 
         bookieMappingCache.get(BOOKIE_INFO_ROOT_PATH)
                 .thenAccept(optVal -> {
-                    Set<BookieId> bookieIdSet = new HashSet<>();
                     synchronized (this) {
                         LOG.info("Bookie rack info updated to {}. Notifying rackaware policy.", optVal);
                         this.updateRacksWithHost(optVal.orElseGet(BookiesRackConfiguration::new));
@@ -270,12 +258,12 @@ public class BookieRackAffinityMapping extends AbstractDNSToSwitchMapping
                             LOG.debug("Bookies with rack update from {} to {}", bookieAddressListLastTime,
                                     bookieAddressList);
                         }
-                        bookieIdSet.addAll(bookieAddressList);
+                        Set<BookieId> bookieIdSet = new HashSet<>(bookieAddressList);
                         bookieIdSet.addAll(bookieAddressListLastTime);
                         bookieAddressListLastTime = bookieAddressList;
-                    }
-                    if (rackawarePolicy != null) {
-                        rackawarePolicy.onBookieRackChange(new ArrayList<>(bookieIdSet));
+                        if (rackawarePolicy != null) {
+                            rackawarePolicy.onBookieRackChange(new ArrayList<>(bookieIdSet));
+                        }
                     }
                 });
     }

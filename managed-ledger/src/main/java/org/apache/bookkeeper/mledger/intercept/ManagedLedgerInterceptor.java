@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,11 +20,11 @@ package org.apache.bookkeeper.mledger.intercept;
 
 import io.netty.buffer.ByteBuf;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
-import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.impl.OpAddEntry;
 
 /**
  * Interceptor for ManagedLedger.
@@ -32,34 +32,14 @@ import org.apache.bookkeeper.mledger.Entry;
 @InterfaceAudience.LimitedPrivate
 @InterfaceStability.Stable
 public interface ManagedLedgerInterceptor {
-    /**
-     * An operation to add an entry to a ledger.
-     */
-    interface AddEntryOperation {
-        /**
-         * Get the data to be written to the ledger.
-         * @return data to be written to the ledger
-         */
-        ByteBuf getData();
-        /**
-         * Set the data to be written to the ledger.
-         * @param data data to be written to the ledger
-         */
-        void setData(ByteBuf data);
-        /**
-         * Get the operation context object.
-         * @return context the context object
-         */
-        Object getCtx();
-    }
 
     /**
-     * Intercept adding an entry to a ledger.
-     *
-     * @param op an operation to be intercepted.
+     * Intercept an OpAddEntry and return an OpAddEntry.
+     * @param op an OpAddEntry to be intercepted.
      * @param numberOfMessages
+     * @return an OpAddEntry.
      */
-    void beforeAddEntry(AddEntryOperation op, int numberOfMessages);
+    OpAddEntry beforeAddEntry(OpAddEntry op, int numberOfMessages);
 
     /**
      * Intercept When add entry failed.
@@ -76,24 +56,11 @@ public interface ManagedLedgerInterceptor {
     void onManagedLedgerPropertiesInitialize(Map<String, String> propertiesMap);
 
     /**
-     * A handle for reading the last ledger entry.
-     */
-    interface LastEntryHandle {
-        /**
-         * Read the last entry from the ledger.
-         * The caller is responsible for releasing the entry.
-         * @return the last entry from the ledger, if any
-         */
-        CompletableFuture<Optional<Entry>> readLastEntryAsync();
-    }
-
-    /**
      * Intercept when ManagedLedger is initialized.
-     *
-     * @param name            name of ManagedLedger
-     * @param lastEntryHandle a LedgerHandle.
+     * @param name name of ManagedLedger
+     * @param ledgerHandle a LedgerHandle.
      */
-    CompletableFuture<Void> onManagedLedgerLastLedgerInitialize(String name, LastEntryHandle lastEntryHandle);
+    CompletableFuture<Void> onManagedLedgerLastLedgerInitialize(String name, LedgerHandle ledgerHandle);
 
     /**
      * @param propertiesMap  map of properties.
@@ -126,12 +93,12 @@ public interface ManagedLedgerInterceptor {
 
     /**
      * Intercept before payload gets written to ledger.
-     * @param ctx the operation context object
+     * @param ledgerWriteOp OpAddEntry used to trigger ledger write.
      * @param dataToBeStoredInLedger data to be stored in ledger
      * @return handle to the processor
      */
-    default PayloadProcessorHandle processPayloadBeforeLedgerWrite(Object ctx,
-                                                                   ByteBuf dataToBeStoredInLedger) {
+    default PayloadProcessorHandle processPayloadBeforeLedgerWrite(OpAddEntry ledgerWriteOp,
+                                                                   ByteBuf dataToBeStoredInLedger){
         return null;
     }
 }

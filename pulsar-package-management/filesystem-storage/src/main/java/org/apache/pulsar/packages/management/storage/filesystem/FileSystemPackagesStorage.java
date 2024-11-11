@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -58,11 +58,7 @@ public class FileSystemPackagesStorage implements PackagesStorage {
         }
     }
 
-    private File getPath(String path) throws IOException {
-        if (path.contains("..")) {
-            throw new IOException("Invalid path: " + path);
-        }
-
+    private File getPath(String path) {
         File f = Paths.get(storagePath.toString(), path).toFile();
         if (!f.getParentFile().exists()) {
             if (!f.getParentFile().mkdirs()) {
@@ -123,40 +119,28 @@ public class FileSystemPackagesStorage implements PackagesStorage {
 
     @Override
     public CompletableFuture<Void> deleteAsync(String path) {
-        try {
-            if (getPath(path).delete()) {
-                return CompletableFuture.completedFuture(null);
-            } else {
-                CompletableFuture<Void> f = new CompletableFuture<>();
-                f.completeExceptionally(new IOException("Failed to delete file at " + path));
-                return f;
-            }
-        } catch (IOException e) {
-            return CompletableFuture.failedFuture(e);
+        if (getPath(path).delete()) {
+            return CompletableFuture.completedFuture(null);
+        } else {
+            CompletableFuture<Void> f = new CompletableFuture<>();
+            f.completeExceptionally(new IOException("Failed to delete file at " + path));
+            return f;
         }
     }
 
     @Override
     public CompletableFuture<List<String>> listAsync(String path) {
-        try {
-            String[] files = getPath(path).list();
-            if (files == null) {
-                return CompletableFuture.completedFuture(Collections.emptyList());
-            } else {
-                return CompletableFuture.completedFuture(Arrays.asList(files));
-            }
-        } catch (IOException e) {
-            return CompletableFuture.failedFuture(e);
+        String[] files = getPath(path).list();
+        if (files == null) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        } else {
+            return CompletableFuture.completedFuture(Arrays.asList(files));
         }
     }
 
     @Override
     public CompletableFuture<Boolean> existAsync(String path) {
-        try {
-            return CompletableFuture.completedFuture(getPath(path).exists());
-        } catch (IOException e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return CompletableFuture.completedFuture(getPath(path).exists());
     }
 
     @Override

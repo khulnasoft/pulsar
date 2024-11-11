@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,43 +20,31 @@ package org.apache.pulsar.broker.stats.prometheus;
 
 import static org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsGeneratorUtils.generateSystemMetrics;
 import static org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsGeneratorUtils.getTypeStr;
+import static org.apache.pulsar.common.stats.JvmMetrics.getJvmDirectMemoryUsed;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.Unpooled;
 import io.prometheus.client.Collector;
-import java.io.BufferedOutputStream;
+import io.prometheus.client.CollectorRegistry;
+import io.prometheus.client.Gauge;
+import io.prometheus.client.Gauge.Child;
+import io.prometheus.client.hotspot.DefaultExports;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
+import java.io.StringWriter;
 import java.io.Writer;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.CharBuffer;
-import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.zip.CRC32;
-import java.util.zip.Deflater;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.stats.NullStatsProvider;
 import org.apache.bookkeeper.stats.StatsProvider;
+import org.apache.pulsar.PulsarVersion;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.stats.metrics.ManagedCursorMetrics;
 import org.apache.pulsar.broker.stats.metrics.ManagedLedgerCacheMetrics;
 import org.apache.pulsar.broker.stats.metrics.ManagedLedgerMetrics;
-import org.apache.pulsar.broker.storage.BookkeeperManagedLedgerStorageClass;
-import org.apache.pulsar.broker.storage.ManagedLedgerStorageClass;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.stats.Metrics;
 import org.apache.pulsar.common.util.SimpleTextOutputStream;
@@ -68,255 +56,55 @@ import org.apache.pulsar.common.util.SimpleTextOutputStream;
  * href="https://prometheus.io/docs/instrumenting/exposition_formats/">Exposition Formats</a>
  */
 @Slf4j
-public class PrometheusMetricsGenerator implements AutoCloseable {
-    private static final int DEFAULT_INITIAL_BUFFER_SIZE = 1024 * 1024; // 1MB
-    private static final int MINIMUM_FOR_MAX_COMPONENTS = 64;
+public class PrometheusMetricsGenerator {
 
-    private volatile MetricsBuffer metricsBuffer;
-    private static AtomicReferenceFieldUpdater<PrometheusMetricsGenerator, MetricsBuffer> metricsBufferFieldUpdater =
-            AtomicReferenceFieldUpdater.newUpdater(PrometheusMetricsGenerator.class, MetricsBuffer.class,
-                    "metricsBuffer");
-    private volatile boolean closed;
+    static {
+        DefaultExports.initialize();
 
-    public static class MetricsBuffer {
-        private final CompletableFuture<ResponseBuffer> bufferFuture;
-        private final long createTimeslot;
-        private final AtomicInteger refCnt = new AtomicInteger(2);
-
-        MetricsBuffer(long timeslot) {
-            bufferFuture = new CompletableFuture<>();
-            createTimeslot = timeslot;
-        }
-
-        public CompletableFuture<ResponseBuffer> getBufferFuture() {
-            return bufferFuture;
-        }
-
-        long getCreateTimeslot() {
-            return createTimeslot;
-        }
-
-        /**
-         * Retain the buffer. This is allowed, only when the buffer is not already released.
-         *
-         * @return true if the buffer is retained successfully, false otherwise.
-         */
-        boolean retain() {
-            return refCnt.updateAndGet(x -> x > 0 ? x + 1 : x) > 0;
-        }
-
-        /**
-         * Release the buffer.
-         */
-        public void release() {
-            int newValue = refCnt.decrementAndGet();
-            if (newValue == 0) {
-                bufferFuture.whenComplete((byteBuf, throwable) -> {
-                    if (byteBuf != null) {
-                        byteBuf.release();
-                    }
-                });
+        Gauge.build("jvm_memory_direct_bytes_used", "-").create().setChild(new Child() {
+            @Override
+            public double get() {
+                return getJvmDirectMemoryUsed();
             }
-        }
+        }).register(CollectorRegistry.defaultRegistry);
+
+        Gauge.build("jvm_memory_direct_bytes_max", "-").create().setChild(new Child() {
+            @Override
+            public double get() {
+                return io.netty.util.internal.PlatformDependent.maxDirectMemory();
+            }
+        }).register(CollectorRegistry.defaultRegistry);
+
+        // metric to export pulsar version info
+        Gauge.build("pulsar_version_info", "-")
+                .labelNames("version", "commit").create()
+                .setChild(new Child() {
+                    @Override
+                    public double get() {
+                        return 1.0;
+                    }
+                }, PulsarVersion.getVersion(), PulsarVersion.getGitSha())
+                .register(CollectorRegistry.defaultRegistry);
     }
 
-    /**
-     * A wraps the response buffer and asynchronously provides a gzip compressed buffer when requested.
-     */
-    public static class ResponseBuffer {
-        private final ByteBuf uncompressedBuffer;
-        private boolean released = false;
-        private CompletableFuture<ByteBuf> compressedBuffer;
-
-        private ResponseBuffer(final ByteBuf uncompressedBuffer) {
-            this.uncompressedBuffer = uncompressedBuffer;
-        }
-
-        public ByteBuf getUncompressedBuffer() {
-            return uncompressedBuffer;
-        }
-
-        public synchronized CompletableFuture<ByteBuf> getCompressedBuffer(Executor executor) {
-            if (released) {
-                throw new IllegalStateException("Already released!");
-            }
-            if (compressedBuffer == null) {
-                compressedBuffer = new CompletableFuture<>();
-                ByteBuf retainedDuplicate = uncompressedBuffer.retainedDuplicate();
-                executor.execute(() -> {
-                    try {
-                        compressedBuffer.complete(compress(retainedDuplicate));
-                    } catch (Exception e) {
-                        compressedBuffer.completeExceptionally(e);
-                    } finally {
-                        retainedDuplicate.release();
-                    }
-                });
-            }
-            return compressedBuffer;
-        }
-
-        private ByteBuf compress(ByteBuf uncompressedBuffer) {
-            GzipByteBufferWriter gzipByteBufferWriter = new GzipByteBufferWriter(uncompressedBuffer.alloc(),
-                    uncompressedBuffer.readableBytes());
-            return gzipByteBufferWriter.compress(uncompressedBuffer);
-        }
-
-        public synchronized void release() {
-            released = true;
-            uncompressedBuffer.release();
-            if (compressedBuffer != null) {
-                compressedBuffer.whenComplete((byteBuf, throwable) -> {
-                    if (byteBuf != null) {
-                        byteBuf.release();
-                    }
-                });
-            }
-        }
+    public static void generate(PulsarService pulsar, boolean includeTopicMetrics, boolean includeConsumerMetrics,
+                                boolean includeProducerMetrics, OutputStream out) throws IOException {
+        generate(pulsar, includeTopicMetrics, includeConsumerMetrics, includeProducerMetrics, false, out, null);
     }
 
-    /**
-     * Compress input nio buffers into gzip format with output in a Netty composite ByteBuf.
-     */
-    private static class GzipByteBufferWriter {
-        private static final byte[] GZIP_HEADER =
-                new byte[] {(byte) 0x1f, (byte) 0x8b, Deflater.DEFLATED, 0, 0, 0, 0, 0, 0, 0};
-        private final ByteBufAllocator bufAllocator;
-        private final Deflater deflater;
-        private final CRC32 crc;
-        private final int bufferSize;
-        private final CompositeByteBuf resultBuffer;
-        private ByteBuf backingCompressBuffer;
-        private ByteBuffer compressBuffer;
-
-        GzipByteBufferWriter(ByteBufAllocator bufAllocator, int readableBytes) {
-            deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
-            crc = new CRC32();
-            this.bufferSize = Math.max(Math.min(resolveChunkSize(bufAllocator), readableBytes), 8192);
-            this.bufAllocator = bufAllocator;
-            this.resultBuffer = bufAllocator.compositeDirectBuffer(readableBytes / bufferSize + 2);
-            allocateCompressBuffer();
-        }
-
-        /**
-         * Compress the input Netty buffer and append it to the result buffer in gzip format.
-         * @param uncompressedBuffer
-         */
-        public ByteBuf compress(ByteBuf uncompressedBuffer) {
-            try {
-                ByteBuffer[] nioBuffers = uncompressedBuffer.nioBuffers();
-                for (int i = 0, nioBuffersLength = nioBuffers.length; i < nioBuffersLength; i++) {
-                    ByteBuffer nioBuffer = nioBuffers[i];
-                    compressAndAppend(nioBuffer, i == 0, i == nioBuffersLength - 1);
-                }
-                return resultBuffer;
-            } finally {
-                close();
-            }
-        }
-
-        private void compressAndAppend(ByteBuffer nioBuffer, boolean isFirst, boolean isLast) {
-            if (isFirst) {
-                // write gzip header
-                compressBuffer.put(GZIP_HEADER);
-            }
-            // update the CRC32 checksum calculation
-            nioBuffer.mark();
-            crc.update(nioBuffer);
-            nioBuffer.reset();
-            // pass the input buffer to the deflater
-            deflater.setInput(nioBuffer);
-            // when the input buffer is the last one, set the flag to finish the deflater
-            if (isLast) {
-                deflater.finish();
-            }
-            int written = -1;
-            // the deflater may need multiple calls to deflate the input buffer
-            // the completion is checked by the deflater.needsInput() method for buffers that aren't the last buffer
-            // for the last buffer, the completion is checked by the deflater.finished() method
-            while (!isLast && !deflater.needsInput() || isLast && !deflater.finished()) {
-                // when the previous deflater.deflate call returns 0 (and needsInput/finished returns false),
-                // it means that the output buffer is full.
-                // append the compressed buffer to the result buffer and allocate a new buffer.
-                if (written == 0) {
-                    if (compressBuffer.position() > 0) {
-                        appendCompressBufferToResultBuffer();
-                        allocateCompressBuffer();
-                    } else {
-                        // this is an unexpected case, throw an exception to prevent an infinite loop
-                        throw new IllegalStateException(
-                                "Deflater didn't write any bytes while the compress buffer is empty.");
-                    }
-                }
-                written = deflater.deflate(compressBuffer);
-            }
-            if (isLast) {
-                // append the last compressed buffer when it is not empty
-                if (compressBuffer.position() > 0) {
-                    appendCompressBufferToResultBuffer();
-                } else {
-                    // release an unused empty buffer
-                    backingCompressBuffer.release();
-                }
-                backingCompressBuffer = null;
-                compressBuffer = null;
-
-                // write gzip trailer, 2 integers (CRC32 checksum and uncompressed size)
-                ByteBuffer trailerBuf = ByteBuffer.allocate(2 * Integer.BYTES);
-                // integer values are in little endian byte order
-                trailerBuf.order(ByteOrder.LITTLE_ENDIAN);
-                // write CRC32 checksum
-                trailerBuf.putInt((int) crc.getValue());
-                // write uncompressed size
-                trailerBuf.putInt(deflater.getTotalIn());
-                trailerBuf.flip();
-                resultBuffer.addComponent(true, Unpooled.wrappedBuffer(trailerBuf));
-            }
-        }
-
-        private void appendCompressBufferToResultBuffer() {
-            backingCompressBuffer.setIndex(0, compressBuffer.position());
-            resultBuffer.addComponent(true, backingCompressBuffer);
-        }
-
-        private void allocateCompressBuffer() {
-            backingCompressBuffer = bufAllocator.directBuffer(bufferSize);
-            compressBuffer = backingCompressBuffer.nioBuffer(0, bufferSize);
-        }
-
-        private void close() {
-            if (deflater != null) {
-                deflater.end();
-            }
-            if (backingCompressBuffer != null) {
-                backingCompressBuffer.release();
-            }
-        }
+    public static void generate(PulsarService pulsar, boolean includeTopicMetrics, boolean includeConsumerMetrics,
+                                boolean includeProducerMetrics, boolean splitTopicAndPartitionIndexLabel,
+                                OutputStream out) throws IOException {
+        generate(pulsar, includeTopicMetrics, includeConsumerMetrics, includeProducerMetrics,
+                splitTopicAndPartitionIndexLabel, out, null);
     }
 
-    private final PulsarService pulsar;
-    private final boolean includeTopicMetrics;
-    private final boolean includeConsumerMetrics;
-    private final boolean includeProducerMetrics;
-    private final boolean splitTopicAndPartitionIndexLabel;
-    private final Clock clock;
-
-    private volatile int initialBufferSize = DEFAULT_INITIAL_BUFFER_SIZE;
-
-    public PrometheusMetricsGenerator(PulsarService pulsar, boolean includeTopicMetrics,
-                                      boolean includeConsumerMetrics, boolean includeProducerMetrics,
-                                      boolean splitTopicAndPartitionIndexLabel, Clock clock) {
-        this.pulsar = pulsar;
-        this.includeTopicMetrics = includeTopicMetrics;
-        this.includeConsumerMetrics = includeConsumerMetrics;
-        this.includeProducerMetrics = includeProducerMetrics;
-        this.splitTopicAndPartitionIndexLabel = splitTopicAndPartitionIndexLabel;
-        this.clock = clock;
-    }
-
-    protected ByteBuf generateMetrics(List<PrometheusRawMetricsProvider> metricsProviders) {
-        ByteBuf buf = allocateMultipartCompositeDirectBuffer();
-        boolean exceptionHappens = false;
+    public static void generate(PulsarService pulsar, boolean includeTopicMetrics, boolean includeConsumerMetrics,
+                                boolean includeProducerMetrics, boolean splitTopicAndPartitionIndexLabel,
+                                OutputStream out,
+                                List<PrometheusRawMetricsProvider> metricsProviders)
+            throws IOException {
+        ByteBuf buf = PulsarByteBufAllocator.DEFAULT.heapBuffer();
         //Used in namespace/topic and transaction aggregators as share metric names
         PrometheusMetricStreams metricStreams = new PrometheusMetricStreams();
         try {
@@ -346,50 +134,12 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
                     metricsProvider.generate(stream);
                 }
             }
-
-            return buf;
-        } catch (Throwable t) {
-            exceptionHappens = true;
-            throw t;
+            out.write(buf.array(), buf.arrayOffset(), buf.readableBytes());
         } finally {
             //release all the metrics buffers
             metricStreams.releaseAll();
-            //if exception happens, release buffer
-            if (exceptionHappens) {
-                buf.release();
-            } else {
-                // for the next time, the initial buffer size will be suggested by the last buffer size
-                initialBufferSize = Math.max(DEFAULT_INITIAL_BUFFER_SIZE, buf.readableBytes());
-            }
+            buf.release();
         }
-    }
-
-    private ByteBuf allocateMultipartCompositeDirectBuffer() {
-        // use composite buffer with pre-allocated buffers to ensure that the pooled allocator can be used
-        // for allocating the buffers
-        ByteBufAllocator byteBufAllocator = PulsarByteBufAllocator.DEFAULT;
-        int chunkSize = resolveChunkSize(byteBufAllocator);
-        CompositeByteBuf buf = byteBufAllocator.compositeDirectBuffer(
-                Math.max(MINIMUM_FOR_MAX_COMPONENTS, (initialBufferSize / chunkSize) + 1));
-        int totalLen = 0;
-        while (totalLen < initialBufferSize) {
-            totalLen += chunkSize;
-            // increase the capacity in increments of chunkSize to preallocate the buffers
-            // in the composite buffer
-            buf.capacity(totalLen);
-        }
-        return buf;
-    }
-
-    private static int resolveChunkSize(ByteBufAllocator byteBufAllocator) {
-        int chunkSize;
-        if (byteBufAllocator instanceof PooledByteBufAllocator) {
-            PooledByteBufAllocator pooledByteBufAllocator = (PooledByteBufAllocator) byteBufAllocator;
-            chunkSize = Math.max(pooledByteBufAllocator.metric().chunkSize(), DEFAULT_INITIAL_BUFFER_SIZE);
-        } else {
-            chunkSize = DEFAULT_INITIAL_BUFFER_SIZE;
-        }
-        return chunkSize;
     }
 
     private static void generateBrokerBasicMetrics(PulsarService pulsar, SimpleTextOutputStream stream) {
@@ -410,8 +160,8 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
                     clusterName, Collector.Type.GAUGE, stream);
         }
 
-        parseMetricsToPrometheusMetrics(pulsar.getBrokerService()
-                        .getPulsarStats().getBrokerOperabilityMetrics().getMetrics(),
+        parseMetricsToPrometheusMetrics(Collections.singletonList(pulsar.getBrokerService()
+                        .getPulsarStats().getBrokerOperabilityMetrics().generateConnectionMetrics()),
                 clusterName, Collector.Type.GAUGE, stream);
 
         // generate loadBalance metrics
@@ -437,13 +187,12 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
                         String name = key.substring(0, nameIndex);
                         value = key.substring(nameIndex + 1);
                         if (!names.contains(name)) {
-                            stream.write("# TYPE ");
-                            writeNameReplacingBrkPrefix(stream, name);
-                            stream.write(' ').write(getTypeStr(metricType)).write("\n");
+                            stream.write("# TYPE ").write(name.replace("brk_", "pulsar_")).write(' ')
+                                    .write(getTypeStr(metricType)).write("\n");
                             names.add(name);
                         }
-                        writeNameReplacingBrkPrefix(stream, name);
-                        stream.write("{cluster=\"").write(cluster).write('"');
+                        stream.write(name.replace("brk_", "pulsar_"))
+                                .write("{cluster=\"").write(cluster).write('"');
                     } catch (Exception e) {
                         continue;
                     }
@@ -452,13 +201,12 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
 
                     String name = entry.getKey();
                     if (!names.contains(name)) {
-                        stream.write("# TYPE ");
-                        writeNameReplacingBrkPrefix(stream, entry.getKey());
-                        stream.write(' ').write(getTypeStr(metricType)).write('\n');
+                        stream.write("# TYPE ").write(entry.getKey().replace("brk_", "pulsar_")).write(' ')
+                                .write(getTypeStr(metricType)).write('\n');
                         names.add(name);
                     }
-                    writeNameReplacingBrkPrefix(stream, name);
-                    stream.write("{cluster=\"").write(cluster).write('"');
+                    stream.write(name.replace("brk_", "pulsar_"))
+                            .write("{cluster=\"").write(cluster).write('"');
                 }
 
                 //to avoid quantile label duplicated
@@ -467,9 +215,12 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
                     if (metric.getKey().isEmpty() || "cluster".equals(metric.getKey())) {
                         continue;
                     }
-                    stream.write(", ").write(metric.getKey()).write("=\"").write(metric.getValue()).write('"');
+                    final String metricValue = PrometheusMetricsGeneratorUtils
+                            .writeEscapedLabelValue(metric.getValue());
+                    stream.write(", ").write(metric.getKey()).write("=\"").write(metricValue).write('"');
                     if (value != null && !value.isEmpty() && !appendedQuantile) {
-                        stream.write(", ").write("quantile=\"").write(value).write('"');
+                        stream.write(", ").write("quantile=\"").write(PrometheusMetricsGeneratorUtils
+                                .writeEscapedLabelValue(value)).write('"');
                         appendedQuantile = true;
                     }
                 }
@@ -478,101 +229,19 @@ public class PrometheusMetricsGenerator implements AutoCloseable {
         }
     }
 
-    private static SimpleTextOutputStream writeNameReplacingBrkPrefix(SimpleTextOutputStream stream, String name) {
-        if (name.startsWith("brk_")) {
-            return stream.write("pulsar_").write(CharBuffer.wrap(name).position("brk_".length()));
-        } else {
-            return stream.write(name);
-        }
-    }
-
     private static void generateManagedLedgerBookieClientMetrics(PulsarService pulsar, SimpleTextOutputStream stream) {
-        ManagedLedgerStorageClass defaultStorageClass = pulsar.getManagedLedgerStorage().getDefaultStorageClass();
-        if (defaultStorageClass instanceof BookkeeperManagedLedgerStorageClass bkStorageClass) {
-            StatsProvider statsProvider = bkStorageClass.getStatsProvider();
-            if (statsProvider instanceof NullStatsProvider) {
-                return;
-            }
+        StatsProvider statsProvider = pulsar.getManagedLedgerClientFactory().getStatsProvider();
+        if (statsProvider instanceof NullStatsProvider) {
+            return;
+        }
 
-            try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new OutputStream() {
-                @Override
-                public void write(int b) throws IOException {
-                    stream.writeByte(b);
-                }
-
-                @Override
-                public void write(byte b[], int off, int len) throws IOException {
-                    stream.write(b, off, len);
-                }
-            }), StandardCharsets.UTF_8)) {
-                statsProvider.writeAllMetrics(writer);
-            } catch (IOException e) {
-                log.error("Failed to write managed ledger bookie client metrics", e);
-            }
+        try {
+            Writer writer = new StringWriter();
+            statsProvider.writeAllMetrics(writer);
+            stream.write(writer.toString());
+        } catch (IOException e) {
+            // nop
         }
     }
 
-    public MetricsBuffer renderToBuffer(Executor executor, List<PrometheusRawMetricsProvider> metricsProviders) {
-        boolean cacheMetricsResponse = pulsar.getConfiguration().isMetricsBufferResponse();
-        while (!closed && !Thread.currentThread().isInterrupted()) {
-            long currentTimeSlot = cacheMetricsResponse ? calculateCurrentTimeSlot() : 0;
-            MetricsBuffer currentMetricsBuffer = metricsBuffer;
-            if (currentMetricsBuffer == null || currentMetricsBuffer.getBufferFuture().isCompletedExceptionally()
-                    || (currentMetricsBuffer.getBufferFuture().isDone()
-                    && (currentMetricsBuffer.getCreateTimeslot() != 0
-                    && currentTimeSlot > currentMetricsBuffer.getCreateTimeslot()))) {
-                MetricsBuffer newMetricsBuffer = new MetricsBuffer(currentTimeSlot);
-                if (metricsBufferFieldUpdater.compareAndSet(this, currentMetricsBuffer, newMetricsBuffer)) {
-                    if (currentMetricsBuffer != null) {
-                        currentMetricsBuffer.release();
-                    }
-                    CompletableFuture<ResponseBuffer> bufferFuture = newMetricsBuffer.getBufferFuture();
-                    executor.execute(() -> {
-                        try {
-                            bufferFuture.complete(new ResponseBuffer(generateMetrics(metricsProviders)));
-                        } catch (Exception e) {
-                            bufferFuture.completeExceptionally(e);
-                        } finally {
-                            if (currentTimeSlot == 0) {
-                                // if the buffer is not cached, release it after the future is completed
-                                metricsBufferFieldUpdater.compareAndSet(this, newMetricsBuffer, null);
-                                newMetricsBuffer.release();
-                            }
-                        }
-                    });
-                    // no need to retain before returning since the new buffer starts with refCnt 2
-                    return newMetricsBuffer;
-                } else {
-                    currentMetricsBuffer = metricsBuffer;
-                }
-            }
-            // retain the buffer before returning
-            // if the buffer is already released, retaining won't succeed, retry in that case
-            if (currentMetricsBuffer != null && currentMetricsBuffer.retain()) {
-                return currentMetricsBuffer;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Calculate the current time slot based on the current time.
-     * This is to ensure that cached metrics are refreshed consistently at a fixed interval regardless of the request
-     * time.
-     */
-    private long calculateCurrentTimeSlot() {
-        long cacheTimeoutMillis =
-                TimeUnit.SECONDS.toMillis(Math.max(1, pulsar.getConfiguration().getManagedLedgerStatsPeriodSeconds()));
-        long now = clock.millis();
-        return now / cacheTimeoutMillis;
-    }
-
-    @Override
-    public void close() {
-        closed = true;
-        MetricsBuffer buffer = metricsBufferFieldUpdater.getAndSet(this, null);
-        if (buffer != null) {
-            buffer.release();
-        }
-    }
 }

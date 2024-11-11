@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -50,7 +50,6 @@ public class TypedMessageBuilderImpl<T> implements TypedMessageBuilder<T> {
     private final transient Schema<T> schema;
     private transient ByteBuffer content;
     private final transient TransactionImpl txn;
-    private transient T value;
 
     public TypedMessageBuilderImpl(ProducerBase<?> producer, Schema<T> schema) {
         this(producer, schema, null);
@@ -66,22 +65,6 @@ public class TypedMessageBuilderImpl<T> implements TypedMessageBuilder<T> {
     }
 
     private long beforeSend() {
-        if (value == null) {
-            msgMetadata.setNullValue(true);
-        } else {
-            getKeyValueSchema().map(keyValueSchema -> {
-                if (keyValueSchema.getKeyValueEncodingType() == KeyValueEncodingType.SEPARATED) {
-                    setSeparateKeyValue(value, keyValueSchema);
-                    return this;
-                } else {
-                    return null;
-                }
-            }).orElseGet(() -> {
-                content = ByteBuffer.wrap(schema.encode(value));
-                return this;
-            });
-        }
-
         if (txn == null) {
             return -1L;
         }
@@ -157,8 +140,22 @@ public class TypedMessageBuilderImpl<T> implements TypedMessageBuilder<T> {
 
     @Override
     public TypedMessageBuilder<T> value(T value) {
-        this.value = value;
-        return this;
+        if (value == null) {
+            msgMetadata.setNullValue(true);
+            return this;
+        }
+
+        return getKeyValueSchema().map(keyValueSchema -> {
+            if (keyValueSchema.getKeyValueEncodingType() == KeyValueEncodingType.SEPARATED) {
+                setSeparateKeyValue(value, keyValueSchema);
+                return this;
+            } else {
+                return null;
+            }
+        }).orElseGet(() -> {
+            content = ByteBuffer.wrap(schema.encode(value));
+            return this;
+        });
     }
 
     @Override

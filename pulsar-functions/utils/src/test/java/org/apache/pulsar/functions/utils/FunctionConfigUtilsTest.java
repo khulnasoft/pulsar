@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,6 +26,7 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import com.google.gson.Gson;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.JsonFormat;
 import java.lang.reflect.Field;
@@ -34,13 +35,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.client.api.CompressionType;
-import org.apache.pulsar.client.api.ConsumerCryptoFailureAction;
-import org.apache.pulsar.client.api.ProducerCryptoFailureAction;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.impl.schema.JSONSchema;
 import org.apache.pulsar.common.functions.ConsumerConfig;
-import org.apache.pulsar.common.functions.CryptoConfig;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.ProducerConfig;
 import org.apache.pulsar.common.functions.Resources;
@@ -105,14 +101,13 @@ public class FunctionConfigUtilsTest {
         functionConfig.setForwardSourceMessageProperty(true);
         functionConfig.setUserConfig(new HashMap<>());
         functionConfig.setAutoAck(true);
-        functionConfig.setTimeoutMs(2000L);
+        functionConfig.setTimeoutMs(2000l);
         functionConfig.setRuntimeFlags("-DKerberos");
         ProducerConfig producerConfig = new ProducerConfig();
         producerConfig.setMaxPendingMessages(100);
         producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
         producerConfig.setUseThreadLocalProducers(true);
         producerConfig.setBatchBuilder("DEFAULT");
-        producerConfig.setCompressionType(CompressionType.ZLIB);
         functionConfig.setProducerConfig(producerConfig);
         Function.FunctionDetails functionDetails = FunctionConfigUtils.convert(functionConfig);
         FunctionConfig convertedConfig = FunctionConfigUtils.convertFromDetails(functionDetails);
@@ -147,21 +142,16 @@ public class FunctionConfigUtilsTest {
         functionConfig.setForwardSourceMessageProperty(true);
         functionConfig.setUserConfig(new HashMap<>());
         functionConfig.setAutoAck(true);
-        functionConfig.setTimeoutMs(2000L);
+        functionConfig.setTimeoutMs(2000l);
         functionConfig.setWindowConfig(new WindowConfig().setWindowLengthCount(10));
         ProducerConfig producerConfig = new ProducerConfig();
         producerConfig.setMaxPendingMessages(100);
         producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
         producerConfig.setUseThreadLocalProducers(true);
         producerConfig.setBatchBuilder("KEY_BASED");
-        producerConfig.setCompressionType(CompressionType.SNAPPY);
         functionConfig.setProducerConfig(producerConfig);
         Function.FunctionDetails functionDetails = FunctionConfigUtils.convert(functionConfig);
         FunctionConfig convertedConfig = FunctionConfigUtils.convertFromDetails(functionDetails);
-
-        // WindowsFunction guarantees convert to FunctionGuarantees.
-        assertEquals(convertedConfig.getWindowConfig().getProcessingGuarantees(),
-                WindowConfig.ProcessingGuarantees.valueOf(functionConfig.getProcessingGuarantees().name()));
 
         // add default resources
         functionConfig.setResources(Resources.getDefaultResources());
@@ -369,7 +359,7 @@ public class FunctionConfigUtilsTest {
         FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
         assertEquals(
                 mergedConfig.getMaxMessageRetries(),
-                Integer.valueOf(10)
+                new Integer(10)
         );
         mergedConfig.setMaxMessageRetries(functionConfig.getMaxMessageRetries());
         assertEquals(
@@ -408,7 +398,7 @@ public class FunctionConfigUtilsTest {
         FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
         assertEquals(
                 mergedConfig.getParallelism(),
-                Integer.valueOf(101)
+                new Integer(101)
         );
         mergedConfig.setParallelism(functionConfig.getParallelism());
         assertEquals(
@@ -422,8 +412,8 @@ public class FunctionConfigUtilsTest {
         FunctionConfig functionConfig = createFunctionConfig();
         Resources resources = new Resources();
         resources.setCpu(0.3);
-        resources.setRam(1232L);
-        resources.setDisk(123456L);
+        resources.setRam(1232l);
+        resources.setDisk(123456l);
         FunctionConfig newFunctionConfig = createUpdatedFunctionConfig("resources", resources);
         FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
         assertEquals(
@@ -442,7 +432,7 @@ public class FunctionConfigUtilsTest {
         FunctionConfig functionConfig = createFunctionConfig();
         WindowConfig windowConfig = new WindowConfig();
         windowConfig.setSlidingIntervalCount(123);
-        windowConfig.setSlidingIntervalDurationMs(123L);
+        windowConfig.setSlidingIntervalDurationMs(123l);
         FunctionConfig newFunctionConfig = createUpdatedFunctionConfig("windowConfig", windowConfig);
         FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
         assertEquals(
@@ -457,37 +447,13 @@ public class FunctionConfigUtilsTest {
     }
 
     @Test
-    public void testMergeDifferentProducerConfig() {
-        FunctionConfig functionConfig = createFunctionConfig();
-
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setMaxPendingMessages(100);
-        producerConfig.setMaxPendingMessagesAcrossPartitions(1000);
-        producerConfig.setUseThreadLocalProducers(true);
-        producerConfig.setBatchBuilder("DEFAULT");
-        producerConfig.setCompressionType(CompressionType.ZLIB);
-        FunctionConfig newFunctionConfig = createUpdatedFunctionConfig("producerConfig", producerConfig);
-
-        FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
-        assertEquals(
-                mergedConfig.getProducerConfig(),
-                producerConfig
-        );
-        mergedConfig.setProducerConfig(functionConfig.getProducerConfig());
-        assertEquals(
-                new Gson().toJson(functionConfig),
-                new Gson().toJson(mergedConfig)
-        );
-    }
-
-    @Test
     public void testMergeDifferentTimeout() {
         FunctionConfig functionConfig = createFunctionConfig();
-        FunctionConfig newFunctionConfig = createUpdatedFunctionConfig("timeoutMs", 102L);
+        FunctionConfig newFunctionConfig = createUpdatedFunctionConfig("timeoutMs", 102l);
         FunctionConfig mergedConfig = FunctionConfigUtils.validateUpdate(functionConfig, newFunctionConfig);
         assertEquals(
                 mergedConfig.getTimeoutMs(),
-                Long.valueOf(102L)
+                new Long(102l)
         );
         mergedConfig.setTimeoutMs(functionConfig.getTimeoutMs());
         assertEquals(
@@ -669,37 +635,5 @@ public class FunctionConfigUtilsTest {
 
         convertedConfig = FunctionConfigUtils.convertFromDetails(functionDetails);
         assertTrue(convertedConfig.getInputSpecs().get("test-input").isPoolMessages());
-    }
-
-    @Test
-    public void testConvertProducerSpecToProducerConfigAndBackToProducerSpec() {
-        // given
-        Function.ProducerSpec producerSpec = Function.ProducerSpec.newBuilder()
-                .setBatchBuilder("KEY_BASED")
-                .setCompressionType(Function.CompressionType.ZSTD)
-                .setCryptoSpec(Function.CryptoSpec.newBuilder()
-                        .addProducerEncryptionKeyName("key1")
-                        .addProducerEncryptionKeyName("key2")
-                        .setConsumerCryptoFailureAction(Function.CryptoSpec.FailureAction.DISCARD)
-                        .setProducerCryptoFailureAction(Function.CryptoSpec.FailureAction.SEND)
-                        .setCryptoKeyReaderClassName("ReaderClassName")
-                        .setCryptoKeyReaderConfig("{\"key\":\"value\"}")
-                        .build())
-                .build();
-        // when
-        ProducerConfig producerConfig = FunctionConfigUtils.convertProducerSpecToProducerConfig(producerSpec);
-        // then
-        assertEquals(producerConfig.getBatchBuilder(), "KEY_BASED");
-        assertEquals(producerConfig.getCompressionType(), CompressionType.ZSTD);
-        CryptoConfig cryptoConfig = producerConfig.getCryptoConfig();
-        assertEquals(cryptoConfig.getProducerCryptoFailureAction(), ProducerCryptoFailureAction.SEND);
-        assertEquals(cryptoConfig.getConsumerCryptoFailureAction(), ConsumerCryptoFailureAction.DISCARD);
-        assertEquals(cryptoConfig.getEncryptionKeys(), new String[]{"key1", "key2"});
-        assertEquals(cryptoConfig.getCryptoKeyReaderClassName(), "ReaderClassName");
-        // and when
-        // converted back to producer spec
-        Function.ProducerSpec producerSpec2 = FunctionConfigUtils.convertProducerConfigToProducerSpec(producerConfig);
-        // then
-        assertEquals(producerSpec2, producerSpec);
     }
 }

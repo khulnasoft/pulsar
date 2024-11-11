@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,7 +25,6 @@ import com.github.benmanes.caffeine.cache.AsyncLoadingCache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -48,34 +47,26 @@ import org.apache.pulsar.metadata.api.MetadataStoreException.BadVersionException
 import org.apache.pulsar.metadata.api.MetadataStoreException.ContentDeserializationException;
 import org.apache.pulsar.metadata.api.MetadataStoreException.NotFoundException;
 import org.apache.pulsar.metadata.api.Notification;
-import org.apache.pulsar.metadata.api.extended.CreateOption;
-import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.metadata.impl.AbstractMetadataStore;
 
 @Slf4j
 public class MetadataCacheImpl<T> implements MetadataCache<T>, Consumer<Notification> {
     @Getter
     private final MetadataStore store;
-    private final MetadataStoreExtended storeExtended;
     private final MetadataSerde<T> serde;
 
     private final AsyncLoadingCache<String, Optional<CacheGetResult<T>>> objCache;
 
-    public MetadataCacheImpl(MetadataStore store, TypeReference<T> typeRef, MetadataCacheConfig<T> cacheConfig) {
+    public MetadataCacheImpl(MetadataStore store, TypeReference<T> typeRef, MetadataCacheConfig cacheConfig) {
         this(store, new JSONMetadataSerdeTypeRef<>(typeRef), cacheConfig);
     }
 
-    public MetadataCacheImpl(MetadataStore store, JavaType type, MetadataCacheConfig<T> cacheConfig) {
+    public MetadataCacheImpl(MetadataStore store, JavaType type, MetadataCacheConfig cacheConfig) {
         this(store, new JSONMetadataSerdeSimpleType<>(type), cacheConfig);
     }
 
-    public MetadataCacheImpl(MetadataStore store, MetadataSerde<T> serde, MetadataCacheConfig<T> cacheConfig) {
+    public MetadataCacheImpl(MetadataStore store, MetadataSerde<T> serde, MetadataCacheConfig cacheConfig) {
         this.store = store;
-        if (store instanceof MetadataStoreExtended) {
-            this.storeExtended = (MetadataStoreExtended) store;
-        } else {
-            this.storeExtended = null;
-        }
         this.serde = serde;
 
         Caffeine<Object, Object> cacheBuilder = Caffeine.newBuilder();
@@ -98,12 +89,7 @@ public class MetadataCacheImpl<T> implements MetadataCache<T>, Consumer<Notifica
                             Optional<CacheGetResult<T>> oldValue,
                             Executor executor) {
                         if (store instanceof AbstractMetadataStore && ((AbstractMetadataStore) store).isConnected()) {
-                            return readValueFromStore(key).thenApply(val -> {
-                                if (cacheConfig.getAsyncReloadConsumer() != null) {
-                                    cacheConfig.getAsyncReloadConsumer().accept(key, val);
-                                }
-                                return val;
-                            });
+                            return readValueFromStore(key);
                         } else {
                             // Do not try to refresh the cache item if we know that we're not connected to the
                             // metadata store
@@ -255,21 +241,6 @@ public class MetadataCacheImpl<T> implements MetadataCache<T>, Consumer<Notifica
                 });
 
         return future;
-    }
-
-    @Override
-    public CompletableFuture<Void> put(String path, T value, EnumSet<CreateOption> options) {
-        final byte[] bytes;
-        try {
-            bytes = serde.serialize(path, value);
-        } catch (IOException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-        if (storeExtended != null) {
-            return storeExtended.put(path, bytes, Optional.empty(), options).thenAccept(__ -> refresh(path));
-        } else {
-            return store.put(path, bytes, Optional.empty()).thenAccept(__ -> refresh(path));
-        }
     }
 
     @Override

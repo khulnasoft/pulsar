@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,6 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+import com.google.common.collect.ImmutableMap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
@@ -33,16 +34,14 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.EntryImpl;
-import org.apache.pulsar.broker.PulsarService;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.loadbalance.extensions.data.BrokerLookupData;
 import org.apache.pulsar.broker.service.persistent.DispatchRateLimiter;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
-import org.apache.pulsar.broker.service.plugin.EntryFilterProvider;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.broker.service.plugin.FilterContext;
 import org.apache.pulsar.client.api.transaction.TxnID;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
@@ -88,19 +87,13 @@ public class AbstractBaseDispatcherTest {
         Topic mockTopic = mock(Topic.class);
         when(this.subscriptionMock.getTopic()).thenReturn(mockTopic);
 
-        final EntryFilterProvider entryFilterProvider = mock(EntryFilterProvider.class);
-        final ServiceConfiguration serviceConfiguration = mock(ServiceConfiguration.class);
-        when(serviceConfiguration.isAllowOverrideEntryFilters()).thenReturn(true);
-        final PulsarService pulsar = mock(PulsarService.class);
-        when(pulsar.getConfiguration()).thenReturn(serviceConfiguration);
         BrokerService mockBrokerService = mock(BrokerService.class);
-        when(mockBrokerService.pulsar()).thenReturn(pulsar);
-        when(mockBrokerService.getEntryFilterProvider()).thenReturn(entryFilterProvider);
         when(mockTopic.getBrokerService()).thenReturn(mockBrokerService);
-        EntryFilter mockFilter = mock(EntryFilter.class);
+        EntryFilterWithClassLoader mockFilter = mock(EntryFilterWithClassLoader.class);
         when(mockFilter.filterEntry(any(Entry.class), any(FilterContext.class))).thenReturn(
                 EntryFilter.FilterResult.REJECT);
-        when(mockTopic.getEntryFilters()).thenReturn(List.of(mockFilter));
+        ImmutableMap<String, EntryFilterWithClassLoader> entryFilters = ImmutableMap.of("key", mockFilter);
+        when(mockTopic.getEntryFilters()).thenReturn(entryFilters);
         DispatchRateLimiter subscriptionDispatchRateLimiter = mock(DispatchRateLimiter.class);
 
         this.helper = new AbstractBaseDispatcherTestHelper(this.subscriptionMock, this.svcConfig,
@@ -118,7 +111,7 @@ public class AbstractBaseDispatcherTest {
 
         int size = this.helper.filterEntriesForConsumer(entries, batchSizes, sendMessageInfo, null, cursor, false, null);
         assertEquals(size, 0);
-        verify(subscriptionDispatchRateLimiter).consumeDispatchQuota(1, expectedBytePermits);
+        verify(subscriptionDispatchRateLimiter).tryDispatchPermit(1, expectedBytePermits);
     }
 
     @Test
@@ -137,7 +130,7 @@ public class AbstractBaseDispatcherTest {
         PersistentTopic mockTopic = mock(PersistentTopic.class);
         when(this.subscriptionMock.getTopic()).thenReturn(mockTopic);
 
-        when(mockTopic.isTxnAborted(any(TxnID.class), any())).thenReturn(true);
+        when(mockTopic.isTxnAborted(any(TxnID.class))).thenReturn(true);
 
         List<Entry> entries = new ArrayList<>();
         entries.add(EntryImpl.create(1, 1, createTnxMessage("message1", 1)));
@@ -241,7 +234,8 @@ public class AbstractBaseDispatcherTest {
 
         @Override
         public boolean trackDelayedDelivery(long ledgerId, long entryId, MessageMetadata msgMetadata) {
-            return msgMetadata.hasDeliverAtTime();
+            //for test.
+            return true;
         }
 
         @Override
@@ -280,8 +274,7 @@ public class AbstractBaseDispatcherTest {
         }
 
         @Override
-        public CompletableFuture<Void> close(boolean disconnectConsumers,
-                                             Optional<BrokerLookupData> assignedBrokerLookupData) {
+        public CompletableFuture<Void> close() {
             return null;
         }
 
@@ -296,8 +289,7 @@ public class AbstractBaseDispatcherTest {
         }
 
         @Override
-        public CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor,
-                                                              Optional<BrokerLookupData> assignedBrokerLookupData) {
+        public CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor) {
             return null;
         }
 
@@ -317,7 +309,7 @@ public class AbstractBaseDispatcherTest {
         }
 
         @Override
-        public void redeliverUnacknowledgedMessages(Consumer consumer, List<Position> positions) {
+        public void redeliverUnacknowledgedMessages(Consumer consumer, List<PositionImpl> positions) {
 
         }
 

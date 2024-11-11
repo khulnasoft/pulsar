@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,6 +21,7 @@ package org.apache.pulsar.functions.windowing;
 import static org.apache.pulsar.functions.windowing.EvictionPolicy.Action.EXPIRE;
 import static org.apache.pulsar.functions.windowing.EvictionPolicy.Action.PROCESS;
 import static org.apache.pulsar.functions.windowing.EvictionPolicy.Action.STOP;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -29,7 +30,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.pulsar.functions.api.Record;
 
 /**
@@ -60,7 +63,7 @@ public class WindowManager<T> implements TriggerHandler {
     private final ReentrantLock lock;
 
     /**
-     * Constructs a {@link WindowManager}.
+     * Constructs a {@link WindowManager}
      *
      * @param lifecycleListener the {@link WindowLifecycleListener}
      * @param queue a collection where the events in the window can be enqueued.
@@ -95,7 +98,7 @@ public class WindowManager<T> implements TriggerHandler {
     }
 
     /**
-     * Tracks a window event.
+     * Tracks a window event
      *
      * @param windowEvent the window event to track
      */
@@ -122,10 +125,10 @@ public class WindowManager<T> implements TriggerHandler {
 
         lock.lock();
         try {
-           /*
-            * scan the entire window to handle out of order events in
-            * the case of time based windows.
-            */
+    /*
+     * scan the entire window to handle out of order events in
+     * the case of time based windows.
+     */
             windowEvents = scanEvents(true);
             expired = new ArrayList<>(expiredEvents);
             expiredEvents.clear();

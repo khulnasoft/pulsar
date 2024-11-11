@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,10 +18,10 @@
  */
 package org.apache.pulsar.metadata.bookkeeper;
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import com.google.common.collect.Lists;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -114,8 +114,8 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         long last = -1;
         while (lri.hasNext()) {
             LedgerManager.LedgerRange lr = lri.next();
-            assertFalse(lr.getLedgers().isEmpty(), "ledger range must not be empty");
-            assertTrue(last < lr.start(), "ledger ranges must not overlap");
+            assertFalse("ledger range must not be empty", lr.getLedgers().isEmpty());
+            assertTrue("ledger ranges must not overlap", last < lr.start());
             ret.addAll(lr.getLedgers());
             last = lr.end();
         }
@@ -136,11 +136,11 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         }, null, BKException.Code.OK, BKException.Code.ReadException);
 
         latch.await();
-        assertEquals(finalRC.get(), BKException.Code.OK, "Final RC of asyncProcessLedgers");
+        assertEquals("Final RC of asyncProcessLedgers", BKException.Code.OK, finalRC.get());
         return ledgersReadAsync;
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testIterateNoLedgers(String provider, Supplier<String> urlSupplier) throws Exception {
         @Cleanup
         MetadataStoreExtended store =
@@ -154,10 +154,10 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
             lri.next();
         }
 
-        assertEquals(lri.hasNext(), false);
+        assertEquals(false, lri.hasNext());
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testSingleLedger(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -176,10 +176,10 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         assertEquals(lids.iterator().next().longValue(), id);
 
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, lids, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", lids, ledgersReadAsync);
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testTwoLedgers(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -196,13 +196,13 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         LedgerRangeIterator lri = lm.getLedgerRanges(0);
         assertNotNull(lri);
         Set<Long> returnedIds = ledgerRangeToSet(lri);
-        assertEquals(returnedIds, ids);
+        assertEquals(ids, returnedIds);
 
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, ids, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", ids, ledgersReadAsync);
     }
 
-    @Test(timeOut = 240000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testSeveralContiguousLedgers(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -223,13 +223,13 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         LedgerRangeIterator lri = lm.getLedgerRanges(0);
         assertNotNull(lri);
         Set<Long> returnedIds = ledgerRangeToSet(lri);
-        assertEquals(returnedIds, ids);
+        assertEquals(ids, returnedIds);
 
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, ids, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", ids, ledgersReadAsync);
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testRemovalOfNodeJustTraversed(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -283,7 +283,7 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         }
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void validateEmptyL4PathSkipped(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -316,10 +316,10 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         LedgerRangeIterator lri = lm.getLedgerRanges(0);
         assertNotNull(lri);
         Set<Long> returnedIds = ledgerRangeToSet(lri);
-        assertEquals(returnedIds, ids);
+        assertEquals(ids, returnedIds);
 
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, ids, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", ids, ledgersReadAsync);
 
         lri = lm.getLedgerRanges(0);
         int emptyRanges = 0;
@@ -328,10 +328,10 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
                 emptyRanges++;
             }
         }
-        assertEquals(emptyRanges, 0);
+        assertEquals(0, emptyRanges);
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void testWithSeveralIncompletePaths(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -367,13 +367,13 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         LedgerRangeIterator lri = lm.getLedgerRanges(0);
         assertNotNull(lri);
         Set<Long> returnedIds = ledgerRangeToSet(lri);
-        assertEquals(returnedIds, ids);
+        assertEquals(ids, returnedIds);
 
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, ids, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", ids, ledgersReadAsync);
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void checkConcurrentModifications(String provider, Supplier<String> urlSupplier) throws Throwable {
         @Cleanup
         MetadataStoreExtended store =
@@ -403,7 +403,6 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         final long start = MathUtils.nowInNano();
         final CountDownLatch latch = new CountDownLatch(1);
         ArrayList<Future<?>> futures = new ArrayList<>();
-        @Cleanup("shutdownNow")
         ExecutorService executor = Executors.newCachedThreadPool();
         final ConcurrentSkipListSet<Long> createdLedgers = new ConcurrentSkipListSet<>();
         for (int i = 0; i < numWriters; ++i) {
@@ -461,7 +460,7 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
         executor.shutdownNow();
     }
 
-    @Test(timeOut = 30000, dataProvider = "impl")
+    @Test(dataProvider = "impl")
     public void hierarchicalLedgerManagerAsyncProcessLedgersTest(String provider, Supplier<String> urlSupplier)
             throws Throwable {
         @Cleanup
@@ -477,8 +476,8 @@ public class LedgerManagerIteratorTest extends BaseMetadataStoreTest {
             createLedger(lm, ledgerId);
         }
         Set<Long> ledgersReadThroughIterator = ledgerRangeToSet(lri);
-        assertEquals(ledgersReadThroughIterator, ledgerIds, "Comparing LedgersIds read through Iterator");
+        assertEquals("Comparing LedgersIds read through Iterator", ledgerIds, ledgersReadThroughIterator);
         Set<Long> ledgersReadAsync = getLedgerIdsByUsingAsyncProcessLedgers(lm);
-        assertEquals(ledgersReadAsync, ledgerIds, "Comparing LedgersIds read asynchronously");
+        assertEquals("Comparing LedgersIds read asynchronously", ledgerIds, ledgersReadAsync);
     }
 }

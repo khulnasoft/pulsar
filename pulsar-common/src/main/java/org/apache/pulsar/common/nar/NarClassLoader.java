@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 /**
  * This class was adapted from NiFi NAR Utils
  * https://github.com/apache/nifi/tree/master/nifi-nar-bundles/nifi-framework-bundle/nifi-framework/nifi-nar-utils
@@ -40,7 +41,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
@@ -136,12 +136,10 @@ public class NarClassLoader extends URLClassLoader {
      * The NAR for which this <tt>ClassLoader</tt> is responsible.
      */
     private final File narWorkingDirectory;
-    private final AtomicBoolean closed = new AtomicBoolean();
 
     private static final String TMP_DIR_PREFIX = "pulsar-nar";
 
-    public static final String DEFAULT_NAR_EXTRACTION_DIR = System.getProperty("nar.extraction.tmpdir") != null
-            ? System.getProperty("nar.extraction.tmpdir") : System.getProperty("java.io.tmpdir");
+    public static final String DEFAULT_NAR_EXTRACTION_DIR = System.getProperty("java.io.tmpdir");
 
     static NarClassLoader getFromArchive(File narPath, Set<String> additionalJars, ClassLoader parent,
                                                 String narExtractionDirectory)
@@ -189,7 +187,7 @@ public class NarClassLoader extends URLClassLoader {
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Created class loader with paths: {}", Arrays.toString(getURLs()));
+            log.info("Created class loader with paths: {}", Arrays.toString(getURLs()));
         }
     }
 
@@ -293,19 +291,5 @@ public class NarClassLoader extends URLClassLoader {
     @Override
     public String toString() {
         return NarClassLoader.class.getName() + "[" + narWorkingDirectory.getPath() + "]";
-    }
-
-    @Override
-    protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-        if (closed.get()) {
-            log.warn("Loading class {} from a closed classloader ({})", name, this);
-        }
-        return super.loadClass(name, resolve);
-    }
-
-    @Override
-    public void close() throws IOException {
-        closed.set(true);
-        super.close();
     }
 }

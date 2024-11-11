@@ -18,7 +18,7 @@
 # under the License.
 #
 
-ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/.. >/dev/null 2>&1 && pwd )"
+ROOT_DIR=$(git rev-parse --show-toplevel)
 
 pushd $ROOT_DIR > /dev/null
 

@@ -32,7 +32,6 @@ import (
 )
 
 const (
-	logLevelEnvName      = "LOGGING_LEVEL"
 	defaultLogLevel      = log.InfoLevel
 	defaultLogTimeFormat = "2006/01/02 15:04:05.000"
 )
@@ -176,12 +175,6 @@ func (f *TextFormatter) Format(entry *log.Entry) ([]byte, error) {
 
 func init() {
 	log.SetLevel(defaultLogLevel)
-	// lookup and parse the logLevel variable
-	if logLevelStr, exist := os.LookupEnv(logLevelEnvName); exist {
-		if logLevel, err := log.ParseLevel(logLevelStr); err == nil {
-			log.SetLevel(logLevel)
-		}
-	}
 	log.AddHook(&contextHook{})
 	log.SetFormatter(&TextFormatter{})
 }

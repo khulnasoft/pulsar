@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -44,8 +44,9 @@ public class PrometheusMetricsGeneratorUtilsTest {
         counter.labels(specifyClusterValue).inc();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PrometheusMetricsGeneratorUtils.generate(defaultClusterValue, out,  Collections.emptyList());
+        System.out.println(("metrics 1 :" + out.toString()));
         assertTrue(out.toString().contains(
-                String.format("%s_total{cluster=\"%s\"} 1.0", metricsName, specifyClusterValue)
+                String.format("%s{cluster=\"%s\"} 1.0", metricsName, specifyClusterValue)
         ));
         // cleanup
         out.close();
@@ -67,8 +68,9 @@ public class PrometheusMetricsGeneratorUtilsTest {
         counter.labels(labelValue).inc();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PrometheusMetricsGeneratorUtils.generate(defaultClusterValue, out,  Collections.emptyList());
+        System.out.println(("metrics 1 :" + out.toString()));
         assertTrue(out.toString().contains(
-                String.format("%s_total{cluster=\"%s\",%s=\"%s\"} 1.0",
+                String.format("%s{cluster=\"%s\",%s=\"%s\"} 1.0",
                         metricsName, defaultClusterValue, labelName, labelValue)
         ));
         // cleanup
@@ -88,8 +90,9 @@ public class PrometheusMetricsGeneratorUtilsTest {
         counter.inc();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PrometheusMetricsGeneratorUtils.generate(defaultClusterValue, out,  Collections.emptyList());
+        System.out.println(("metrics 1 :" + out.toString()));
         assertTrue(out.toString().contains(
-                String.format("%s_total{cluster=\"%s\"} 1.0", metricsName, defaultClusterValue)
+                String.format("%s{cluster=\"%s\"} 1.0", metricsName, defaultClusterValue)
         ));
         // cleanup
         out.close();
@@ -98,5 +101,27 @@ public class PrometheusMetricsGeneratorUtilsTest {
 
     private static String randomString(){
         return UUID.randomUUID().toString().replaceAll("-", "");
+    }
+
+
+    @Test
+    public void testWriteEscapedLabelValue() throws Exception {
+        assertEquals(PrometheusMetricsGeneratorUtils.writeEscapedLabelValue(null), null);
+        assertEquals(PrometheusMetricsGeneratorUtils.writeEscapedLabelValue(""), "");
+        assertEquals(PrometheusMetricsGeneratorUtils.writeEscapedLabelValue("ok"), "ok");
+        assertEquals(PrometheusMetricsGeneratorUtils.writeEscapedLabelValue("ok_!234567890!£$%&/()"),
+                "ok_!234567890!£$%&/()");
+        assertEquals(PrometheusMetricsGeneratorUtils.writeEscapedLabelValue("repl\"\\\n"),
+                "repl\\\"\\\\\\n");
+    }
+    @Test
+    public void testWriteEscapedLabelValuePattern() throws Exception {
+        assertFalse(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape(""));
+        assertFalse(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("ok"));
+        assertFalse(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("ok_!234567890!£$%&/()"));
+        assertTrue(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("repl\"\\\n"));
+        assertTrue(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("repl\""));
+        assertTrue(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("repl\\"));
+        assertTrue(PrometheusMetricsGeneratorUtils.labelValueNeedsEscape("\nrepl"));
     }
 }

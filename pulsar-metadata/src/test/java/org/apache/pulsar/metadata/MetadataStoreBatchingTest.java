@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -104,8 +104,7 @@ public class MetadataStoreBatchingTest extends BaseMetadataStoreTest {
         CompletableFuture<Stat> f3 = store.put(key1 + "/c", new byte[0], Optional.of(-1L)); // Should succeed
         CompletableFuture<Void> f4 = store.delete(key1 + "/d", Optional.empty()); // Should fail
 
-        assertTrue(f1.join().getVersion() >= 0L);
-        assertTrue(f1.join().isFirstVersion());
+        assertEquals(f1.join().getVersion(), 0L);
 
         try {
             f2.join();
@@ -113,9 +112,7 @@ public class MetadataStoreBatchingTest extends BaseMetadataStoreTest {
             assertEquals(ce.getCause().getClass(), BadVersionException.class);
         }
 
-        assertTrue(f3.join().getVersion() >= 0L);
-        assertTrue(f3.join().isFirstVersion());
-
+        assertEquals(f3.join().getVersion(), 0L);
 
         try {
             f4.join();

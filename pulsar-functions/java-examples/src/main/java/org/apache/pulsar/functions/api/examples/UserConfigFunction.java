@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,6 +21,8 @@ package org.apache.pulsar.functions.api.examples;
 import org.apache.pulsar.functions.api.Context;
 import org.apache.pulsar.functions.api.Function;
 
+import java.util.Optional;
+
 /**
  * An example demonstrate retrieving user config value from Context.
  */
@@ -28,7 +30,12 @@ public class UserConfigFunction implements Function<String, String> {
 
     @Override
     public String process(String input, Context context) {
-        return (String) context.getUserConfigValue("WhatToWrite").orElse("Not a nice way");
+        Optional<Object> whatToWrite = context.getUserConfigValue("WhatToWrite");
+        if (whatToWrite.get() != null) {
+            return (String)whatToWrite.get();
+        } else {
+            return "Not a nice way";
+        }
     }
 }
 

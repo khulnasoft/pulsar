@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,17 +21,12 @@ package org.apache.pulsar.broker;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.assertSame;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.functions.worker.WorkerConfig;
 import org.apache.pulsar.functions.worker.WorkerService;
 import org.testng.annotations.AfterMethod;
@@ -52,30 +47,24 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
     protected void cleanup() throws Exception {
         super.internalCleanup();
         useStaticPorts = false;
+        resetConfig();
     }
 
     @Override
     protected void doInitConf() throws Exception {
         super.doInitConf();
-        conf.setBrokerServicePortTls(Optional.of(0));
-        conf.setWebServicePortTls(Optional.of(0));
-        conf.setTopicNameCacheMaxCapacity(5000);
-        conf.setMaxSecondsToClearTopicNameCache(5);
         if (useStaticPorts) {
             conf.setBrokerServicePortTls(Optional.of(6651));
             conf.setBrokerServicePort(Optional.of(6660));
             conf.setWebServicePort(Optional.of(8081));
             conf.setWebServicePortTls(Optional.of(8082));
         }
-        conf.setTlsTrustCertsFilePath(CA_CERT_FILE_PATH);
-        conf.setTlsCertificateFilePath(BROKER_CERT_FILE_PATH);
-        conf.setTlsKeyFilePath(BROKER_KEY_FILE_PATH);
     }
 
     @Test
     public void testGetWorkerService() throws Exception {
         ServiceConfiguration configuration = new ServiceConfiguration();
-        configuration.setMetadataStoreUrl("zk:localhost");
+        configuration.setZookeeperServers("localhost");
         configuration.setClusterName("clusterName");
         configuration.setFunctionsWorkerEnabled(true);
         configuration.setBrokerShutdownTimeoutMs(0L);
@@ -95,8 +84,18 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
      */
     @Test
     public void testGetWorkerServiceException() throws Exception {
-        conf.setFunctionsWorkerEnabled(false);
-        setup();
+        init();
+        ServiceConfiguration configuration = new ServiceConfiguration();
+        configuration.setZookeeperServers("localhost");
+        configuration.setClusterName("clusterName");
+        configuration.setFunctionsWorkerEnabled(false);
+        configuration.setBrokerShutdownTimeoutMs(0L);
+        configuration.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
+        configuration.setBrokerServicePort(Optional.of(0));
+        configuration.setBrokerServicePortTls(Optional.of(0));
+        configuration.setWebServicePort(Optional.of(0));
+        configuration.setWebServicePortTls(Optional.of(0));
+        startBroker(configuration);
 
         String errorMessage = "Pulsar Function Worker is not enabled, probably functionsWorkerEnabled is set to false";
 
@@ -153,7 +152,6 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
 
     @Test
     public void testAdvertisedAddress() throws Exception {
-        cleanup();
         useStaticPorts = true;
         setup();
         assertEquals(pulsar.getAdvertisedAddress(), "localhost");
@@ -166,7 +164,6 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
 
     @Test
     public void testAdvertisedListeners() throws Exception {
-        cleanup();
         // don't use dynamic ports when using advertised listeners (#12079)
         useStaticPorts = true;
         conf.setAdvertisedListeners("internal:pulsar://gateway:6650, internal:pulsar+ssl://gateway:6651");
@@ -182,7 +179,6 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
 
     @Test
     public void testDynamicBrokerPort() throws Exception {
-        cleanup();
         useStaticPorts = false;
         setup();
         assertEquals(pulsar.getAdvertisedAddress(), "localhost");
@@ -195,117 +191,4 @@ public class PulsarServiceTest extends MockedPulsarServiceBaseTest {
         assertEquals(pulsar.getWebServiceAddressTls(), "https://localhost:" + pulsar.getWebService().getListenPortHTTPS().get());
     }
 
-    @Test
-    public void testTopicCacheConfiguration() throws Exception {
-        cleanup();
-        setup();
-        assertEquals(conf.getTopicNameCacheMaxCapacity(), 5000);
-        assertEquals(conf.getMaxSecondsToClearTopicNameCache(), 5);
-
-        List<TopicName> topicNameCached = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            topicNameCached.add(TopicName.get("public/default/tp_" + i));
-        }
-
-        // Verify: the cache does not clear since it is not larger than max capacity.
-        Thread.sleep(10 * 1000);
-        for (int i = 0; i < 20; i++) {
-            assertTrue(topicNameCached.get(i) == TopicName.get("public/default/tp_" + i));
-        }
-
-        // Update max capacity.
-        admin.brokers().updateDynamicConfiguration("topicNameCacheMaxCapacity", "10");
-
-        // Verify: the cache were cleared.
-        Thread.sleep(10 * 1000);
-        for (int i = 0; i < 20; i++) {
-            assertFalse(topicNameCached.get(i) == TopicName.get("public/default/tp_" + i));
-        }
-    }
-
-    @Test
-    public void testBacklogAndRetentionCheck() throws PulsarServerException {
-        ServiceConfiguration config = new ServiceConfiguration();
-        config.setClusterName("test");
-        config.setMetadataStoreUrl("memory:local");
-        config.setMetadataStoreConfigPath("memory:local");
-        PulsarService pulsarService = new PulsarService(config);
-
-        // Check the default configuration
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertFalse(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-
-        // Only set retention
-        config.setDefaultRetentionSizeInMB(5);
-        config.setDefaultRetentionTimeInMinutes(5);
-
-        pulsarService = new PulsarService(config);
-
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertFalse(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-
-        // Set both retention and backlog quota
-        config.setBacklogQuotaDefaultLimitBytes(4 * 1024 * 1024);
-        config.setBacklogQuotaDefaultLimitSecond(4 * 60);
-
-        pulsarService = new PulsarService(config);
-
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertFalse(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-
-        // Set invalidated retention and backlog quota
-        config.setBacklogQuotaDefaultLimitBytes(6 * 1024 * 1024);
-
-        pulsarService = new PulsarService(config);
-
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertTrue(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-
-        config.setBacklogQuotaDefaultLimitBytes(4 * 1024 * 1024);
-        config.setBacklogQuotaDefaultLimitSecond(6 * 60);
-
-        pulsarService = new PulsarService(config);
-
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertTrue(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-
-        // Only set backlog quota
-        config.setDefaultRetentionSizeInMB(0);
-        config.setDefaultRetentionTimeInMinutes(0);
-
-        pulsarService = new PulsarService(config);
-
-        try {
-            pulsarService.start();
-        } catch (Exception e) {
-            assertFalse(e.getCause() instanceof IllegalArgumentException);
-        } finally {
-            pulsarService.close();
-        }
-    }
 }

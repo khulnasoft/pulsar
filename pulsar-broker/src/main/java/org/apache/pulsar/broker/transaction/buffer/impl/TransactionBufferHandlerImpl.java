@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -31,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.namespace.NamespaceEphemeralData;
@@ -62,8 +61,6 @@ public class TransactionBufferHandlerImpl implements TransactionBufferHandler {
     private final PulsarService pulsarService;
     private final PulsarClientImpl pulsarClient;
 
-    private final int randomKeyForSelectConnection;
-
     private static final AtomicIntegerFieldUpdater<TransactionBufferHandlerImpl> REQUEST_CREDITS_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(TransactionBufferHandlerImpl.class, "requestCredits");
     private volatile int requestCredits;
@@ -77,7 +74,6 @@ public class TransactionBufferHandlerImpl implements TransactionBufferHandler {
         this.operationTimeoutInMills = operationTimeoutInMills;
         this.timer = timer;
         this.requestCredits = Math.max(100, maxConcurrentRequests);
-        this.randomKeyForSelectConnection = pulsarClient.getCnxPool().genRandomKeyToSelectCon();
     }
 
     @Override
@@ -138,9 +134,8 @@ public class TransactionBufferHandlerImpl implements TransactionBufferHandler {
                 if (clientCnx.ctx().channel().isActive()) {
                     clientCnx.registerTransactionBufferHandler(TransactionBufferHandlerImpl.this);
                     outstandingRequests.put(op.requestId, op);
-                    final long requestId = op.requestId;
                     timer.newTimeout(timeout -> {
-                        OpRequestSend peek = outstandingRequests.remove(requestId);
+                        OpRequestSend peek = outstandingRequests.remove(op.requestId);
                         if (peek != null && !peek.cb.isDone() && !peek.cb.isCompletedExceptionally()) {
                             peek.cb.completeExceptionally(new TransactionBufferClientException
                                     .RequestTimeoutException());
@@ -301,7 +296,7 @@ public class TransactionBufferHandlerImpl implements TransactionBufferHandler {
     }
 
     public CompletableFuture<ClientCnx> getClientCnxWithLookup(String topic) {
-        return pulsarClient.getConnection(topic, randomKeyForSelectConnection).thenApply(Pair::getLeft);
+        return pulsarClient.getConnection(topic);
     }
 
     public CompletableFuture<ClientCnx> getClientCnx(String topic) {
@@ -322,8 +317,7 @@ public class TransactionBufferHandlerImpl implements TransactionBufferHandler {
                                 }
                                 InetSocketAddress brokerAddress =
                                         InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort());
-                                return pulsarClient.getConnection(brokerAddress, brokerAddress,
-                                        randomKeyForSelectConnection);
+                                return pulsarClient.getConnection(brokerAddress, brokerAddress);
                             } else {
                                 // Bundle is unloading, lookup topic
                                 return getClientCnxWithLookup(topic);

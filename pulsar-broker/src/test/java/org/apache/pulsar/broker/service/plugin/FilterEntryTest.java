@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,57 +22,42 @@ import static org.apache.pulsar.broker.BrokerTestUtil.spyWithClassAndConstructor
 import static org.apache.pulsar.broker.BrokerTestUtil.spyWithClassAndConstructorArgsRecordingInvocations;
 import static org.apache.pulsar.client.api.SubscriptionInitialPosition.Earliest;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.testng.Assert.assertTrue;
 import static org.testng.AssertJUnit.assertEquals;
 import static org.testng.AssertJUnit.assertNotNull;
-import io.netty.buffer.ByteBuf;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import lombok.Cleanup;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.commons.lang.reflect.FieldUtils;
-import org.apache.commons.lang3.tuple.Pair;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.AbstractTopic;
 import org.apache.pulsar.broker.service.BrokerTestBase;
 import org.apache.pulsar.broker.service.Dispatcher;
 import org.apache.pulsar.broker.service.EntryFilterSupport;
-import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.broker.testcontext.PulsarTestContext;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.RawMessage;
-import org.apache.pulsar.client.api.RawReader;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.common.nar.NarClassLoader;
-import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.stats.AnalyzeSubscriptionBacklogResult;
-import org.apache.pulsar.compaction.Compactor;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 @Test(groups = "broker")
@@ -90,7 +75,6 @@ public class FilterEntryTest extends BrokerTestBase {
         internalCleanup();
     }
 
-
     @Test
     public void testOverride() throws Exception {
         conf.setAllowOverrideEntryFilters(true);
@@ -106,15 +90,22 @@ public class FilterEntryTest extends BrokerTestBase {
                 .getTopicReference(topic).get();
 
         // set topic level entry filters
-        EntryFilter mockFilter = mock(EntryFilter.class);
+        EntryFilterWithClassLoader mockFilter = mock(EntryFilterWithClassLoader.class);
         when(mockFilter.filterEntry(any(Entry.class), any(FilterContext.class))).thenReturn(
                 EntryFilter.FilterResult.REJECT);
-        setMockFilterToTopic(topicRef, List.of(mockFilter));
+        ImmutableMap<String, EntryFilterWithClassLoader> entryFilters = ImmutableMap.of("key", mockFilter);
 
-        EntryFilter mockFilter1 = mock(EntryFilter.class);
+        Field field = topicRef.getClass().getSuperclass().getDeclaredField("entryFilters");
+        field.setAccessible(true);
+        field.set(topicRef, entryFilters);
+
+        EntryFilterWithClassLoader mockFilter1 = mock(EntryFilterWithClassLoader.class);
         when(mockFilter1.filterEntry(any(Entry.class), any(FilterContext.class))).thenReturn(
                 EntryFilter.FilterResult.ACCEPT);
-        setMockBrokerFilter(List.of(mockFilter1));
+        ImmutableMap<String, EntryFilterWithClassLoader> entryFilters1 = ImmutableMap.of("key2", mockFilter1);
+        Field field2 = pulsar.getBrokerService().getClass().getDeclaredField("entryFilters");
+        field2.setAccessible(true);
+        field2.set(pulsar.getBrokerService(), entryFilters1);
 
         Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING).topic(topic)
                 .subscriptionInitialPosition(Earliest)
@@ -156,73 +147,10 @@ public class FilterEntryTest extends BrokerTestBase {
     }
 
     @Test
-    public void testEntryFilterWithCompactor() throws Exception {
-        conf.setAllowOverrideEntryFilters(true);
-        String topic = "persistent://prop/ns-abc/topic" + UUID.randomUUID();
-
-        List<String> messages = new ArrayList<>();
-        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
-                .enableBatching(false).topic(topic).create();
-        producer.newMessage().key("K1").value("V1").send();
-        producer.newMessage().key("K2").value("V2").send();
-        producer.newMessage().key("K3").value("V3").send();
-        producer.newMessage().key("K4").value("V4").send();
-        messages.add("V2");
-        messages.add("V4");
-
-        PersistentTopic topicRef = (PersistentTopic) pulsar.getBrokerService().getTopicReference(topic).get();
-
-        // set topic level entry filters
-        EntryFilter mockFilter = mock(EntryFilter.class);
-        doAnswer(invocationOnMock -> {
-            FilterContext filterContext = invocationOnMock.getArgument(1);
-            String partitionKey = filterContext.getMsgMetadata().getPartitionKey();
-            if (partitionKey.equals("K1") || partitionKey.equals("K3")) {
-                return EntryFilter.FilterResult.REJECT;
-            } else {
-                return EntryFilter.FilterResult.ACCEPT;
-            }
-        }).when(mockFilter).filterEntry(any(Entry.class), any(FilterContext.class));
-        setMockFilterToTopic(topicRef, List.of(mockFilter));
-
-        List<String> results = new ArrayList<>();
-        RawReader rawReader = RawReader.create(pulsarClient, topic, Compactor.COMPACTION_SUBSCRIPTION).get();
-        while (true) {
-            boolean hasMsg = rawReader.hasMessageAvailableAsync().get();
-            if (hasMsg) {
-                try (RawMessage m = rawReader.readNextAsync().get()) {
-                    ByteBuf headersAndPayload = m.getHeadersAndPayload();
-                    Commands.skipMessageMetadata(headersAndPayload);
-                    byte[] bytes = new byte[headersAndPayload.readableBytes()];
-                    headersAndPayload.readBytes(bytes);
-
-                    results.add(new String(bytes));
-                }
-            } else {
-                break;
-            }
-        }
-        rawReader.closeAsync().get();
-
-        Assert.assertEquals(messages, results);
-    }
-
-    @SneakyThrows
-    private void setMockFilterToTopic(PersistentTopic topicRef, List<EntryFilter> mockFilter) {
-        FieldUtils.writeField(topicRef, "entryFilters", Pair.of(null, mockFilter), true);
-    }
-
-    @SneakyThrows
-    private void setMockBrokerFilter(List<EntryFilter> mockFilter) {
-        FieldUtils.writeField(pulsar.getBrokerService().getEntryFilterProvider(),
-                "brokerEntryFilters", mockFilter, true);
-    }
-
-    @Test
     public void testFilter() throws Exception {
         Map<String, String> map = new HashMap<>();
-        map.put("1", "1");
-        map.put("2", "2");
+        map.put("1","1");
+        map.put("2","2");
         String topic = "persistent://prop/ns-abc/topic" + UUID.randomUUID();
         String subName = "sub";
         Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING).topic(topic)
@@ -235,15 +163,12 @@ public class FilterEntryTest extends BrokerTestBase {
         Dispatcher dispatcher = subscription.getDispatcher();
         Field field = EntryFilterSupport.class.getDeclaredField("entryFilters");
         field.setAccessible(true);
-        Field hasFilterField = EntryFilterSupport.class.getDeclaredField("hasFilter");
-        hasFilterField.setAccessible(true);
         NarClassLoader narClassLoader = mock(NarClassLoader.class);
         EntryFilter filter1 = new EntryFilterTest();
-        EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgsRecordingInvocations(EntryFilterWithClassLoader.class, filter1, narClassLoader, false);
+        EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgsRecordingInvocations(EntryFilterWithClassLoader.class, filter1, narClassLoader);
         EntryFilter filter2 = new EntryFilter2Test();
-        EntryFilterWithClassLoader loader2 = spyWithClassAndConstructorArgsRecordingInvocations(EntryFilterWithClassLoader.class, filter2, narClassLoader, false);
-        field.set(dispatcher, List.of(loader1, loader2));
-        hasFilterField.set(dispatcher, true);
+        EntryFilterWithClassLoader loader2 = spyWithClassAndConstructorArgsRecordingInvocations(EntryFilterWithClassLoader.class, filter2, narClassLoader);
+        field.set(dispatcher, ImmutableList.of(loader1, loader2));
 
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .enableBatching(false).topic(topic).create();
@@ -255,7 +180,7 @@ public class FilterEntryTest extends BrokerTestBase {
 
         int counter = 0;
         while (true) {
-            Message<String> message = consumer.receive(5, TimeUnit.SECONDS);
+            Message<String> message = consumer.receive(1, TimeUnit.SECONDS);
             if (message != null) {
                 counter++;
                 consumer.acknowledge(message);
@@ -289,7 +214,7 @@ public class FilterEntryTest extends BrokerTestBase {
 
         counter = 0;
         while (true) {
-            Message<String> message = consumer.receive(5, TimeUnit.SECONDS);
+            Message<String> message = consumer.receive(1, TimeUnit.SECONDS);
             if (message != null) {
                 counter++;
                 consumer.acknowledge(message);
@@ -308,7 +233,7 @@ public class FilterEntryTest extends BrokerTestBase {
         assertNotNull(lastMsgId);
         MessageIdImpl finalLastMsgId = lastMsgId;
         Awaitility.await().untilAsserted(() -> {
-            Position position = subscription.getCursor().getMarkDeletedPosition();
+            PositionImpl position = (PositionImpl) subscription.getCursor().getMarkDeletedPosition();
             assertEquals(position.getLedgerId(), finalLastMsgId.getLedgerId());
             assertEquals(position.getEntryId(), finalLastMsgId.getEntryId());
         });
@@ -321,7 +246,7 @@ public class FilterEntryTest extends BrokerTestBase {
         }
         counter = 0;
         while (true) {
-            Message<String> message = consumer.receive(5, TimeUnit.SECONDS);
+            Message<String> message = consumer.receive(1, TimeUnit.SECONDS);
             if (message != null) {
                 counter++;
                 consumer.acknowledge(message);
@@ -336,7 +261,9 @@ public class FilterEntryTest extends BrokerTestBase {
 
         PersistentTopic topicRef = (PersistentTopic) pulsar.getBrokerService()
                 .getTopicReference(topic).get();
-        setMockFilterToTopic(topicRef, List.of(loader1, loader2));
+        Field field1 = topicRef.getClass().getSuperclass().getDeclaredField("entryFilters");
+        field1.setAccessible(true);
+        field1.set(topicRef, ImmutableMap.of("1", loader1, "2", loader2));
 
         cleanup();
         verify(loader1, times(1)).close();
@@ -344,16 +271,10 @@ public class FilterEntryTest extends BrokerTestBase {
 
     }
 
-    @DataProvider(name = "topicProvider")
-    public Object[][] topicProvider() {
-        return new Object[][]{
-                {"persistent://prop/ns-abc/topic" + UUID.randomUUID()},
-                {"non-persistent://prop/ns-abc/topic" + UUID.randomUUID()},
-        };
-    }
 
-    @Test(dataProvider = "topicProvider")
-    public void testFilteredMsgCount(String topic) throws Throwable {
+    @Test
+    public void testFilteredMsgCount() throws Throwable {
+        String topic = "persistent://prop/ns-abc/topic" + UUID.randomUUID();
         String subName = "sub";
 
         try (Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
@@ -362,20 +283,17 @@ public class FilterEntryTest extends BrokerTestBase {
                      .subscriptionName(subName).subscribe()) {
 
             // mock entry filters
-            Subscription subscription = pulsar.getBrokerService()
+            PersistentSubscription subscription = (PersistentSubscription) pulsar.getBrokerService()
                     .getTopicReference(topic).get().getSubscription(subName);
             Dispatcher dispatcher = subscription.getDispatcher();
             Field field = EntryFilterSupport.class.getDeclaredField("entryFilters");
             field.setAccessible(true);
-            Field hasFilterField = EntryFilterSupport.class.getDeclaredField("hasFilter");
-            hasFilterField.setAccessible(true);
             NarClassLoader narClassLoader = mock(NarClassLoader.class);
             EntryFilter filter1 = new EntryFilterTest();
-            EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader, false);
+            EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader);
             EntryFilter filter2 = new EntryFilter2Test();
-            EntryFilterWithClassLoader loader2 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter2, narClassLoader, false);
-            field.set(dispatcher, List.of(loader1, loader2));
-            hasFilterField.set(dispatcher, true);
+            EntryFilterWithClassLoader loader2 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter2, narClassLoader);
+            field.set(dispatcher, ImmutableList.of(loader1, loader2));
 
             for (int i = 0; i < 10; i++) {
                 producer.send("test");
@@ -405,23 +323,8 @@ public class FilterEntryTest extends BrokerTestBase {
         }
     }
 
-
-    @Override
-    protected void customizeMainPulsarTestContextBuilder(PulsarTestContext.Builder pulsarTestContextBuilder) {
-        // testEntryFilterRescheduleMessageDependingOnConsumerSharedSubscription behaviour depends on
-        // threadpool sizes which get configured in
-        // org.apache.pulsar.broker.testcontext.PulsarTestContext.Builder.defaultOverrideServiceConfiguration
-
-        // the following test case fails completely unless numExecutorThreadPoolSize is set to 3
-        pulsarTestContextBuilder.configOverride(conf -> conf.setNumExecutorThreadPoolSize(3));
-    }
-
-    // this test case is flaky and fails intermittently
-    // the please check the above method and its comments for the details
-    @Test(enabled = false)
+    @Test
     public void testEntryFilterRescheduleMessageDependingOnConsumerSharedSubscription() throws Throwable {
-        assertTrue(pulsar.getConfiguration().isSubscriptionRedeliveryTrackerEnabled());
-
         String topic = "persistent://prop/ns-abc/topic" + UUID.randomUUID();
         String subName = "sub";
 
@@ -432,7 +335,6 @@ public class FilterEntryTest extends BrokerTestBase {
         Map<String, String> metadataConsumer2 = new HashMap<>();
         metadataConsumer2.put("matchValueAccept", "FOR-2");
         metadataConsumer2.put("matchValueReschedule", "FOR-1");
-        final int numMessages = 200;
 
         try (Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .enableBatching(false).topic(topic).create();
@@ -440,7 +342,7 @@ public class FilterEntryTest extends BrokerTestBase {
                      .subscriptionType(SubscriptionType.Shared)
                      .properties(metadataConsumer1)
                      .consumerName("consumer1")
-                     .receiverQueueSize(numMessages / 2)
+                     .receiverQueueSize(5)
                      .subscriptionName(subName)
                      .subscribe();
              Consumer<String> consumer2 = pulsarClient.newConsumer(Schema.STRING)
@@ -448,7 +350,7 @@ public class FilterEntryTest extends BrokerTestBase {
                      .properties(metadataConsumer2)
                      .consumerName("consumer2")
                      .topic(topic)
-                     .receiverQueueSize(numMessages / 2)
+                     .receiverQueueSize(5)
                      .subscriptionName(subName)
                      .subscribe()) {
 
@@ -458,58 +360,51 @@ public class FilterEntryTest extends BrokerTestBase {
             Dispatcher dispatcher = subscription.getDispatcher();
             Field field = EntryFilterSupport.class.getDeclaredField("entryFilters");
             field.setAccessible(true);
-            Field hasFilterField = EntryFilterSupport.class.getDeclaredField("hasFilter");
-            hasFilterField.setAccessible(true);
             NarClassLoader narClassLoader = mock(NarClassLoader.class);
             EntryFilter filter1 = new EntryFilterTest();
-            EntryFilterWithClassLoader loader1 =
-                    spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader, false);
+            EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader);
             EntryFilter filter2 = new EntryFilterTest();
-            EntryFilterWithClassLoader loader2 =
-                    spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter2, narClassLoader, false);
-            field.set(dispatcher, List.of(loader1, loader2));
-            hasFilterField.set(dispatcher, true);
+            EntryFilterWithClassLoader loader2 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter2, narClassLoader);
+            field.set(dispatcher, ImmutableList.of(loader1, loader2));
 
+            int numMessages = 200;
             for (int i = 0; i < numMessages; i++) {
                 if (i % 2 == 0) {
-                    String value = "consumer-1 " + ((i / 2) + 1);
                     producer.newMessage()
                             .property("FOR-1", "")
-                            .property("debug", value)
-                            .value(value)
+                            .value("consumer-1")
                             .send();
                 } else {
-                    String value = "consumer-2 " + ((i + 1) / 2);
                     producer.newMessage()
                             .property("FOR-2", "")
-                            .property("debug", value)
-                            .value(value)
+                            .value("consumer-2")
                             .send();
                 }
             }
+
             CompletableFuture<Void> resultConsume1 = new CompletableFuture<>();
             pulsar.getExecutor().submit(() -> {
-                try {
-                    // assert that the consumer1 receive all the messages and that such messages
-                    // are for consumer1
-                    int counter = 0;
-                    while (counter < numMessages / 2) {
-                        Message<String> message = consumer1.receive(1, TimeUnit.MINUTES);
-                        if (message != null) {
-                            counter++;
-                            log.info("received1 {} - {} - {}", message.getValue(), message.getProperties(), counter);
-                            assertTrue(message.getValue().startsWith("consumer-1 "), message.getValue());
-                            consumer1.acknowledgeAsync(message);
-                        } else {
-                            resultConsume1.completeExceptionally(
-                                    new Exception("consumer1 did not receive all the messages"));
+                        try {
+                            // assert that the consumer1 receive all the messages and that such messages
+                            // are for consumer1
+                            int counter = 0;
+                            while (counter < numMessages / 2) {
+                                Message<String> message = consumer1.receive(1, TimeUnit.MINUTES);
+                                if (message != null) {
+                                    log.info("received1 {} - {}", message.getValue(), message.getProperties());
+                                    counter++;
+                                    assertEquals("consumer-1", message.getValue());
+                                    consumer1.acknowledgeAsync(message);
+                                } else {
+                                    resultConsume1.completeExceptionally(
+                                            new Exception("consumer1 did not receive all the messages"));
+                                }
+                            }
+                            resultConsume1.complete(null);
+                        } catch (Throwable err) {
+                            resultConsume1.completeExceptionally(err);
                         }
-                    }
-                    resultConsume1.complete(null);
-                } catch (Throwable err) {
-                    resultConsume1.completeExceptionally(err);
-                }
-            });
+                    });
 
             CompletableFuture<Void> resultConsume2 = new CompletableFuture<>();
             pulsar.getExecutor().submit(() -> {
@@ -520,9 +415,9 @@ public class FilterEntryTest extends BrokerTestBase {
                     while (counter < numMessages / 2) {
                         Message<String> message = consumer2.receive(1, TimeUnit.MINUTES);
                         if (message != null) {
+                            log.info("received2 {} - {}", message.getValue(), message.getProperties());
                             counter++;
-                            log.info("received2 {} - {} - {}", message.getValue(), message.getProperties(), counter);
-                            assertTrue(message.getValue().startsWith("consumer-2 "), message.getValue());
+                            assertEquals("consumer-2", message.getValue());
                             consumer2.acknowledgeAsync(message);
                         } else {
                             resultConsume2.completeExceptionally(
@@ -531,7 +426,7 @@ public class FilterEntryTest extends BrokerTestBase {
                     }
                     resultConsume2.complete(null);
                 } catch (Throwable err) {
-                    resultConsume2.completeExceptionally(err);
+                    resultConsume1.completeExceptionally(err);
                 }
             });
             resultConsume1.get(1, TimeUnit.MINUTES);
@@ -545,7 +440,7 @@ public class FilterEntryTest extends BrokerTestBase {
                                int numEntriesAccepted, int numMessagesAccepted,
                                int numEntriesRejected, int numMessagesRejected,
                                int numEntriesRescheduled, int numMessagesRescheduled
-    ) throws Exception {
+                               ) throws Exception {
         AnalyzeSubscriptionBacklogResult a1
                 = admin.topics().analyzeSubscriptionBacklog(topic, subscription, Optional.empty());
 
@@ -558,94 +453,5 @@ public class FilterEntryTest extends BrokerTestBase {
         Assert.assertEquals(numMessagesAccepted, a1.getFilterAcceptedMessages());
         Assert.assertEquals(numMessagesRejected, a1.getFilterRejectedMessages());
         Assert.assertEquals(numMessagesRescheduled, a1.getFilterRescheduledMessages());
-    }
-
-
-    @DataProvider(name = "overrideBrokerEntryFilters")
-    public static Object[][] overrideBrokerEntryFilters() {
-        return new Object[][]{ {true}, {false} };
-    }
-
-
-    @Test(dataProvider = "overrideBrokerEntryFilters")
-    public void testExecuteInOrder(boolean overrideBrokerEntryFilters) throws Exception {
-        conf.setAllowOverrideEntryFilters(true);
-        String topic = "persistent://prop/ns-abc/topic" + UUID.randomUUID();
-        String subName = "sub";
-        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
-                .enableBatching(false).topic(topic).create();
-        for (int i = 0; i < 10; i++) {
-            producer.send("test");
-        }
-
-        EntryFilter mockFilterReject = mock(EntryFilter.class);
-        when(mockFilterReject.filterEntry(any(Entry.class), any(FilterContext.class))).thenReturn(
-                EntryFilter.FilterResult.REJECT);
-        EntryFilter mockFilterAccept = mock(EntryFilter.class);
-        when(mockFilterAccept.filterEntry(any(Entry.class), any(FilterContext.class))).thenReturn(
-                EntryFilter.FilterResult.ACCEPT);
-        if (overrideBrokerEntryFilters) {
-            setMockFilterToTopic((PersistentTopic) pulsar.getBrokerService()
-                    .getTopicReference(topic).get(), List.of(mockFilterReject, mockFilterAccept));
-        } else {
-            setMockFilterToTopic((PersistentTopic) pulsar.getBrokerService()
-                    .getTopicReference(topic).get(), List.of());
-            setMockBrokerFilter(List.of(mockFilterReject, mockFilterAccept));
-        }
-
-
-        Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING).topic(topic)
-                .subscriptionInitialPosition(Earliest)
-                .subscriptionName(subName).subscribe();
-
-        int counter = 0;
-        while (true) {
-            Message<String> message = consumer.receive(1, TimeUnit.SECONDS);
-            if (message != null) {
-                counter++;
-                consumer.acknowledge(message);
-            } else {
-                break;
-            }
-        }
-        // All normal messages can be received
-        assertEquals(0, counter);
-        consumer.close();
-        verify(mockFilterReject, times(10))
-                .filterEntry(any(Entry.class), any(FilterContext.class));
-        verify(mockFilterAccept, never())
-                .filterEntry(any(Entry.class), any(FilterContext.class));
-
-        if (overrideBrokerEntryFilters) {
-            setMockFilterToTopic((PersistentTopic) pulsar.getBrokerService()
-                    .getTopicReference(topic).get(), List.of(mockFilterAccept, mockFilterReject));
-        } else {
-            setMockFilterToTopic((PersistentTopic) pulsar.getBrokerService()
-                    .getTopicReference(topic).get(), List.of());
-            setMockBrokerFilter(List.of(mockFilterAccept, mockFilterReject));
-        }
-
-        @Cleanup
-        Consumer<String> consumer2 = pulsarClient.newConsumer(Schema.STRING).topic(topic)
-                .subscriptionInitialPosition(Earliest)
-                .subscriptionName(subName + "-2").subscribe();
-
-        counter = 0;
-        while (true) {
-            Message<String> message = consumer2.receive(1, TimeUnit.SECONDS);
-            if (message != null) {
-                counter++;
-                consumer2.acknowledge(message);
-            } else {
-                break;
-            }
-        }
-        assertEquals(0, counter);
-        verify(mockFilterReject, times(20))
-                .filterEntry(any(Entry.class), any(FilterContext.class));
-        verify(mockFilterAccept, times(10))
-                .filterEntry(any(Entry.class), any(FilterContext.class));
-
-
     }
 }

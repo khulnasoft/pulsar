@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,9 +22,9 @@ package org.apache.pulsar.functions.windowing;
  * Triggers the window calculations based on the policy.
  *
  * @param <T> the type of the event that is tracked
- * @param <X> the type of state that is used
+ * @param <S> the type of state that is used
  */
-public interface TriggerPolicy<T, X> {
+public interface TriggerPolicy<T, S> {
 
     /**
      * Tracks the event and could use this to invoke the trigger.
@@ -56,12 +56,12 @@ public interface TriggerPolicy<T, X> {
      *
      * @return the state
      */
-    X getState();
+    S getState();
 
     /**
      * Restore the trigger policy from the state that was earlier checkpointed by the framework.
      *
      * @param state the state
      */
-    void restoreState(X state);
+    void restoreState(S state);
 }

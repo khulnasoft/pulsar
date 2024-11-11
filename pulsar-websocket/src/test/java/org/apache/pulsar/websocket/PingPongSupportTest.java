@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Future;
 import javax.servlet.http.HttpServletRequest;
-import lombok.Cleanup;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.web.WebExecutorThreadPool;
@@ -57,13 +56,12 @@ import org.testng.annotations.Test;
  */
 public class PingPongSupportTest {
 
-    private Server server;
+    private static Server server;
 
-    private WebExecutorThreadPool executor;
+    private static final WebExecutorThreadPool executor = new WebExecutorThreadPool(6, "pulsar-websocket-web-test");
 
     @BeforeClass
-    public void setup() throws Exception {
-        executor = new WebExecutorThreadPool(6, "pulsar-websocket-web-test");
+    public static void setup() throws Exception {
         server = new Server(executor);
         List<ServerConnector> connectors = new ArrayList<>();
         ServerConnector connector = new ServerConnector(server);
@@ -92,7 +90,7 @@ public class PingPongSupportTest {
     }
 
     @AfterClass(alwaysRun = true)
-    public void tearDown() throws Exception {
+    public static void tearDown() throws Exception {
         if (server != null) {
             server.stop();
         }
@@ -110,7 +108,6 @@ public class PingPongSupportTest {
 
     @Test(dataProvider = "endpoint")
     public void testPingPong(String endpoint) throws Exception {
-        @Cleanup("stop")
         HttpClient httpClient = new HttpClient();
         WebSocketClient webSocketClient = new WebSocketClient(httpClient);
         webSocketClient.start();

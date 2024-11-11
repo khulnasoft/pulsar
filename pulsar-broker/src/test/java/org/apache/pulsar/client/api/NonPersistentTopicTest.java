@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,8 +18,6 @@
  */
 package org.apache.pulsar.client.api;
 
-import static org.apache.pulsar.broker.stats.BrokerOpenTelemetryTestUtil.assertMetricLongSumValue;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotEquals;
@@ -29,9 +27,7 @@ import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import com.google.common.collect.Sets;
-import io.opentelemetry.api.common.Attributes;
 import java.net.URL;
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -41,9 +37,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Cleanup;
-import org.apache.pulsar.broker.BrokerTestUtil;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.loadbalance.LoadManager;
@@ -53,11 +47,8 @@ import org.apache.pulsar.broker.loadbalance.impl.SimpleLoadManagerImpl;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.nonpersistent.NonPersistentReplicator;
 import org.apache.pulsar.broker.service.nonpersistent.NonPersistentTopic;
-import org.apache.pulsar.broker.stats.OpenTelemetryProducerStats;
-import org.apache.pulsar.broker.testcontext.PulsarTestContext;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.impl.ConsumerImpl;
-import org.apache.pulsar.client.impl.MessageIdImpl;
 import org.apache.pulsar.client.impl.MultiTopicsConsumerImpl;
 import org.apache.pulsar.client.impl.PartitionedProducerImpl;
 import org.apache.pulsar.client.impl.ProducerImpl;
@@ -69,11 +60,8 @@ import org.apache.pulsar.common.policies.data.NonPersistentSubscriptionStats;
 import org.apache.pulsar.common.policies.data.NonPersistentTopicStats;
 import org.apache.pulsar.common.policies.data.SubscriptionStats;
 import org.apache.pulsar.common.policies.data.TenantInfoImpl;
-import org.apache.pulsar.common.policies.data.TopicType;
-import org.apache.pulsar.opentelemetry.OpenTelemetryAttributes;
 import org.apache.pulsar.zookeeper.LocalBookkeeperEnsemble;
 import org.apache.pulsar.zookeeper.ZookeeperServerTest;
-import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.Assert;
@@ -109,12 +97,6 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
-    }
-
-    @Override
-    protected void customizeMainPulsarTestContextBuilder(PulsarTestContext.Builder pulsarTestContextBuilder) {
-        super.customizeMainPulsarTestContextBuilder(pulsarTestContextBuilder);
-        pulsarTestContextBuilder.enableOpenTelemetry(true);
     }
 
     @Test(timeOut = 90000 /* 1.5mn */)
@@ -191,7 +173,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
         producer.flush();
 
         Message<?> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalProduceMsg; i++) {
             msg = consumer.receive(1, TimeUnit.SECONDS);
             if (msg != null) {
@@ -234,7 +216,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
         producer.flush();
 
         Message<?> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalProduceMsg; i++) {
             msg = consumer.receive(1, TimeUnit.SECONDS);
             if (msg != null) {
@@ -290,7 +272,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
         producer.flush();
 
         Message<?> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalProduceMsg; i++) {
             msg = consumer.receive(1, TimeUnit.SECONDS);
             if (msg != null) {
@@ -332,7 +314,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
         producer.flush();
 
         Message<?> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalProduceMsg; i++) {
             msg = consumer.receive(1, TimeUnit.SECONDS);
             if (msg != null) {
@@ -369,12 +351,9 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             @Cleanup("shutdownNow")
             ExecutorService executor = Executors.newFixedThreadPool(5);
             AtomicBoolean failed = new AtomicBoolean(false);
-            @Cleanup
             Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topic).subscriptionName("subscriber-1")
                     .subscribe();
-            var producerName = BrokerTestUtil.newUniqueName("testProducerRateLimit");
-            @Cleanup
-            Producer<byte[]> producer = pulsarClient.newProducer().topic(topic).producerName(producerName).create();
+            Producer<byte[]> producer = pulsarClient.newProducer().topic(topic).create();
             byte[] msgData = "testData".getBytes();
             final int totalProduceMessages = 10;
             CountDownLatch latch = new CountDownLatch(totalProduceMessages);
@@ -392,7 +371,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             latch.await();
 
             Message<?> msg = null;
-            Set<String> messageSet = new HashSet<>();
+            Set<String> messageSet = Sets.newHashSet();
             for (int i = 0; i < totalProduceMessages; i++) {
                 msg = consumer.receive(500, TimeUnit.MILLISECONDS);
                 if (msg != null) {
@@ -407,19 +386,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             // but as message should be dropped at broker: broker should not receive the message
             assertNotEquals(messageSet.size(), totalProduceMessages);
 
-            // Verify the corresponding metric is updated
-            var attributes = Attributes.builder()
-                    .put(OpenTelemetryAttributes.PULSAR_PRODUCER_NAME, producerName)
-                    .put(OpenTelemetryAttributes.PULSAR_PRODUCER_ID, 0)
-                    .put(OpenTelemetryAttributes.PULSAR_PRODUCER_ACCESS_MODE, "shared")
-                    .put(OpenTelemetryAttributes.PULSAR_DOMAIN, "non-persistent")
-                    .put(OpenTelemetryAttributes.PULSAR_TENANT, "my-property")
-                    .put(OpenTelemetryAttributes.PULSAR_NAMESPACE, "my-property/my-ns")
-                    .put(OpenTelemetryAttributes.PULSAR_TOPIC, topic)
-                    .build();
-            var metrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-            assertMetricLongSumValue(metrics, OpenTelemetryProducerStats.MESSAGE_DROP_COUNTER, attributes,
-                    value -> assertThat(value).isPositive());
+            producer.close();
         } finally {
             conf.setMaxConcurrentNonPersistentMessagePerConnection(defaultNonPersistentMessageRate);
         }
@@ -458,7 +425,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
 
         // consume from shared-subscriptions
         Message<?> msg = null;
-        Set<String> messageSet = new HashSet<>();
+        Set<String> messageSet = Sets.newHashSet();
         for (int i = 0; i < totalProduceMsg; i++) {
             msg = consumer1Shared.receive(500, TimeUnit.MILLISECONDS);
             if (msg != null) {
@@ -629,7 +596,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
 
             // (1) consume by consumer1
             Message<?> msg = null;
-            Set<String> messageSet = new HashSet<>();
+            Set<String> messageSet = Sets.newHashSet();
             for (int i = 0; i < totalProducedMessages; i++) {
                 msg = consumer1.receive(300, TimeUnit.MILLISECONDS);
                 if (msg != null) {
@@ -849,23 +816,17 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
 
         int defaultNonPersistentMessageRate = conf.getMaxConcurrentNonPersistentMessagePerConnection();
         try {
-            final String topicName = BrokerTestUtil.newUniqueName("non-persistent://my-property/my-ns/stats-topic");
+            final String topicName = "non-persistent://my-property/my-ns/stats-topic";
             // restart broker with lower publish rate limit
             conf.setMaxConcurrentNonPersistentMessagePerConnection(1);
             stopBroker();
             startBroker();
-
-            pulsar.getBrokerService().updateRates();
-
-            @Cleanup
             Consumer<byte[]> consumer = pulsarClient.newConsumer().topic(topicName).subscriptionName("subscriber-1")
                     .receiverQueueSize(1).subscribe();
 
-            @Cleanup
             Consumer<byte[]> consumer2 = pulsarClient.newConsumer().topic(topicName).subscriptionName("subscriber-2")
                     .receiverQueueSize(1).subscriptionType(SubscriptionType.Shared).subscribe();
 
-            @Cleanup
             ProducerImpl<byte[]> producer = (ProducerImpl<byte[]>) pulsarClient.newProducer().topic(topicName)
                 .enableBatching(false)
                 .messageRoutingMode(MessageRoutingMode.SinglePartition)
@@ -873,41 +834,31 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             @Cleanup("shutdownNow")
             ExecutorService executor = Executors.newFixedThreadPool(5);
             byte[] msgData = "testData".getBytes();
-            final int totalProduceMessages = 1000;
-            CountDownLatch latch = new CountDownLatch(1);
-            AtomicInteger messagesSent = new AtomicInteger(0);
+            final int totalProduceMessages = 200;
+            CountDownLatch latch = new CountDownLatch(totalProduceMessages);
             for (int i = 0; i < totalProduceMessages; i++) {
                 executor.submit(() -> {
-                    producer.sendAsync(msgData).handle((msgId, e) -> {
-                        int count = messagesSent.incrementAndGet();
-                        // process at least 20% of messages before signalling the latch
-                        // a non-persistent message will return entryId as -1 when it has been dropped
-                        // due to setMaxConcurrentNonPersistentMessagePerConnection limit
-                        // also ensure that it has happened before the latch is signalled
-                        if (count > totalProduceMessages * 0.2 && msgId != null
-                                && ((MessageIdImpl) msgId).getEntryId() == -1) {
-                            latch.countDown();
-                        }
+                    producer.sendAsync(msgData).handle((msg, e) -> {
+                        latch.countDown();
                         return null;
                     });
                 });
             }
-            assertTrue(latch.await(5, TimeUnit.SECONDS));
+            latch.await();
 
-            NonPersistentTopic topic =
-                    (NonPersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
+            NonPersistentTopic topic = (NonPersistentTopic) pulsar.getBrokerService().getOrCreateTopic(topicName).get();
+            pulsar.getBrokerService().updateRates();
+            NonPersistentTopicStats stats = topic.getStats(false, false, false);
+            NonPersistentPublisherStats npStats = stats.getPublishers().get(0);
+            NonPersistentSubscriptionStats sub1Stats = stats.getSubscriptions().get("subscriber-1");
+            NonPersistentSubscriptionStats sub2Stats = stats.getSubscriptions().get("subscriber-2");
+            assertTrue(npStats.getMsgDropRate() > 0);
+            assertTrue(sub1Stats.getMsgDropRate() > 0);
+            assertTrue(sub2Stats.getMsgDropRate() > 0);
 
-            Awaitility.await().ignoreExceptions().untilAsserted(() -> {
-                pulsar.getBrokerService().updateRates();
-                NonPersistentTopicStats stats = topic.getStats(false, false, false);
-                NonPersistentPublisherStats npStats = stats.getPublishers().get(0);
-                NonPersistentSubscriptionStats sub1Stats = stats.getSubscriptions().get("subscriber-1");
-                NonPersistentSubscriptionStats sub2Stats = stats.getSubscriptions().get("subscriber-2");
-                assertTrue(npStats.getMsgDropRate() > 0);
-                assertTrue(sub1Stats.getMsgDropRate() > 0);
-                assertTrue(sub2Stats.getMsgDropRate() > 0);
-            });
-
+            producer.close();
+            consumer.close();
+            consumer2.close();
         } finally {
             conf.setMaxConcurrentNonPersistentMessagePerConnection(defaultNonPersistentMessageRate);
         }
@@ -967,8 +918,8 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             config1.setClusterName(configClusterName);
             config1.setAdvertisedAddress("localhost");
             config1.setWebServicePort(Optional.of(0));
-            config1.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble1.getZookeeperPort());
-            config1.setConfigurationMetadataStoreUrl("zk:127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
+            config1.setZookeeperServers("127.0.0.1:" + bkEnsemble1.getZookeeperPort());
+            config1.setConfigurationStoreServers("127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
             config1.setBrokerDeleteInactiveTopicsEnabled(isBrokerServicePurgeInactiveTopic());
             config1.setBrokerDeleteInactiveTopicsFrequencySeconds(
                     inSec(getBrokerServicePurgeInactiveFrequency(), TimeUnit.SECONDS));
@@ -976,7 +927,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             config1.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
             config1.setBrokerServicePort(Optional.of(0));
             config1.setBacklogQuotaCheckIntervalInSeconds(TIME_TO_CHECK_BACKLOG_QUOTA);
-            config1.setAllowAutoTopicCreationType(TopicType.NON_PARTITIONED);
+            config1.setAllowAutoTopicCreationType("non-partitioned");
             pulsar1 = new PulsarService(config1);
             pulsar1.start();
             ns1 = pulsar1.getBrokerService();
@@ -994,8 +945,8 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             config2.setClusterName("r2");
             config2.setWebServicePort(Optional.of(0));
             config2.setAdvertisedAddress("localhost");
-            config2.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble2.getZookeeperPort());
-            config2.setConfigurationMetadataStoreUrl("zk:127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
+            config2.setZookeeperServers("127.0.0.1:" + bkEnsemble2.getZookeeperPort());
+            config2.setConfigurationStoreServers("127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
             config2.setBrokerDeleteInactiveTopicsEnabled(isBrokerServicePurgeInactiveTopic());
             config2.setBrokerDeleteInactiveTopicsFrequencySeconds(
                     inSec(getBrokerServicePurgeInactiveFrequency(), TimeUnit.SECONDS));
@@ -1003,7 +954,7 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             config2.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
             config2.setBrokerServicePort(Optional.of(0));
             config2.setBacklogQuotaCheckIntervalInSeconds(TIME_TO_CHECK_BACKLOG_QUOTA);
-            config2.setAllowAutoTopicCreationType(TopicType.NON_PARTITIONED);
+            config2.setAllowAutoTopicCreationType("non-partitioned");
             pulsar2 = new PulsarService(config2);
             pulsar2.start();
             ns2 = pulsar2.getBrokerService();
@@ -1021,15 +972,15 @@ public class NonPersistentTopicTest extends ProducerConsumerBase {
             config3.setClusterName("r3");
             config3.setWebServicePort(Optional.of(0));
             config3.setAdvertisedAddress("localhost");
-            config3.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble3.getZookeeperPort());
-            config3.setConfigurationMetadataStoreUrl("zk:127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
+            config3.setZookeeperServers("127.0.0.1:" + bkEnsemble3.getZookeeperPort());
+            config3.setConfigurationStoreServers("127.0.0.1:" + globalZkS.getZookeeperPort() + "/foo");
             config3.setBrokerDeleteInactiveTopicsEnabled(isBrokerServicePurgeInactiveTopic());
             config3.setBrokerDeleteInactiveTopicsFrequencySeconds(
                     inSec(getBrokerServicePurgeInactiveFrequency(), TimeUnit.SECONDS));
             config3.setBrokerShutdownTimeoutMs(0L);
             config3.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
             config3.setBrokerServicePort(Optional.of(0));
-            config3.setAllowAutoTopicCreationType(TopicType.NON_PARTITIONED);
+            config3.setAllowAutoTopicCreationType("non-partitioned");
             pulsar3 = new PulsarService(config3);
             pulsar3.start();
             ns3 = pulsar3.getBrokerService();

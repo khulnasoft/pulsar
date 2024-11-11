@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,8 +24,6 @@ import static org.testng.Assert.assertNotNull;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.pulsar.io.core.SinkContext;
-import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
 public class InfluxDBSinkConfigTest {
@@ -60,34 +58,18 @@ public class InfluxDBSinkConfigTest {
     public final void testLoadFromMap() throws Exception {
         Map<String, Object> map = buildValidConfigMap();
 
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map, sinkContext);
+        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map);
         assertNotNull(config);
         config.validate();
         verifyValues(config);
     }
 
-    @Test
-    public final void testLoadFromMapCredentialFromSecret() throws Exception {
-        Map<String, Object> map = buildValidConfigMap();
-        map.remove("token");
-
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        Mockito.when(sinkContext.getSecret("token"))
-                .thenReturn("xxxx");
-        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map, sinkContext);
-        assertNotNull(config);
-        config.validate();
-        verifyValues(config);
-    }
-
-    @Test(expectedExceptions = IllegalArgumentException.class,
-            expectedExceptionsMessageRegExp = "influxdbUrl cannot be null")
+    @Test(expectedExceptions = NullPointerException.class,
+            expectedExceptionsMessageRegExp = "influxdbUrl property not set.")
     public void testRequiredConfigMissing() throws Exception {
         Map<String, Object> map = buildValidConfigMap();
         map.remove("influxdbUrl");
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map, sinkContext);
+        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map);
         config.validate();
     }
 
@@ -96,8 +78,7 @@ public class InfluxDBSinkConfigTest {
     public void testBatchConfig() throws Exception {
         Map<String, Object> map = buildValidConfigMap();
         map.put("batchSize", -1);
-        SinkContext sinkContext = Mockito.mock(SinkContext.class);
-        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map, sinkContext);
+        InfluxDBSinkConfig config = InfluxDBSinkConfig.load(map);
         config.validate();
     }
 

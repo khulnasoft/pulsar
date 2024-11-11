@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,11 +18,8 @@
  */
 package org.apache.pulsar.metadata.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.etcd.jetcd.ByteSequence;
 import io.etcd.jetcd.Client;
-import io.etcd.jetcd.ClientBuilder;
 import io.etcd.jetcd.KV;
 import io.etcd.jetcd.KeyValue;
 import io.etcd.jetcd.Txn;
@@ -43,16 +40,8 @@ import io.etcd.jetcd.watch.WatchEvent;
 import io.etcd.jetcd.watch.WatchResponse;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
-import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext;
-import io.grpc.netty.shaded.io.netty.handler.ssl.SslProvider;
 import io.grpc.stub.StreamObserver;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -65,17 +54,10 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.metadata.api.GetResult;
-import org.apache.pulsar.metadata.api.MetadataStore;
 import org.apache.pulsar.metadata.api.MetadataStoreConfig;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
-import org.apache.pulsar.metadata.api.MetadataStoreProvider;
 import org.apache.pulsar.metadata.api.Notification;
 import org.apache.pulsar.metadata.api.NotificationType;
 import org.apache.pulsar.metadata.api.Stat;
@@ -91,7 +73,6 @@ import org.apache.pulsar.metadata.impl.batching.OpPut;
 @Slf4j
 public class EtcdMetadataStore extends AbstractBatchedMetadataStore {
 
-    static final String ETCD_SCHEME = "etcd";
     static final String ETCD_SCHEME_IDENTIFIER = "etcd:";
 
     private final int leaseTTLSeconds;
@@ -106,12 +87,14 @@ public class EtcdMetadataStore extends AbstractBatchedMetadataStore {
         super(conf);
 
         this.leaseTTLSeconds = conf.getSessionTimeoutMillis() / 1000;
+        String etcdUrl = metadataURL.replaceFirst(ETCD_SCHEME_IDENTIFIER, "");
+
         try {
-            this.client = newEtcdClient(metadataURL, conf);
+            this.client = Client.builder().endpoints(etcdUrl).build();
             this.kv = client.getKVClient();
-            this.client.getWatchClient().watch(ByteSequence.from("/", StandardCharsets.UTF_8),
+            this.client.getWatchClient().watch(ByteSequence.from("\0", StandardCharsets.UTF_8),
                     WatchOption.newBuilder()
-                            .isPrefix(true)
+                            .withPrefix(ByteSequence.from("/", StandardCharsets.UTF_8))
                             .build(), this::handleWatchResponse);
             if (enableSessionWatcher) {
                 this.sessionWatcher =
@@ -127,59 +110,24 @@ public class EtcdMetadataStore extends AbstractBatchedMetadataStore {
         }
     }
 
-    private Client newEtcdClient(String metadataURL, MetadataStoreConfig conf) throws IOException {
-        String etcdUrl = metadataURL.replaceFirst(ETCD_SCHEME_IDENTIFIER, "");
-        ClientBuilder clientBuilder = Client.builder()
-                .endpoints(etcdUrl.split(","));
-
-        if (StringUtils.isNotEmpty(conf.getConfigFilePath())) {
-            try (InputStream inputStream = Files.newInputStream(Paths.get(conf.getConfigFilePath()))) {
-                EtcdConfig etcdConfig = new ObjectMapper(new YAMLFactory()).readValue(inputStream, EtcdConfig.class);
-                if (etcdConfig.isUseTls()) {
-                    File trustCertsFile = readFile(etcdConfig.getTlsTrustCertsFilePath());
-                    File keyFile = readFile(etcdConfig.getTlsKeyFilePath());
-                    File certFile = readFile(etcdConfig.getTlsCertificateFilePath());
-                    SslContext context = GrpcSslContexts.forClient()
-                            .trustManager(trustCertsFile)
-                            .sslProvider(etcdConfig.getTlsProvider())
-                            .keyManager(certFile, keyFile)
-                            .build();
-                    clientBuilder.sslContext(context);
-                }
-
-                if (StringUtils.isNotEmpty(etcdConfig.getAuthority())) {
-                    clientBuilder.authority(etcdConfig.getAuthority());
-                }
-            }
-        }
-
-        return clientBuilder.build();
-    }
-
-    private File readFile(String path) {
-        return StringUtils.isEmpty(path) ? null : new File(path);
-    }
-
     @Override
     public void close() throws Exception {
-        if (isClosed.compareAndSet(false, true)) {
-            super.close();
+        super.close();
 
-            if (sessionWatcher != null) {
-                sessionWatcher.close();
-            }
-
-            if (leaseClient != null) {
-                leaseClient.close();
-            }
-
-            if (leaseId != 0) {
-                client.getLeaseClient().revoke(leaseId);
-            }
-
-            kv.close();
-            client.close();
+        if (sessionWatcher != null) {
+            sessionWatcher.close();
         }
+
+        if (leaseClient != null) {
+            leaseClient.close();
+        }
+
+        if (leaseId != 0) {
+            client.getLeaseClient().revoke(leaseId);
+        }
+
+        kv.close();
+        client.close();
     }
 
     private static final GetOption EXISTS_GET_OPTION = GetOption.newBuilder().withCountOnly(true).build();
@@ -285,7 +233,7 @@ public class EtcdMetadataStore extends AbstractBatchedMetadataStore {
                                 .withKeysOnly(true)
                                 .withSortField(GetOption.SortTarget.KEY)
                                 .withSortOrder(GetOption.SortOrder.ASCEND)
-                                .isPrefix(true)
+                                .withPrefix(prefix)
                                 .build()));
                         break;
                     }
@@ -484,34 +432,5 @@ public class EtcdMetadataStore extends AbstractBatchedMetadataStore {
         } else {
             super.receivedSessionEvent(event);
         }
-    }
-}
-
-@AllArgsConstructor
-@NoArgsConstructor
-@Data
-@Builder
-class EtcdConfig {
-    private boolean useTls;
-
-    private SslProvider tlsProvider;
-    private String tlsTrustCertsFilePath;
-    private String tlsKeyFilePath;
-    private String tlsCertificateFilePath;
-
-    private String authority;
-}
-
-class EtcdMetadataStoreProvider implements MetadataStoreProvider {
-
-    @Override
-    public String urlScheme() {
-        return EtcdMetadataStore.ETCD_SCHEME;
-    }
-
-    @Override
-    public MetadataStore create(String metadataURL, MetadataStoreConfig metadataStoreConfig,
-                                boolean enableSessionWatcher) throws MetadataStoreException {
-        return new EtcdMetadataStore(metadataURL, metadataStoreConfig, enableSessionWatcher);
     }
 }

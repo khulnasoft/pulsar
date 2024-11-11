@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -77,7 +77,9 @@ public class DLInputStreamTest {
                 .thenCompose(d -> d.readAsync(outputStream))
                 .thenCompose(DLInputStream::closeAsync).get();
         } catch (Exception e) {
-            if (!(e.getCause() instanceof EndOfStreamException)) {
+            if (e.getCause() instanceof EndOfStreamException) {
+                // no-op
+            } else {
                 fail(e.getMessage());
             }
         }

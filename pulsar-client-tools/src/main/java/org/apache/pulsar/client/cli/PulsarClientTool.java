@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,14 +18,19 @@
  */
 package org.apache.pulsar.client.cli;
 
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import com.google.common.annotations.VisibleForTesting;
+import com.beust.jcommander.DefaultUsageFormatter;
+import com.beust.jcommander.IUsageFormatter;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import java.io.FileInputStream;
 import java.util.Arrays;
 import java.util.Properties;
 import lombok.Getter;
-import lombok.SneakyThrows;
-import org.apache.pulsar.cli.converters.picocli.ByteUnitToLongConverter;
+import org.apache.pulsar.PulsarVersion;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.ClientBuilder;
@@ -33,145 +38,105 @@ import org.apache.pulsar.client.api.ProxyProtocol;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException.UnsupportedAuthenticationException;
 import org.apache.pulsar.client.api.SizeUnit;
-import org.apache.pulsar.internal.CommandHook;
-import org.apache.pulsar.internal.CommanderFactory;
-import picocli.CommandLine;
-import picocli.CommandLine.ArgGroup;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.ScopeType;
 
-@Command(
-        name = "pulsar-client",
-        mixinStandardHelpOptions = true,
-        versionProvider = PulsarVersionProvider.class,
-        scope = ScopeType.INHERIT
-)
-public class PulsarClientTool implements CommandHook {
 
-    private PulsarClientPropertiesProvider pulsarClientPropertiesProvider;
+public class PulsarClientTool {
 
     @Getter
-    @Command(description = "Produce or consume messages on a specified topic")
+    @Parameters(commandDescription = "Produce or consume messages on a specified topic")
     public static class RootParams {
-        @Option(names = {"--url"}, descriptionKey = "brokerServiceUrl",
-                description = "Broker URL to which to connect.")
+        @Parameter(names = { "--url" }, description = "Broker URL to which to connect.")
         String serviceURL = null;
 
-        @Option(names = {"--proxy-url"}, descriptionKey = "proxyServiceUrl",
-                description = "Proxy-server URL to which to connect.")
+        @Parameter(names = { "--proxy-url" }, description = "Proxy-server URL to which to connect.")
         String proxyServiceURL = null;
 
-        @Option(names = {"--proxy-protocol"}, descriptionKey = "proxyProtocol",
-                description = "Proxy protocol to select type of routing at proxy.",
-                converter = ProxyProtocolConverter.class)
+        @Parameter(names = { "--proxy-protocol" }, description = "Proxy protocol to select type of routing at proxy.")
         ProxyProtocol proxyProtocol = null;
 
-        @Option(names = {"--auth-plugin"}, descriptionKey = "authPlugin",
-                description = "Authentication plugin class name.")
+        @Parameter(names = { "--auth-plugin" }, description = "Authentication plugin class name.")
         String authPluginClassName = null;
 
-        @Option(names = {"--listener-name"}, description = "Listener name for the broker.")
+        @Parameter(names = { "--listener-name" }, description = "Listener name for the broker.")
         String listenerName = null;
 
-        @Option(
-                names = {"--auth-params"},
-                descriptionKey = "authParams",
-                description = "Authentication parameters, whose format is determined by the implementation "
-                        + "of method `configure` in authentication plugin class, for example \"key1:val1,key2:val2\" "
-                        + "or \"{\"key1\":\"val1\",\"key2\":\"val2\"}\".")
+        @Parameter(
+            names = { "--auth-params" },
+            description = "Authentication parameters, whose format is determined by the implementation "
+                    + "of method `configure` in authentication plugin class, for example \"key1:val1,key2:val2\" "
+                    + "or \"{\"key1\":\"val1\",\"key2\":\"val2\"}.")
         String authParams = null;
 
-        @Option(names = {"--tlsTrustCertsFilePath"},
-                descriptionKey = "tlsTrustCertsFilePath",
-                description = "File path to client trust certificates")
-        String tlsTrustCertsFilePath;
+        @Parameter(names = { "-v", "--version" }, description = "Get version of pulsar client")
+        boolean version;
 
-        @Option(names = {"-ml", "--memory-limit"}, description = "Configure the Pulsar client memory limit "
-                + "(eg: 32M, 64M)", descriptionKey = "memoryLimit",
-                converter = ByteUnitToLongConverter.class)
-        long memoryLimit = 0L;
+        @Parameter(names = { "-h", "--help", }, help = true, description = "Show this help.")
+        boolean help;
     }
 
-
-    @ArgGroup(exclusive = false)
-    protected RootParams rootParams = new RootParams();
+    protected RootParams rootParams;
     boolean tlsAllowInsecureConnection;
     boolean tlsEnableHostnameVerification;
-
-    String tlsKeyFilePath;
-    String tlsCertificateFilePath;
-
+    String tlsTrustCertsFilePath;
 
     // for tls with keystore type config
     boolean useKeyStoreTls;
     String tlsTrustStoreType;
     String tlsTrustStorePath;
     String tlsTrustStorePassword;
-    String tlsKeyStoreType;
-    String tlsKeyStorePath;
-    String tlsKeyStorePassword;
-    String sslFactoryPlugin;
-    String sslFactoryPluginParams;
 
-    protected final CommandLine commander;
-    protected CmdProduce produceCommand;
-    protected CmdConsume consumeCommand;
-    protected CmdRead readCommand;
+    protected JCommander jcommander;
+    IUsageFormatter usageFormatter;
+    CmdProduce produceCommand;
+    CmdConsume consumeCommand;
     CmdGenerateDocumentation generateDocumentation;
 
     public PulsarClientTool(Properties properties) {
-        // Use -v instead -V
-        System.setProperty("picocli.version.name.0", "-v");
-        commander = CommanderFactory.createRootCommanderWithHook(this, null);
-        initCommander(properties);
-    }
-
-    @Override
-    @SneakyThrows
-    public int preRun() {
-        return updateConfig();
-    }
-
-    protected void initCommander(Properties properties) {
-        produceCommand = new CmdProduce();
-        consumeCommand = new CmdConsume();
-        readCommand = new CmdRead();
-        generateDocumentation = new CmdGenerateDocumentation();
-
+        rootParams = new RootParams();
+        initRootParamsFromProperties(properties);
         this.tlsAllowInsecureConnection = Boolean
                 .parseBoolean(properties.getProperty("tlsAllowInsecureConnection", "false"));
         this.tlsEnableHostnameVerification = Boolean
                 .parseBoolean(properties.getProperty("tlsEnableHostnameVerification", "false"));
+        this.tlsTrustCertsFilePath = properties.getProperty("tlsTrustCertsFilePath");
+
         this.useKeyStoreTls = Boolean
                 .parseBoolean(properties.getProperty("useKeyStoreTls", "false"));
         this.tlsTrustStoreType = properties.getProperty("tlsTrustStoreType", "JKS");
         this.tlsTrustStorePath = properties.getProperty("tlsTrustStorePath");
         this.tlsTrustStorePassword = properties.getProperty("tlsTrustStorePassword");
 
-        this.tlsKeyStoreType = properties.getProperty("tlsKeyStoreType", "JKS");
-        this.tlsKeyStorePath = properties.getProperty("tlsKeyStorePath");
-        this.tlsKeyStorePassword = properties.getProperty("tlsKeyStorePassword");
-        this.tlsKeyFilePath = properties.getProperty("tlsKeyFilePath");
-        this.tlsCertificateFilePath = properties.getProperty("tlsCertificateFilePath");
-        this.sslFactoryPlugin = properties.getProperty("sslFactoryPlugin");
-        this.sslFactoryPluginParams = properties.getProperty("sslFactoryPluginParams");
-
-        pulsarClientPropertiesProvider = PulsarClientPropertiesProvider.create(properties);
-        commander.setDefaultValueProvider(pulsarClientPropertiesProvider);
-        commander.addSubcommand("produce", produceCommand);
-        commander.addSubcommand("consume", consumeCommand);
-        commander.addSubcommand("read", readCommand);
-        commander.addSubcommand("generate_documentation", generateDocumentation);
+        initJCommander();
     }
 
-    protected void addCommand(String name, Object cmd) {
-        commander.addSubcommand(name, cmd);
+    protected void initJCommander() {
+        produceCommand = new CmdProduce();
+        consumeCommand = new CmdConsume();
+        generateDocumentation = new CmdGenerateDocumentation();
+
+        this.jcommander = new JCommander();
+        this.usageFormatter = new DefaultUsageFormatter(this.jcommander);
+        jcommander.setProgramName("pulsar-client");
+        jcommander.addObject(rootParams);
+        jcommander.addCommand("produce", produceCommand);
+        jcommander.addCommand("consume", consumeCommand);
+        jcommander.addCommand("generate_documentation", generateDocumentation);
     }
 
-    private int updateConfig() throws UnsupportedAuthenticationException {
+    protected void initRootParamsFromProperties(Properties properties) {
+        this.rootParams.serviceURL = isNotBlank(properties.getProperty("brokerServiceUrl"))
+                ? properties.getProperty("brokerServiceUrl") : properties.getProperty("webServiceUrl");
+        // fallback to previous-version serviceUrl property to maintain backward-compatibility
+        if (isBlank(this.rootParams.serviceURL)) {
+            this.rootParams.serviceURL = properties.getProperty("serviceUrl");
+        }
+        this.rootParams.authPluginClassName = properties.getProperty("authPlugin");
+        this.rootParams.authParams = properties.getProperty("authParams");
+    }
+
+    private void updateConfig() throws UnsupportedAuthenticationException {
         ClientBuilder clientBuilder = PulsarClient.builder()
-                .memoryLimit(rootParams.memoryLimit, SizeUnit.BYTES);
+                .memoryLimit(0, SizeUnit.BYTES);
         Authentication authentication = null;
         if (isNotBlank(this.rootParams.authPluginClassName)) {
             authentication = AuthenticationFactory.create(rootParams.authPluginClassName, rootParams.authParams);
@@ -181,45 +146,85 @@ public class PulsarClientTool implements CommandHook {
             clientBuilder.listenerName(this.rootParams.listenerName);
         }
         clientBuilder.allowTlsInsecureConnection(this.tlsAllowInsecureConnection);
+        clientBuilder.tlsTrustCertsFilePath(this.tlsTrustCertsFilePath);
         clientBuilder.enableTlsHostnameVerification(this.tlsEnableHostnameVerification);
         clientBuilder.serviceUrl(rootParams.serviceURL);
-
-        clientBuilder.tlsTrustCertsFilePath(this.rootParams.tlsTrustCertsFilePath)
-                .tlsKeyFilePath(tlsKeyFilePath)
-                .tlsCertificateFilePath(tlsCertificateFilePath);
 
         clientBuilder.useKeyStoreTls(useKeyStoreTls)
                 .tlsTrustStoreType(tlsTrustStoreType)
                 .tlsTrustStorePath(tlsTrustStorePath)
-                .tlsTrustStorePassword(tlsTrustStorePassword)
-                .tlsKeyStoreType(tlsKeyStoreType)
-                .tlsKeyStorePath(tlsKeyStorePath)
-                .tlsKeyStorePassword(tlsKeyStorePassword);
-
-        clientBuilder.sslFactoryPlugin(sslFactoryPlugin)
-                .sslFactoryPluginParams(sslFactoryPluginParams);
+                .tlsTrustStorePassword(tlsTrustStorePassword);
 
         if (isNotBlank(rootParams.proxyServiceURL)) {
             if (rootParams.proxyProtocol == null) {
-                commander.getErr().println("proxy-protocol must be provided with proxy-url");
-                return 1;
+                System.out.println("proxy-protocol must be provided with proxy-url");
+                System.exit(-1);
             }
             clientBuilder.proxyServiceUrl(rootParams.proxyServiceURL, rootParams.proxyProtocol);
         }
         this.produceCommand.updateConfig(clientBuilder, authentication, this.rootParams.serviceURL);
         this.consumeCommand.updateConfig(clientBuilder, authentication, this.rootParams.serviceURL);
-        this.readCommand.updateConfig(clientBuilder, authentication, this.rootParams.serviceURL);
-        return 0;
     }
 
     public int run(String[] args) {
-        return commander.execute(args);
+        try {
+            jcommander.parse(args);
+
+            if (isBlank(this.rootParams.serviceURL)) {
+                jcommander.usage();
+                return -1;
+            }
+
+            if (rootParams.version) {
+                System.out.println("Current version of pulsar client is: " + PulsarVersion.getVersion());
+                return 0;
+            }
+
+            if (rootParams.help) {
+                jcommander.usage();
+                return 0;
+            }
+
+            try {
+                this.updateConfig(); // If the --url, --auth-plugin, or --auth-params parameter are not specified,
+                                     // it will default to the values passed in by the constructor
+            } catch (UnsupportedAuthenticationException exp) {
+                System.out.println("Failed to load an authentication plugin");
+                exp.printStackTrace();
+                return -1;
+            }
+
+            String chosenCommand = jcommander.getParsedCommand();
+            if ("produce".equals(chosenCommand)) {
+                return produceCommand.run();
+            } else if ("consume".equals(chosenCommand)) {
+                return consumeCommand.run();
+            } else if ("generate_documentation".equals(chosenCommand)) {
+                return generateDocumentation.run();
+            } else {
+                jcommander.usage();
+                return -1;
+            }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+            String chosenCommand = jcommander.getParsedCommand();
+            if (e instanceof ParameterException) {
+                try {
+                    usageFormatter.usage(chosenCommand);
+                } catch (ParameterException noCmd) {
+                    e.printStackTrace();
+                }
+            } else {
+                e.printStackTrace();
+            }
+            return -1;
+        }
     }
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             System.out.println("Usage: pulsar-client CONF_FILE_PATH [options] [command] [command options]");
-            System.exit(1);
+            System.exit(-1);
         }
         String configFile = args[0];
         Properties properties = new Properties();
@@ -234,28 +239,6 @@ public class PulsarClientTool implements CommandHook {
         int exitCode = clientTool.run(Arrays.copyOfRange(args, 1, args.length));
 
         System.exit(exitCode);
-    }
 
-    @VisibleForTesting
-    public void replaceProducerCommand(CmdProduce object) {
-        this.produceCommand = object;
-        if (commander.getSubcommands().containsKey("produce")) {
-            commander.getCommandSpec().removeSubcommand("produce");
-        }
-        commander.addSubcommand("produce", this.produceCommand);
-    }
-
-    @VisibleForTesting
-    CommandLine getCommander() {
-        return commander;
-    }
-
-    // The following methods are used for Pulsar shell.
-    protected void setCommandName(String name) {
-        commander.setCommandName(name);
-    }
-
-    protected String getServiceUrl() {
-        return pulsarClientPropertiesProvider.getServiceUrl();
     }
 }

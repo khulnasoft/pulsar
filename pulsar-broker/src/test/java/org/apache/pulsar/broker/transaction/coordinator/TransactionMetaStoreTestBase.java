@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -71,7 +71,7 @@ public abstract class TransactionMetaStoreTestBase extends TestRetrySupport {
             config.setClusterName("my-cluster");
             config.setAdvertisedAddress("localhost");
             config.setWebServicePort(Optional.of(0));
-            config.setMetadataStoreUrl("zk:127.0.0.1:" + bkEnsemble.getZookeeperPort());
+            config.setZookeeperServers("127.0.0.1" + ":" + bkEnsemble.getZookeeperPort());
             config.setDefaultNumberOfNamespaceBundles(1);
             config.setLoadBalancerEnabled(false);
             config.setAcknowledgmentAtBatchIndexLevelEnabled(true);
@@ -120,29 +120,18 @@ public abstract class TransactionMetaStoreTestBase extends TestRetrySupport {
 
     @Override
     protected void cleanup() throws Exception {
-        if (transactionCoordinatorClient != null) {
-            transactionCoordinatorClient.close();
-            transactionCoordinatorClient = null;
-        }
-        for (int i = 0; i < BROKER_COUNT; i++) {
-            if (pulsarAdmins[i] != null) {
-                pulsarAdmins[i].close();
-                pulsarAdmins[i] = null;
+        for (PulsarAdmin admin : pulsarAdmins) {
+            if (admin != null) {
+                admin.close();
             }
         }
         if (pulsarClient != null) {
             pulsarClient.close();
-            pulsarClient = null;
         }
-        for (int i = 0; i < BROKER_COUNT; i++) {
-            if (pulsarServices[i] != null) {
-                pulsarServices[i].close();
-                pulsarServices[i] = null;
+        for (PulsarService service : pulsarServices) {
+            if (service != null) {
+                service.close();
             }
-        }
-        if (bkEnsemble != null) {
-            bkEnsemble.stop();
-            bkEnsemble = null;
         }
         Mockito.reset();
     }

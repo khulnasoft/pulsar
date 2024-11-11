@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,14 +18,16 @@
  */
 package org.apache.pulsar.broker.stats.metrics;
 
-import java.util.ArrayList;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactoryMXBean;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerMBeanImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.common.policies.data.TopicStats;
@@ -131,7 +133,7 @@ abstract class AbstractMetrics {
      * @return
      */
     protected ManagedLedgerFactoryMXBean getManagedLedgerCacheStats() {
-        return pulsar.getDefaultManagedLedgerFactory().getCacheStats();
+        return ((ManagedLedgerFactoryImpl) pulsar.getManagedLedgerFactory()).getCacheStats();
     }
 
     /**
@@ -139,8 +141,8 @@ abstract class AbstractMetrics {
      *
      * @return
      */
-    protected Map<String, ManagedLedger> getManagedLedgers() {
-        return pulsar.getDefaultManagedLedgerFactory().getManagedLedgers();
+    protected Map<String, ManagedLedgerImpl> getManagedLedgers() {
+        return ((ManagedLedgerFactoryImpl) pulsar.getManagedLedgerFactory()).getManagedLedgers();
     }
 
     protected String getLocalClusterName() {
@@ -186,7 +188,7 @@ abstract class AbstractMetrics {
      * @return
      */
     protected Metrics createMetricsByDimension(String namespace) {
-        Map<String, String> dimensionMap = new HashMap<>();
+        Map<String, String> dimensionMap = Maps.newHashMap();
 
         dimensionMap.put("namespace", namespace);
 
@@ -202,7 +204,7 @@ abstract class AbstractMetrics {
      * @return
      */
     protected Metrics createMetricsByDimension(String namespace, String fromClusterName, String toClusterName) {
-        Map<String, String> dimensionMap = new HashMap<>();
+        Map<String, String> dimensionMap = Maps.newHashMap();
 
         dimensionMap.put("namespace", namespace);
         dimensionMap.put("from_cluster", fromClusterName);
@@ -212,7 +214,7 @@ abstract class AbstractMetrics {
     }
 
     protected void populateAggregationMap(Map<String, List<Double>> map, String mkey, double value) {
-        map.computeIfAbsent(mkey, __ -> new ArrayList<>()).add(value);
+        map.computeIfAbsent(mkey, __ -> Lists.newArrayList()).add(value);
     }
 
     protected void populateAggregationMapWithSum(Map<String, Double> map, String mkey, double value) {
@@ -234,13 +236,13 @@ abstract class AbstractMetrics {
      * @param metrics
      * @param ledger
      */
-    protected void populateDimensionMap(Map<Metrics, List<ManagedLedger>> ledgersByDimensionMap, Metrics metrics,
-            ManagedLedger ledger) {
-        ledgersByDimensionMap.computeIfAbsent(metrics, __ -> new ArrayList<>()).add(ledger);
+    protected void populateDimensionMap(Map<Metrics, List<ManagedLedgerImpl>> ledgersByDimensionMap, Metrics metrics,
+            ManagedLedgerImpl ledger) {
+        ledgersByDimensionMap.computeIfAbsent(metrics, __ -> Lists.newArrayList()).add(ledger);
     }
 
     protected void populateDimensionMap(Map<Metrics, List<TopicStats>> topicsStatsByDimensionMap,
             Metrics metrics, TopicStats destStats) {
-        topicsStatsByDimensionMap.computeIfAbsent(metrics, __ -> new ArrayList<>()).add(destStats);
+        topicsStatsByDimensionMap.computeIfAbsent(metrics, __ -> Lists.newArrayList()).add(destStats);
     }
 }

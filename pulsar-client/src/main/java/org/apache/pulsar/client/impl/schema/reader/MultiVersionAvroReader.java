@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -44,11 +44,9 @@ public class MultiVersionAvroReader<T> extends AbstractMultiVersionAvroBaseReade
     protected SchemaReader<T> loadReader(BytesSchemaVersion schemaVersion) {
         SchemaInfo schemaInfo = getSchemaInfoByVersion(schemaVersion.get());
         if (schemaInfo != null) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Load schema reader for version({}), schema is : {}, schemaInfo: {}",
-                        SchemaUtils.getStringSchemaVersion(schemaVersion.get()),
-                        schemaInfo.getSchemaDefinition(), schemaInfo);
-            }
+            LOG.info("Load schema reader for version({}), schema is : {}, schemaInfo: {}",
+                    SchemaUtils.getStringSchemaVersion(schemaVersion.get()),
+                    schemaInfo.getSchemaDefinition(), schemaInfo.toString());
             boolean jsr310ConversionEnabled = getJsr310ConversionEnabledFromSchemaInfo(schemaInfo);
             return new AvroReader<>(parseAvroSchema(schemaInfo.getSchemaDefinition()),
                     readerSchema, pojoClassLoader, jsr310ConversionEnabled);

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -22,12 +22,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.util.PortManager;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.BrokerTestBase;
-import org.apache.pulsar.common.util.PortManager;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -39,14 +39,11 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import static org.apache.pulsar.common.util.PortManager.nextLockedFreePort;
 import static org.testng.Assert.assertEquals;
 
 @Slf4j
@@ -56,8 +53,6 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
     public static final class MyProtocolHandler implements ProtocolHandler {
 
         private ServiceConfiguration conf;
-
-        private final List<Integer> ports = new ArrayList<>();
 
         @Override
         public String protocolName() {
@@ -86,9 +81,7 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
 
         @Override
         public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
-            int port = nextLockedFreePort();
-            this.ports.add(port);
-            return Collections.singletonMap(new InetSocketAddress(conf.getBindAddress(), port),
+            return Collections.singletonMap(new InetSocketAddress(conf.getBindAddress(), PortManager.nextFreePort()),
                     new ChannelInitializer<SocketChannel>() {
                 @Override
                 protected void initChannel(SocketChannel socketChannel) throws Exception {
@@ -113,7 +106,7 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
 
         @Override
         public void close() {
-            ports.removeIf(PortManager::releaseLockedPort);
+
         }
     }
 
@@ -127,18 +120,12 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        tempDirectory = configureProtocolHandler(conf, MyProtocolHandler.class.getName(), useSeparateThreadPool);
-        super.baseSetup();
-    }
-
-    static File configureProtocolHandler(ServiceConfiguration conf, String className, boolean useSeparateThreadPool)
-            throws Exception {
-        final var tempDirectory = Files.createTempDirectory("SimpleProtocolHandlerTest").toFile();
+        tempDirectory = Files.createTempDirectory("SimpleProtocolHandlerTest").toFile();
         conf.setUseSeparateThreadPoolForProtocolHandlers(useSeparateThreadPool);
         conf.setProtocolHandlerDirectory(tempDirectory.getAbsolutePath());
         conf.setMessagingProtocols(Collections.singleton("test"));
-        buildMockNarFile(tempDirectory, className);
-        return tempDirectory;
+        buildMockNarFile(tempDirectory);
+        super.baseSetup();
     }
 
     @Test
@@ -169,7 +156,7 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
         }
     }
 
-    private static void buildMockNarFile(File tempDirectory, String className) throws Exception {
+    private static void buildMockNarFile(File tempDirectory) throws Exception {
         File file = new File(tempDirectory, "temp.nar");
         try (ZipOutputStream zipfile = new ZipOutputStream(new FileOutputStream(file))) {
 
@@ -182,7 +169,7 @@ public abstract class SimpleProtocolHandlerTestsBase extends BrokerTestBase {
             zipfile.putNextEntry(manifest);
             String yaml = "name: test\n" +
                     "description: this is a test\n" +
-                    "handlerClass: " + className + "\n";
+                    "handlerClass: " + MyProtocolHandler.class.getName() + "\n";
             zipfile.write(yaml.getBytes(StandardCharsets.UTF_8));
             zipfile.closeEntry();
         }

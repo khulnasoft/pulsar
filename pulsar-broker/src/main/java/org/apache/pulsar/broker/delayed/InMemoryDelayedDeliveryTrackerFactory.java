@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,19 +18,14 @@
  */
 package org.apache.pulsar.broker.delayed;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timer;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.concurrent.TimeUnit;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.service.persistent.AbstractPersistentDispatcherMultipleConsumers;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.pulsar.broker.service.persistent.PersistentDispatcherMultipleConsumers;
 
 public class InMemoryDelayedDeliveryTrackerFactory implements DelayedDeliveryTrackerFactory {
-    private static final Logger log = LoggerFactory.getLogger(InMemoryDelayedDeliveryTrackerFactory.class);
 
     private Timer timer;
 
@@ -41,8 +36,7 @@ public class InMemoryDelayedDeliveryTrackerFactory implements DelayedDeliveryTra
     private long fixedDelayDetectionLookahead;
 
     @Override
-    public void initialize(PulsarService pulsarService) {
-        ServiceConfiguration config = pulsarService.getConfig();
+    public void initialize(ServiceConfiguration config) {
         this.timer = new HashedWheelTimer(new DefaultThreadFactory("pulsar-delayed-delivery"),
                 config.getDelayedDeliveryTickTimeMillis(), TimeUnit.MILLISECONDS);
         this.tickTimeMillis = config.getDelayedDeliveryTickTimeMillis();
@@ -51,22 +45,7 @@ public class InMemoryDelayedDeliveryTrackerFactory implements DelayedDeliveryTra
     }
 
     @Override
-    public DelayedDeliveryTracker newTracker(AbstractPersistentDispatcherMultipleConsumers dispatcher) {
-        String topicName = dispatcher.getTopic().getName();
-        String subscriptionName = dispatcher.getSubscription().getName();
-        DelayedDeliveryTracker tracker =  DelayedDeliveryTracker.DISABLE;
-        try {
-            tracker = newTracker0(dispatcher);
-        } catch (Exception e) {
-            // it should never go here
-            log.warn("Failed to create InMemoryDelayedDeliveryTracker, topic {}, subscription {}",
-                    topicName, subscriptionName, e);
-        }
-        return tracker;
-    }
-
-    @VisibleForTesting
-    InMemoryDelayedDeliveryTracker newTracker0(AbstractPersistentDispatcherMultipleConsumers dispatcher) {
+    public DelayedDeliveryTracker newTracker(PersistentDispatcherMultipleConsumers dispatcher) {
         return new InMemoryDelayedDeliveryTracker(dispatcher, timer, tickTimeMillis,
                 isDelayedDeliveryDeliverAtTimeStrict, fixedDelayDetectionLookahead);
     }

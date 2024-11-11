@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,6 +21,7 @@ package org.apache.pulsar.broker.auth;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import org.apache.bookkeeper.common.util.OrderedExecutor;
+import org.apache.bookkeeper.common.util.SafeRunnable;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 
 public class SameThreadOrderedSafeExecutor extends OrderedExecutor {
@@ -35,8 +36,7 @@ public class SameThreadOrderedSafeExecutor extends OrderedExecutor {
             false,
             100000,
             -1,
-            false,
-            false /* thread scoped metrics*/);
+            false);
     }
 
     @Override
@@ -45,12 +45,12 @@ public class SameThreadOrderedSafeExecutor extends OrderedExecutor {
     }
 
     @Override
-    public void executeOrdered(int orderingKey, Runnable r) {
+    public void executeOrdered(int orderingKey, SafeRunnable r) {
         r.run();
     }
 
     @Override
-    public void executeOrdered(long orderingKey, Runnable r) {
+    public void executeOrdered(long orderingKey, SafeRunnable r) {
         r.run();
     }
 

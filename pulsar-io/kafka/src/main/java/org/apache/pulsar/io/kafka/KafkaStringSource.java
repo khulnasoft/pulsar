@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.kafka;
 
 import java.nio.charset.StandardCharsets;
@@ -27,12 +28,14 @@ import org.apache.pulsar.client.api.Schema;
  */
 public class KafkaStringSource extends KafkaAbstractSource<String> {
 
+
     @Override
-    public KafkaRecord<String> buildRecord(ConsumerRecord<Object, Object> consumerRecord) {
-        return new KafkaRecord<>(consumerRecord,
+    public KafkaRecord buildRecord(ConsumerRecord<Object, Object> consumerRecord) {
+        KafkaRecord record = new KafkaRecord(consumerRecord,
                 new String((byte[]) consumerRecord.value(), StandardCharsets.UTF_8),
                 Schema.STRING,
                 copyKafkaHeaders(consumerRecord));
+        return record;
     }
 
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,6 +21,7 @@ package org.apache.pulsar.io.kafka.connect;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
+
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
@@ -36,6 +37,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.connect.util.Callback;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.ProducerConsumerBase;
+import org.apache.pulsar.client.api.PulsarClient;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -50,6 +52,7 @@ public class PulsarOffsetBackingStoreTest extends ProducerConsumerBase {
     private PulsarKafkaWorkerConfig distributedConfig;
     private String topicName;
     private PulsarOffsetBackingStore offsetBackingStore;
+    private PulsarClient client;
 
     @BeforeMethod
     @Override
@@ -59,7 +62,10 @@ public class PulsarOffsetBackingStoreTest extends ProducerConsumerBase {
 
         this.topicName = "persistent://my-property/my-ns/offset-topic";
         this.defaultProps.put(PulsarKafkaWorkerConfig.OFFSET_STORAGE_TOPIC_CONFIG, topicName);
-        this.offsetBackingStore = new PulsarOffsetBackingStore(pulsarClient);
+        this.client = PulsarClient.builder()
+                .serviceUrl(brokerUrl.toString())
+                .build();
+        this.offsetBackingStore = new PulsarOffsetBackingStore(client);
     }
 
     @AfterMethod(alwaysRun = true)

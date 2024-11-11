@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -66,17 +66,11 @@ public class TopicStatsImpl implements TopicStats {
     /** Total messages published to the topic (msg). */
     public long msgInCounter;
 
-    /** Total bytes published to the system topic (bytes). */
-    public long systemTopicBytesInCounter;
-
     /** Total bytes delivered to consumer (bytes). */
     public long bytesOutCounter;
 
     /** Total messages delivered to consumer (msg). */
     public long msgOutCounter;
-
-    /** Total bytes delivered to internal cursors. */
-    public long bytesOutInternalCounter;
 
     /** Average size of published messages (bytes). */
     public double averageMsgSize;
@@ -89,31 +83,6 @@ public class TopicStatsImpl implements TopicStats {
 
     /** Get estimated total unconsumed or backlog size in bytes. */
     public long backlogSize;
-
-    /** the size in bytes of the topic backlog quota. */
-    public long backlogQuotaLimitSize;
-
-    /** the topic backlog age quota, in seconds. */
-    public long backlogQuotaLimitTime;
-
-    /**
-     * Age of oldest unacknowledged message, as recorded in last backlog quota check interval.
-     * <p>
-     * The age of the oldest unacknowledged (i.e. backlog) message, measured by the time elapsed from its published
-     * time, in seconds. This value is recorded every backlog quota check interval, hence it represents the value
-     * seen in the last check.
-     * </p>
-     */
-    public long oldestBacklogMessageAgeSeconds;
-
-    /**
-     * The subscription name containing oldest unacknowledged message as recorded in last backlog quota check.
-     * <p>
-     * The name of the subscription containing the oldest unacknowledged message. This value is recorded every backlog
-     * quota check interval, hence it represents the value seen in the last check.
-     * </p>
-     */
-    public String oldestBacklogMessageSubscriptionName;
 
     /** The number of times the publishing rate limit was triggered. */
     public long publishRateLimitedTimes;
@@ -132,10 +101,6 @@ public class TopicStatsImpl implements TopicStats {
 
     /** record last failed offloaded timestamp. If no failed offload, the value should be 0 */
     public long lastOffloadFailureTimeStamp;
-
-    public long ongoingTxnCount;
-    public long abortedTxnCount;
-    public long committedTxnCount;
 
     /** List of connected publishers on this topic w/ their stats. */
     @Getter(AccessLevel.NONE)
@@ -167,18 +132,8 @@ public class TopicStatsImpl implements TopicStats {
     /** The serialized size of non-contiguous deleted messages ranges. */
     public int nonContiguousDeletedMessagesRangesSerializedSize;
 
-    /** The size of DelayedDeliveryTracer memory usage. */
-    public long delayedMessageIndexSizeInBytes;
-
-    /** Map of bucket delayed index statistics. */
-    @JsonIgnore
-    public Map<String, TopicMetricBean> bucketDelayedIndexStats;
-
     /** The compaction stats. */
     public CompactionStatsImpl compaction;
-
-    /** The broker that owns this topic. */
-    public String ownerBroker;
 
     public List<? extends PublisherStats> getPublishers() {
         return Stream.concat(publishers.stream().sorted(
@@ -217,7 +172,6 @@ public class TopicStatsImpl implements TopicStats {
         this.subscriptions = new HashMap<>();
         this.replication = new TreeMap<>();
         this.compaction = new CompactionStatsImpl();
-        this.bucketDelayedIndexStats = new HashMap<>();
     }
 
     public void reset() {
@@ -247,15 +201,7 @@ public class TopicStatsImpl implements TopicStats {
         this.lastOffloadFailureTimeStamp = 0;
         this.lastOffloadSuccessTimeStamp = 0;
         this.publishRateLimitedTimes = 0L;
-        this.earliestMsgPublishTimeInBacklogs = 0L;
-        this.delayedMessageIndexSizeInBytes = 0;
         this.compaction.reset();
-        this.ownerBroker = null;
-        this.bucketDelayedIndexStats.clear();
-        this.backlogQuotaLimitSize = 0;
-        this.backlogQuotaLimitTime = 0;
-        this.oldestBacklogMessageAgeSeconds = -1;
-        this.oldestBacklogMessageSubscriptionName = null;
     }
 
     // if the stats are added for the 1st time, we will need to make a copy of these stats and add it to the current
@@ -281,28 +227,9 @@ public class TopicStatsImpl implements TopicStats {
         this.offloadedStorageSize += stats.offloadedStorageSize;
         this.nonContiguousDeletedMessagesRanges += stats.nonContiguousDeletedMessagesRanges;
         this.nonContiguousDeletedMessagesRangesSerializedSize += stats.nonContiguousDeletedMessagesRangesSerializedSize;
-        this.delayedMessageIndexSizeInBytes += stats.delayedMessageIndexSizeInBytes;
-        this.ongoingTxnCount = stats.ongoingTxnCount;
-        this.abortedTxnCount = stats.abortedTxnCount;
-        this.committedTxnCount = stats.committedTxnCount;
-        this.backlogQuotaLimitTime = stats.backlogQuotaLimitTime;
-        this.backlogQuotaLimitSize = stats.backlogQuotaLimitSize;
-        if (stats.oldestBacklogMessageAgeSeconds > this.oldestBacklogMessageAgeSeconds) {
-            this.oldestBacklogMessageAgeSeconds = stats.oldestBacklogMessageAgeSeconds;
-            this.oldestBacklogMessageSubscriptionName = stats.oldestBacklogMessageSubscriptionName;
-        }
 
-        stats.bucketDelayedIndexStats.forEach((k, v) -> {
-            TopicMetricBean topicMetricBean =
-                    this.bucketDelayedIndexStats.computeIfAbsent(k, __ -> new TopicMetricBean());
-            topicMetricBean.name = v.name;
-            topicMetricBean.labelsAndValues = v.labelsAndValues;
-            topicMetricBean.value += v.value;
-        });
-
-        List<? extends PublisherStats> publisherStats = stats.getPublishers();
-        for (int index = 0; index < publisherStats.size(); index++) {
-           PublisherStats s = publisherStats.get(index);
+        for (int index = 0; index < stats.getPublishers().size(); index++) {
+           PublisherStats s = stats.getPublishers().get(index);
            if (s.isSupportsPartialProducer() && s.getProducerName() != null) {
                this.publishersMap.computeIfAbsent(s.getProducerName(), key -> {
                    final PublisherStatsImpl newStats = new PublisherStatsImpl();
@@ -326,32 +253,37 @@ public class TopicStatsImpl implements TopicStats {
            }
         }
 
-        for (Map.Entry<String, SubscriptionStatsImpl> entry : stats.subscriptions.entrySet()) {
-            SubscriptionStatsImpl subscriptionStats =
-                    this.subscriptions.computeIfAbsent(entry.getKey(), k -> new SubscriptionStatsImpl());
-            subscriptionStats.add(entry.getValue());
-        }
-
-        for (Map.Entry<String, ReplicatorStatsImpl> entry : stats.replication.entrySet()) {
-            ReplicatorStatsImpl replStats =
-                    this.replication.computeIfAbsent(entry.getKey(), k -> {
-                        ReplicatorStatsImpl r = new ReplicatorStatsImpl();
-                        r.setConnected(true);
-                        return r;
-                    });
-            replStats.add(entry.getValue());
-        }
-
-        if (earliestMsgPublishTimeInBacklogs != 0 && ((TopicStatsImpl) ts).earliestMsgPublishTimeInBacklogs != 0) {
-            earliestMsgPublishTimeInBacklogs = Math.min(
-                    earliestMsgPublishTimeInBacklogs,
-                    ((TopicStatsImpl) ts).earliestMsgPublishTimeInBacklogs
-            );
+        if (this.subscriptions.size() != stats.subscriptions.size()) {
+            for (String subscription : stats.subscriptions.keySet()) {
+                SubscriptionStatsImpl subscriptionStats = new SubscriptionStatsImpl();
+                this.subscriptions.put(subscription, subscriptionStats.add(stats.subscriptions.get(subscription)));
+            }
         } else {
-            earliestMsgPublishTimeInBacklogs = Math.max(
-                    earliestMsgPublishTimeInBacklogs,
-                    ((TopicStatsImpl) ts).earliestMsgPublishTimeInBacklogs
-            );
+            for (String subscription : stats.subscriptions.keySet()) {
+                if (this.subscriptions.get(subscription) != null) {
+                    this.subscriptions.get(subscription).add(stats.subscriptions.get(subscription));
+                } else {
+                    SubscriptionStatsImpl subscriptionStats = new SubscriptionStatsImpl();
+                    this.subscriptions.put(subscription, subscriptionStats.add(stats.subscriptions.get(subscription)));
+                }
+            }
+        }
+        if (this.replication.size() != stats.replication.size()) {
+            for (String repl : stats.replication.keySet()) {
+                ReplicatorStatsImpl replStats = new ReplicatorStatsImpl();
+                replStats.setConnected(true);
+                this.replication.put(repl, replStats.add(stats.replication.get(repl)));
+            }
+        } else {
+            for (String repl : stats.replication.keySet()) {
+                if (this.replication.get(repl) != null) {
+                    this.replication.get(repl).add(stats.replication.get(repl));
+                } else {
+                    ReplicatorStatsImpl replStats = new ReplicatorStatsImpl();
+                    replStats.setConnected(true);
+                    this.replication.put(repl, replStats.add(stats.replication.get(repl)));
+                }
+            }
         }
         return this;
     }

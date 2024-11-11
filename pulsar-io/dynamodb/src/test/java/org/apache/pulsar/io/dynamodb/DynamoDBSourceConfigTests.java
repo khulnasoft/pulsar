@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -31,8 +31,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.amazonaws.services.kinesis.clientlibrary.lib.worker.InitialPositionInStream;
-import org.apache.pulsar.io.core.SourceContext;
-import org.mockito.Mockito;
 import org.testng.annotations.Test;
 
 
@@ -92,8 +90,7 @@ public class DynamoDBSourceConfigTests {
         map.put("initialPositionInStream", InitialPositionInStream.TRIM_HORIZON);
         map.put("startAtTime", DAY);
 
-        SourceContext sourceContext = Mockito.mock(SourceContext.class);
-        DynamoDBSourceConfig config = DynamoDBSourceConfig.load(map, sourceContext);
+        DynamoDBSourceConfig config = DynamoDBSourceConfig.load(map);
         
         assertNotNull(config);
         assertEquals(config.getAwsEndpoint(), "https://some.endpoint.aws");
@@ -114,46 +111,7 @@ public class DynamoDBSourceConfigTests {
         ZonedDateTime expected = ZonedDateTime.ofInstant(DAY.toInstant(), ZoneOffset.UTC);
         assertEquals(actual, expected);
     }
-
-    @Test
-    public final void loadFromMapCredentialFromSecretTest() throws IOException {
-        Map<String, Object> map = new HashMap<String, Object> ();
-        map.put("awsEndpoint", "https://some.endpoint.aws");
-        map.put("awsRegion", "us-east-1");
-        map.put("awsDynamodbStreamArn", "arn:aws:dynamodb:us-west-2:111122223333:table/TestTable/stream/2015-05-11T21:21:33.291");
-        map.put("checkpointInterval", "30000");
-        map.put("backoffTime", "4000");
-        map.put("numRetries", "3");
-        map.put("receiveQueueSize", 2000);
-        map.put("applicationName", "My test application");
-        map.put("initialPositionInStream", InitialPositionInStream.TRIM_HORIZON);
-        map.put("startAtTime", DAY);
-
-        SourceContext sourceContext = Mockito.mock(SourceContext.class);
-        Mockito.when(sourceContext.getSecret("awsCredentialPluginParam"))
-                .thenReturn("{\"accessKey\":\"myKey\",\"secretKey\":\"my-Secret\"}");
-        DynamoDBSourceConfig config = DynamoDBSourceConfig.load(map, sourceContext);
-
-        assertNotNull(config);
-        assertEquals(config.getAwsEndpoint(), "https://some.endpoint.aws");
-        assertEquals(config.getAwsRegion(), "us-east-1");
-        assertEquals(config.getAwsDynamodbStreamArn(), "arn:aws:dynamodb:us-west-2:111122223333:table/TestTable/stream/2015-05-11T21:21:33.291");
-        assertEquals(config.getAwsCredentialPluginParam(),
-                "{\"accessKey\":\"myKey\",\"secretKey\":\"my-Secret\"}");
-        assertEquals(config.getApplicationName(), "My test application");
-        assertEquals(config.getCheckpointInterval(), 30000);
-        assertEquals(config.getBackoffTime(), 4000);
-        assertEquals(config.getNumRetries(), 3);
-        assertEquals(config.getReceiveQueueSize(), 2000);
-        assertEquals(config.getInitialPositionInStream(), InitialPositionInStream.TRIM_HORIZON);
-
-        Calendar cal = Calendar.getInstance();
-        cal.setTime(config.getStartAtTime());
-        ZonedDateTime actual = ZonedDateTime.ofInstant(cal.toInstant(), ZoneOffset.UTC);
-        ZonedDateTime expected = ZonedDateTime.ofInstant(DAY.toInstant(), ZoneOffset.UTC);
-        assertEquals(actual, expected);
-    }
-
+    
     @Test(expectedExceptions = IllegalArgumentException.class, 
             expectedExceptionsMessageRegExp = "empty aws-credential param")
     public final void missingCredentialsTest() throws Exception {
@@ -163,8 +121,7 @@ public class DynamoDBSourceConfigTests {
         map.put("awsDynamodbStreamArn", "arn:aws:dynamodb:us-west-2:111122223333:table/TestTable/stream/2015-05-11T21:21:33.291");
      
         DynamoDBSource source = new DynamoDBSource();
-        SourceContext sourceContext = Mockito.mock(SourceContext.class);
-        source.open(map, sourceContext);
+        source.open(map, null);
     }
     
     @Test(expectedExceptions = IllegalArgumentException.class, 
@@ -179,8 +136,7 @@ public class DynamoDBSourceConfigTests {
         map.put("initialPositionInStream", InitialPositionInStream.AT_TIMESTAMP);
 
         DynamoDBSource source = new DynamoDBSource();
-        SourceContext sourceContext = Mockito.mock(SourceContext.class);
-        source.open(map, sourceContext);
+        source.open(map, null);
     }
     
     private File getFile(String name) {

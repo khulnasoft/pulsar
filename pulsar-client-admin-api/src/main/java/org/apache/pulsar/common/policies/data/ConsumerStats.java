@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,9 +25,6 @@ import java.util.Map;
  * Consumer statistics.
  */
 public interface ConsumerStats {
-    /** the app id. */
-    String getAppId();
-
     /** Total rate of messages delivered to the consumer (msg/s). */
     double getMsgRateOut();
 
@@ -57,13 +54,7 @@ public interface ConsumerStats {
     /** Number of available message permits for the consumer. */
     int getAvailablePermits();
 
-    /**
-     * Number of unacknowledged messages for the consumer, where an unacknowledged message is one that has been
-     * sent to the consumer but not yet acknowledged. This field is only meaningful when using a
-     * {@link org.apache.pulsar.client.api.SubscriptionType} that tracks individual message acknowledgement, like
-     * {@link org.apache.pulsar.client.api.SubscriptionType#Shared} or
-     * {@link org.apache.pulsar.client.api.SubscriptionType#Key_Shared}.
-     */
+    /** Number of unacknowledged messages for the consumer. */
     int getUnackedMessages();
 
     /** Number of average messages per entry for the consumer consumed. */
@@ -73,40 +64,7 @@ public interface ConsumerStats {
     boolean isBlockedConsumerOnUnackedMsgs();
 
     /** The read position of the cursor when the consumer joining. */
-    @Deprecated
     String getReadPositionWhenJoining();
-
-    /**
-     * For Key_Shared subscription in AUTO_SPLIT ordered mode:
-     * Retrieves the current number of hashes in the draining state for this consumer.
-     *
-     * @return the current number of hashes in the draining state for this consumer
-     */
-    int getDrainingHashesCount();
-
-    /**
-     * For Key_Shared subscription in AUTO_SPLIT ordered mode:
-     * Retrieves the total number of hashes cleared from the draining state since the consumer connected.
-     *
-     * @return the total number of hashes cleared from the draining state since the consumer connected
-     */
-    long getDrainingHashesClearedTotal();
-
-    /**
-     * For Key_Shared subscription in AUTO_SPLIT ordered mode:
-     * Retrieves the total number of unacked messages for all draining hashes for this consumer.
-     *
-     * @return the total number of unacked messages for all draining hashes for this consumer
-     */
-    int getDrainingHashesUnackedMessages();
-
-    /**
-     * For Key_Shared subscription in AUTO_SPLIT ordered mode:
-     * Retrieves the draining hashes for this consumer.
-     *
-     * @return a list of draining hashes for this consumer
-     */
-    List<DrainingHash> getDrainingHashes();
 
     /** Address of this consumer. */
     String getAddress();
@@ -119,20 +77,8 @@ public interface ConsumerStats {
 
     long getLastAckedTimestamp();
     long getLastConsumedTimestamp();
-    long getLastConsumedFlowTimestamp();
 
-    /**
-     * Hash ranges assigned to this consumer if in Key_Shared subscription mode.
-     * This format and field is used when `subscriptionKeySharedUseClassicPersistentImplementation` is set to `false`
-     * (default).
-     */
-    List<int[]> getKeyHashRangeArrays();
-
-    /**
-     * Hash ranges assigned to this consumer if in Key_Shared subscription mode.
-     * This format and field is used when `subscriptionKeySharedUseClassicPersistentImplementation` is set to `true`.
-     */
-    @Deprecated
+    /** Hash ranges assigned to this consumer if is Key_Shared sub mode. **/
     List<String> getKeyHashRanges();
 
     /** Metadata (key/value strings) associated with this consumer. */

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,24 +18,17 @@
  */
 package org.apache.pulsar.broker.stats;
 
-import static org.apache.pulsar.broker.stats.BrokerOpenTelemetryTestUtil.assertMetricLongSumValue;
-import static org.assertj.core.api.Assertions.assertThat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import org.apache.bookkeeper.client.LedgerHandle;
-import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedCursorMXBean;
-import org.apache.bookkeeper.mledger.ManagedCursorAttributes;
-import org.apache.bookkeeper.mledger.impl.OpenTelemetryManagedCursorStats;
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.bookkeeper.mledger.impl.ManagedCursorImpl;
 import org.apache.pulsar.broker.auth.MockedPulsarServiceBaseTest;
 import org.apache.pulsar.broker.service.persistent.PersistentSubscription;
 import org.apache.pulsar.broker.stats.metrics.ManagedCursorMetrics;
-import org.apache.pulsar.broker.testcontext.PulsarTestContext;
 import org.apache.pulsar.client.api.ClientBuilder;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
@@ -47,6 +40,7 @@ import org.apache.pulsar.client.impl.ConsumerImpl;
 import org.apache.pulsar.client.impl.PulsarTestClient;
 import org.apache.pulsar.common.stats.Metrics;
 import org.awaitility.Awaitility;
+import org.powermock.reflect.Whitebox;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -58,19 +52,9 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        super.internalSetup();
-    }
-
-    @Override
-    protected ServiceConfiguration getDefaultConf() {
-        ServiceConfiguration conf = super.getDefaultConf();
         conf.setTopicLevelPoliciesEnabled(false);
         conf.setSystemTopicEnabled(false);
-
-        // wait for shutdown of the broker, this prevents flakiness which could be caused by metrics being
-        // unregistered asynchronously. This impacts the execution of the next test method if this would be happening.
-        conf.setBrokerShutdownTimeoutMs(5000L);
-        return conf;
+        super.internalSetup();
     }
 
     @AfterClass
@@ -82,12 +66,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
     @Override
     protected PulsarClient createNewPulsarClient(ClientBuilder clientBuilder) throws PulsarClientException {
         return PulsarTestClient.create(clientBuilder);
-    }
-
-    @Override
-    protected void customizeMainPulsarTestContextBuilder(PulsarTestContext.Builder pulsarTestContextBuilder) {
-        super.customizeMainPulsarTestContextBuilder(pulsarTestContextBuilder);
-        pulsarTestContextBuilder.enableOpenTelemetry(true);
     }
 
     /***
@@ -125,29 +103,24 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
                 .topic(topicName)
                 .enableBatching(false)
                 .create();
-        var managedCursor = getManagedCursor(topicName, subName);
+        final PersistentSubscription persistentSubscription =
+                (PersistentSubscription) pulsar.getBrokerService()
+                        .getTopic(topicName, false).get().get().getSubscription(subName);
+        final ManagedCursorImpl managedCursor = (ManagedCursorImpl) persistentSubscription.getCursor();
         ManagedCursorMXBean managedCursorMXBean = managedCursor.getStats();
         // Assert.
         metricsList = metrics.generate();
         Assert.assertFalse(metricsList.isEmpty());
-        Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerSucceed"), 0L);
+        /*
+          see: https://github.com/apache/pulsar/pull/17504
+          "createNewMetadataLedger" triggers once BK write, and "initialize" triggers the execution of
+          "createNewMetadataLedger". The logic of the branch master has been changed, so this line is different.
+         */
+        Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerSucceed"), 1L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerErrors"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperSucceed"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperErrors"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_nonContiguousDeletedMessagesRange"), 0L);
-        // Validate OpenTelemetry metrics as well
-        var attributesSet = new ManagedCursorAttributes(managedCursor);
-        var otelMetrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.NON_CONTIGUOUS_MESSAGE_RANGE_COUNTER,
-                attributesSet.getAttributes(), 0);
         /**
          * 1. Send many messages, and only ack half. After the cursor data is written to BK,
          *    verify "brk_ml_cursor_persistLedgerSucceed" and "brk_ml_cursor_nonContiguousDeletedMessagesRange".
@@ -176,17 +149,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperErrors"), 0L);
         Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_nonContiguousDeletedMessagesRange"),
                 0L);
-        otelMetrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.NON_CONTIGUOUS_MESSAGE_RANGE_COUNTER,
-                attributesSet.getAttributes(), value -> assertThat(value).isPositive());
         // Ack another half.
         for (MessageId messageId : keepsMessageIdList){
             consumer.acknowledge(messageId);
@@ -202,17 +164,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperSucceed"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperErrors"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_nonContiguousDeletedMessagesRange"), 0L);
-        otelMetrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.NON_CONTIGUOUS_MESSAGE_RANGE_COUNTER,
-                attributesSet.getAttributes(), 0);
         /**
          * Make BK error, and send many message, then wait cursor persistent finish.
          * After the cursor data is written to ZK, verify "brk_ml_cursor_persistLedgerErrors" and
@@ -224,8 +175,7 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
             producer.send(message.getBytes());
             consumer.acknowledge(consumer.receive().getMessageId());
             // Make BK error.
-            LedgerHandle ledgerHandle = (LedgerHandle) FieldUtils.readField(
-                    managedCursor, "cursorLedger", true);
+            LedgerHandle ledgerHandle = Whitebox.getInternalState(managedCursor, "cursorLedger");
             ledgerHandle.close();
             return managedCursorMXBean.getPersistLedgerErrors() > 0
                     && managedCursorMXBean.getPersistZookeeperSucceed() > 0;
@@ -233,22 +183,11 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
         // Assert.
         metricsList = metrics.generate();
         Assert.assertFalse(metricsList.isEmpty());
-        Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerSucceed"), 0L);
+        Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerSucceed"), 1L);
         Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistLedgerErrors"), 0L);
         Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperSucceed"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_persistZookeeperErrors"), 0L);
         Assert.assertEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_nonContiguousDeletedMessagesRange"), 0L);
-        otelMetrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_COUNTER,
-                attributesSet.getAttributesOperationFailure(), value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationSucceed(), value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.PERSIST_OPERATION_METADATA_STORE_COUNTER,
-                attributesSet.getAttributesOperationFailure(), 0);
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.NON_CONTIGUOUS_MESSAGE_RANGE_COUNTER,
-                attributesSet.getAttributes(), 0);
         /**
          * TODO verify "brk_ml_cursor_persistZookeeperErrors".
          * This is not easy to implement, we can use {@link #mockZooKeeper} to fail ZK, but we cannot identify whether
@@ -261,18 +200,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
         consumer.close();
         managedCursor.close();
         admin.topics().delete(topicName, true);
-    }
-
-    private ManagedCursorMXBean getManagedCursorMXBean(String topicName, String subscriptionName) throws Exception {
-        var managedCursor = getManagedCursor(topicName, subscriptionName);
-        return managedCursor.getStats();
-    }
-
-    private ManagedCursor getManagedCursor(String topicName, String subscriptionName) throws Exception {
-        final PersistentSubscription persistentSubscription =
-                (PersistentSubscription) pulsar.getBrokerService()
-                        .getTopic(topicName, false).get().get().getSubscription(subscriptionName);
-        return persistentSubscription.getCursor();
     }
 
     @Test
@@ -320,15 +247,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
                 consumer2.acknowledge(consumer.receive().getMessageId());
             }
         }
-
-        var managedCursor1 = getManagedCursor(topicName, subName1);
-        var cursorMXBean1 = managedCursor1.getStats();
-        var managedCursor2 = getManagedCursor(topicName, subName2);
-        var cursorMXBean2 = managedCursor2.getStats();
-        // Wait for persistent cursor meta.
-        Awaitility.await().until(() -> cursorMXBean1.getWriteCursorLedgerLogicalSize() > 0);
-        Awaitility.await().until(() -> cursorMXBean2.getWriteCursorLedgerLogicalSize() > 0);
-
         metricsList = metrics.generate();
         Assert.assertEquals(metricsList.size(), 2);
         Assert.assertNotEquals(metricsList.get(0).getMetrics().get("brk_ml_cursor_writeLedgerSize"), 0L);
@@ -339,22 +257,6 @@ public class ManagedCursorMetricsTest extends MockedPulsarServiceBaseTest {
         Assert.assertNotEquals(metricsList.get(1).getMetrics().get("brk_ml_cursor_writeLedgerLogicalSize"), 0L);
         Assert.assertEquals(metricsList.get(1).getMetrics().get("brk_ml_cursor_readLedgerSize"), 0L);
 
-        var otelMetrics = pulsarTestContext.getOpenTelemetryMetricReader().collectAllMetrics();
-        var attributes1 = new ManagedCursorAttributes(managedCursor1).getAttributes();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.OUTGOING_BYTE_COUNTER,
-                attributes1, value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.OUTGOING_BYTE_LOGICAL_COUNTER,
-                attributes1, value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.INCOMING_BYTE_COUNTER,
-                attributes1, 0);
-
-        var attributes2 = new ManagedCursorAttributes(managedCursor2).getAttributes();
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.OUTGOING_BYTE_COUNTER,
-                attributes2, value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.OUTGOING_BYTE_LOGICAL_COUNTER,
-                attributes2, value -> assertThat(value).isPositive());
-        assertMetricLongSumValue(otelMetrics, OpenTelemetryManagedCursorStats.INCOMING_BYTE_COUNTER,
-                attributes2, 0);
         // cleanup.
         consumer.close();
         consumer2.close();

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,7 +27,7 @@ import org.apache.bookkeeper.client.api.ReadHandle;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience;
 import org.apache.bookkeeper.common.annotation.InterfaceStability;
 import org.apache.bookkeeper.mledger.proto.MLDataFormats;
-import org.apache.pulsar.common.policies.data.OffloadPolicies;
+import org.apache.pulsar.common.policies.data.OffloadPoliciesImpl;
 
 /**
  * Interface for offloading ledgers to long-term storage.
@@ -212,7 +212,7 @@ public interface LedgerOffloader {
      *
      * @return offload policies
      */
-    OffloadPolicies getOffloadPolicies();
+    OffloadPoliciesImpl getOffloadPolicies();
 
     /**
      * Close the resources if necessary.
@@ -229,10 +229,6 @@ public interface LedgerOffloader {
     default void scanLedgers(OffloadedLedgerMetadataConsumer consumer,
                              Map<String, String> offloadDriverMetadata) throws ManagedLedgerException {
         throw ManagedLedgerException.getManagedLedgerException(new UnsupportedOperationException());
-    }
-
-    default boolean isAppendable() {
-        return true;
     }
 }
 

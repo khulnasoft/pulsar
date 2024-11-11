@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,6 @@
  */
 package org.apache.pulsar.tests.integration.io;
 
-import dev.failsafe.RetryPolicy;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,6 +33,7 @@ import org.apache.pulsar.tests.integration.topologies.PulsarCluster;
 
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import net.jodah.failsafe.RetryPolicy;
 
 @Slf4j
 public abstract class PulsarIOTestRunner {
@@ -42,11 +42,11 @@ public abstract class PulsarIOTestRunner {
     final Duration ONE_MINUTE = Duration.ofMinutes(1);
     final Duration TEN_SECONDS = Duration.ofSeconds(10);
 
-	protected final RetryPolicy<?> statusRetryPolicy = RetryPolicy.builder()
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+	protected final RetryPolicy statusRetryPolicy = new RetryPolicy()
             .withMaxDuration(ONE_MINUTE)
             .withDelay(TEN_SECONDS)
-            .onRetry(e -> log.error("Retry ... "))
-            .build();
+            .onRetry(e -> log.error("Retry ... "));
 
     protected PulsarCluster pulsarCluster;
     protected String functionRuntimeType;
@@ -56,7 +56,8 @@ public abstract class PulsarIOTestRunner {
       this.functionRuntimeType = functionRuntimeType;
     }
 
-	protected Schema<?> getSchema(boolean jsonWithEnvelope) {
+    @SuppressWarnings("rawtypes")
+	protected Schema getSchema(boolean jsonWithEnvelope) {
         if (jsonWithEnvelope) {
             return KeyValueSchemaImpl.kvBytes();
         } else {
@@ -64,7 +65,6 @@ public abstract class PulsarIOTestRunner {
         }
     }
 
-    @SuppressWarnings("try")
     protected <T> void ensureSubscriptionCreated(String inputTopicName,
                                                       String subscriptionName,
                                                       Schema<T> inputTopicSchema)

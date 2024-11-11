@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.instance;
 
 import lombok.Cleanup;
@@ -46,8 +47,6 @@ import java.util.zip.ZipInputStream;
  *     8. Apache AVRO
  *     9. Jackson Mapper and Databind (dependency of AVRO)
  *     10. Apache Commons Compress (dependency of AVRO)
- *     11. Apache Commons Lang (dependency of Apache Commons Compress)
- *     12. Apache Commons IO (dependency of Apache Commons Compress)
  */
 public class JavaInstanceDepsTest {
 
@@ -73,8 +72,6 @@ public class JavaInstanceDepsTest {
                         && !name.startsWith("org/apache/avro")
                         && !name.startsWith("com/fasterxml/jackson")
                         && !name.startsWith("org/apache/commons/compress")
-                        && !name.startsWith("org/apache/commons/lang3")
-                        && !name.startsWith("org/apache/commons/io")
                         && !name.startsWith("com/google")
                         && !name.startsWith("org/checkerframework")
                         && !name.startsWith("javax/annotation")

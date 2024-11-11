@@ -22,9 +22,9 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>org.apache.pulsar</groupId>
+    <groupId>com.khulnasoft.oss</groupId>
     <artifactId>pulsar-io</artifactId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>2.10.6.3-SNAPSHOT</version>
   </parent>
 
   <artifactId>pulsar-io-kinesis</artifactId>
@@ -32,7 +32,7 @@
 
   <properties>
     <amazon-kinesis-client.version>2.2.8</amazon-kinesis-client.version>
-    <amazon-kinesis-producer.version>0.14.13</amazon-kinesis-producer.version>
+    <amazon-kinesis-producer.version>0.14.0</amazon-kinesis-producer.version>
     <json-flattener.version>0.13.0</json-flattener.version>
     <flatbuffers-java.version>1.9.0</flatbuffers-java.version>
     <jaxb-api.version>2.3.0</jaxb-api.version>
@@ -58,7 +58,7 @@
     </dependency>
 
     <dependency>
-      <groupId>org.apache.pulsar</groupId>
+      <groupId>${project.groupId}</groupId>
       <artifactId>pulsar-functions-instance</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>

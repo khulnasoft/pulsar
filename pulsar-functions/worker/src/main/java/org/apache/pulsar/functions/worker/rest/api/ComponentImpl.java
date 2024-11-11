@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,22 +18,25 @@
  */
 package org.apache.pulsar.functions.worker.rest.api;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.pulsar.functions.utils.FunctionCommon.createPkgTempFile;
+import static org.apache.pulsar.functions.utils.FunctionCommon.getStateNamespace;
 import static org.apache.pulsar.functions.utils.FunctionCommon.getUniquePackageName;
 import static org.apache.pulsar.functions.worker.rest.RestUtils.throwUnavailableException;
 import com.google.common.base.Utf8;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -41,9 +44,9 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
@@ -51,8 +54,15 @@ import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.UriBuilder;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.api.StorageClient;
+import org.apache.bookkeeper.api.kv.Table;
+import org.apache.bookkeeper.api.kv.result.KeyValue;
+import org.apache.bookkeeper.clients.StorageClientBuilder;
+import org.apache.bookkeeper.clients.admin.StorageAdminClient;
+import org.apache.bookkeeper.clients.config.StorageClientSettings;
+import org.apache.bookkeeper.clients.exceptions.NamespaceNotFoundException;
+import org.apache.bookkeeper.clients.exceptions.StreamNotFoundException;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationParameters;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -74,9 +84,7 @@ import org.apache.pulsar.common.policies.data.FunctionInstanceStatsDataImpl;
 import org.apache.pulsar.common.policies.data.FunctionStatsImpl;
 import org.apache.pulsar.common.util.Codec;
 import org.apache.pulsar.common.util.RestException;
-import org.apache.pulsar.functions.api.state.StateValue;
 import org.apache.pulsar.functions.instance.InstanceUtils;
-import org.apache.pulsar.functions.instance.state.DefaultStateStore;
 import org.apache.pulsar.functions.proto.Function;
 import org.apache.pulsar.functions.proto.Function.FunctionDetails;
 import org.apache.pulsar.functions.proto.Function.FunctionMetaData;
@@ -99,30 +107,28 @@ import org.apache.pulsar.functions.worker.PulsarWorkerService;
 import org.apache.pulsar.functions.worker.WorkerService;
 import org.apache.pulsar.functions.worker.WorkerUtils;
 import org.apache.pulsar.functions.worker.service.api.Component;
-import org.apache.pulsar.packages.management.core.common.PackageMetadata;
-import org.apache.pulsar.packages.management.core.common.PackageName;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 
 @Slf4j
 public abstract class ComponentImpl implements Component<PulsarWorkerService> {
 
+    private final AtomicReference<StorageClient> storageClient = new AtomicReference<>();
     protected final Supplier<PulsarWorkerService> workerServiceSupplier;
     protected final Function.FunctionDetails.ComponentType componentType;
 
-    public ComponentImpl(Supplier<PulsarWorkerService> workerServiceSupplier,
-                         Function.FunctionDetails.ComponentType componentType) {
+    public ComponentImpl(Supplier<PulsarWorkerService> workerServiceSupplier, Function.FunctionDetails.ComponentType componentType) {
         this.workerServiceSupplier = workerServiceSupplier;
         this.componentType = componentType;
     }
 
-    protected abstract class GetStatus<X, T> {
+    protected abstract class GetStatus<S, T> {
 
         public abstract T notScheduledInstance();
 
-        public abstract T fromFunctionStatusProto(InstanceCommunication.FunctionStatus status,
-                                                  String assignedWorkerId);
+        public abstract T fromFunctionStatusProto(final InstanceCommunication.FunctionStatus status,
+                                                  final String assignedWorkerId);
 
-        public abstract T notRunning(String assignedWorkerId, String error);
+        public abstract T notRunning(final String assignedWorkerId, final String error);
 
         public T getComponentInstanceStatus(final String tenant,
                                             final String namespace,
@@ -134,8 +140,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             if (worker().getFunctionRuntimeManager().getRuntimeFactory().externallyManaged()) {
                 assignment = worker().getFunctionRuntimeManager().findFunctionAssignment(tenant, namespace, name, -1);
             } else {
-                assignment = worker().getFunctionRuntimeManager()
-                        .findFunctionAssignment(tenant, namespace, name, instanceId);
+                assignment = worker().getFunctionRuntimeManager().findFunctionAssignment(tenant, namespace, name, instanceId);
             }
 
             if (assignment == null) {
@@ -163,8 +168,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                         throw new RuntimeException(e);
                     }
                 } else {
-                    String message = functionRuntimeInfo.getStartupException() != null
-                            ? functionRuntimeInfo.getStartupException().getMessage() : "";
+                    String message = functionRuntimeInfo.getStartupException() != null ? functionRuntimeInfo.getStartupException().getMessage() : "";
                     return notRunning(assignedWorkerId, message);
                 }
             } else {
@@ -182,55 +186,49 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                 }
 
                 if (uri == null) {
-                    throw new WebApplicationException(
-                            Response.serverError().status(Status.INTERNAL_SERVER_ERROR).build());
+                    throw new WebApplicationException(Response.serverError().status(Status.INTERNAL_SERVER_ERROR).build());
                 } else {
-                    URI redirect =
-                            UriBuilder.fromUri(uri).host(workerInfo.getWorkerHostname()).port(workerInfo.getPort())
-                                    .build();
+                    URI redirect = UriBuilder.fromUri(uri).host(workerInfo.getWorkerHostname()).port(workerInfo.getPort()).build();
                     throw new WebApplicationException(Response.temporaryRedirect(redirect).build());
                 }
             }
         }
 
-        public abstract X getStatus(String tenant,
-                                    String namespace,
-                                    String name,
-                                    Collection<Function.Assignment> assignments,
-                                    URI uri) throws PulsarAdminException;
+        public abstract S getStatus(final String tenant,
+                                    final String namespace,
+                                    final String name,
+                                    final Collection<Function.Assignment> assignments,
+                                    final URI uri) throws PulsarAdminException;
 
-        public abstract X getStatusExternal(String tenant,
-                                            String namespace,
-                                            String name,
-                                            int parallelism);
+        public abstract S getStatusExternal(final String tenant,
+                                            final String namespace,
+                                            final String name,
+                                            final int parallelism);
 
-        public abstract X emptyStatus(int parallelism);
+        public abstract S emptyStatus(final int parallelism);
 
-        public X getComponentStatus(final String tenant,
+        public S getComponentStatus(final String tenant,
                                     final String namespace,
                                     final String name,
                                     final URI uri) {
 
-            Function.FunctionMetaData functionMetaData =
-                    worker().getFunctionMetaDataManager().getFunctionMetaData(tenant, namespace, name);
+            Function.FunctionMetaData functionMetaData = worker().getFunctionMetaDataManager().getFunctionMetaData(tenant, namespace, name);
 
-            Collection<Function.Assignment> assignments =
-                    worker().getFunctionRuntimeManager().findFunctionAssignments(tenant, namespace, name);
+            Collection<Function.Assignment> assignments = worker().getFunctionRuntimeManager().findFunctionAssignments(tenant, namespace, name);
 
             // TODO refactor the code for externally managed.
             if (worker().getFunctionRuntimeManager().getRuntimeFactory().externallyManaged()) {
                 Function.Assignment assignment = assignments.iterator().next();
                 boolean isOwner = worker().getWorkerConfig().getWorkerId().equals(assignment.getWorkerId());
                 if (isOwner) {
-                    return getStatusExternal(tenant, namespace, name,
-                            functionMetaData.getFunctionDetails().getParallelism());
+                    return getStatusExternal(tenant, namespace, name, functionMetaData.getFunctionDetails().getParallelism());
                 } else {
 
                     // find the hostname/port of the worker who is the owner
 
                     List<WorkerInfo> workerInfoList = worker().getMembershipManager().getCurrentMembership();
                     WorkerInfo workerInfo = null;
-                    for (WorkerInfo entry : workerInfoList) {
+                    for (WorkerInfo entry: workerInfoList) {
                         if (assignment.getWorkerId().equals(entry.getWorkerId())) {
                             workerInfo = entry;
                         }
@@ -240,12 +238,9 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                     }
 
                     if (uri == null) {
-                        throw new WebApplicationException(
-                                Response.serverError().status(Status.INTERNAL_SERVER_ERROR).build());
+                        throw new WebApplicationException(Response.serverError().status(Status.INTERNAL_SERVER_ERROR).build());
                     } else {
-                        URI redirect =
-                                UriBuilder.fromUri(uri).host(workerInfo.getWorkerHostname()).port(workerInfo.getPort())
-                                        .build();
+                        URI redirect = UriBuilder.fromUri(uri).host(workerInfo.getWorkerHostname()).port(workerInfo.getPort()).build();
                         throw new WebApplicationException(Response.temporaryRedirect(redirect).build());
                     }
                 }
@@ -262,7 +257,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
     @Override
     public PulsarWorkerService worker() {
         try {
-            return Objects.requireNonNull(workerServiceSupplier.get());
+            return checkNotNull(workerServiceSupplier.get());
         } catch (Throwable t) {
             log.info("Failed to get worker service", t);
             throw t;
@@ -300,15 +295,6 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         String namespace = functionDetails.getNamespace();
         PackageLocationMetaData.Builder packageLocationMetaDataBuilder = PackageLocationMetaData.newBuilder();
         boolean isPkgUrlProvided = isNotBlank(functionPkgUrl);
-        boolean isPackageManagementEnabled = worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement();
-        PackageName packageName = PackageName.get(
-                componentType.name(),
-                tenant,
-                namespace,
-                componentName,
-                String.valueOf(functionMetaData.getVersion()));
-        PackageMetadata metadata = PackageMetadata.builder()
-                .createTime(functionMetaData.getCreateTime()).build();
         if (worker().getFunctionRuntimeManager().getRuntimeFactory().externallyManaged()) {
             // For externally managed schedulers, the pkgUrl/builtin stuff can be copied to bk
             // if the function worker image does not include connectors
@@ -329,16 +315,8 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                 if (worker().getWorkerConfig().getUploadBuiltinSinksSources()) {
                     packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
                             component.getName()));
-                    if (isPackageManagementEnabled) {
-                        packageLocationMetaDataBuilder.setPackagePath(packageName.toString());
-                        worker().getBrokerAdmin().packages().upload(metadata,
-                                packageName.toString(), component.getAbsolutePath());
-                    } else {
-                        packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace,
-                                componentName, component.getName()));
-                        WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
-                                component, worker().getDlogNamespace());
-                    }
+                    WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
+                            component, worker().getDlogNamespace());
                     log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType),
                             packageLocationMetaDataBuilder.getPackagePath());
                 } else {
@@ -346,53 +324,25 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                     packageLocationMetaDataBuilder.setPackagePath("builtin://" + builtin);
                 }
             } else if (isPkgUrlProvided) {
+                packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
+                        uploadedInputStreamAsFile.getName()));
                 packageLocationMetaDataBuilder.setOriginalFileName(uploadedInputStreamAsFile.getName());
-                if (isPackageManagementEnabled) {
-                    packageLocationMetaDataBuilder.setPackagePath(functionPkgUrl);
-                    if (!Utils.hasPackageTypePrefix(functionPkgUrl)) {
-                        packageLocationMetaDataBuilder.setPackagePath(packageName.toString());
-                        worker().getBrokerAdmin().packages().upload(metadata,
-                                packageName.toString(), uploadedInputStreamAsFile.getAbsolutePath());
-                    }
-                } else {
-                    packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
-                            uploadedInputStreamAsFile.getName()));
-                    WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
-                            uploadedInputStreamAsFile, worker().getDlogNamespace());
-                }
-                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType),
-                        packageLocationMetaDataBuilder.getPackagePath());
+                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType), packageLocationMetaDataBuilder.getPackagePath());
+                WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(), uploadedInputStreamAsFile, worker().getDlogNamespace());
             } else if (functionMetaData.getPackageLocation().getPackagePath().startsWith(Utils.HTTP)
                     || functionMetaData.getPackageLocation().getPackagePath().startsWith(Utils.FILE)) {
-                String fileName =
-                        new File(new URL(functionMetaData.getPackageLocation().getPackagePath()).toURI()).getName();
+                String fileName = new File(new URL(functionMetaData.getPackageLocation().getPackagePath()).toURI()).getName();
+                packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
+                        fileName));
                 packageLocationMetaDataBuilder.setOriginalFileName(fileName);
-                if (isPackageManagementEnabled) {
-                    packageLocationMetaDataBuilder.setPackagePath(packageName.toString());
-                    worker().getBrokerAdmin().packages().upload(metadata,
-                            packageName.toString(), uploadedInputStreamAsFile.getAbsolutePath());
-                } else {
-                    packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
-                            fileName));
-                    WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
-                            uploadedInputStreamAsFile, worker().getDlogNamespace());
-                }
-                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType),
-                        packageLocationMetaDataBuilder.getPackagePath());
+                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType), packageLocationMetaDataBuilder.getPackagePath());
+                WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(), uploadedInputStreamAsFile, worker().getDlogNamespace());
             } else {
+                packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
+                        fileDetail.getFileName()));
                 packageLocationMetaDataBuilder.setOriginalFileName(fileDetail.getFileName());
-                if (isPackageManagementEnabled) {
-                    packageLocationMetaDataBuilder.setPackagePath(packageName.toString());
-                    worker().getBrokerAdmin().packages().upload(metadata,
-                            packageName.toString(), uploadedInputStreamAsFile.getAbsolutePath());
-                } else {
-                    packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
-                            fileDetail.getFileName()));
-                    WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
-                            uploadedInputStreamAsFile, worker().getDlogNamespace());
-                }
-                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType),
-                        packageLocationMetaDataBuilder.getPackagePath());
+                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType), packageLocationMetaDataBuilder.getPackagePath());
+                WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(), uploadedInputStreamAsFile, worker().getDlogNamespace());
             }
         } else {
             // For pulsar managed schedulers, the pkgUrl/builtin stuff should be copied to bk
@@ -404,22 +354,32 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                     || functionMetaData.getPackageLocation().getPackagePath().startsWith(Utils.FILE)) {
                 packageLocationMetaDataBuilder.setPackagePath(functionMetaData.getPackageLocation().getPackagePath());
             } else {
+                packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName, fileDetail.getFileName()));
                 packageLocationMetaDataBuilder.setOriginalFileName(fileDetail.getFileName());
-                if (isPackageManagementEnabled) {
-                    packageLocationMetaDataBuilder.setPackagePath(packageName.toString());
-                    worker().getBrokerAdmin().packages().upload(metadata,
-                            packageName.toString(), uploadedInputStreamAsFile.getAbsolutePath());
-                } else {
-                    packageLocationMetaDataBuilder.setPackagePath(createPackagePath(tenant, namespace, componentName,
-                                    fileDetail.getFileName()));
-                    WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(),
-                            uploadedInputStreamAsFile, worker().getDlogNamespace());
-                }
-                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType),
-                        packageLocationMetaDataBuilder.getPackagePath());
+                log.info("Uploading {} package to {}", ComponentTypeUtils.toString(componentType), packageLocationMetaDataBuilder.getPackagePath());
+                WorkerUtils.uploadFileToBookkeeper(packageLocationMetaDataBuilder.getPackagePath(), uploadedInputStreamAsFile, worker().getDlogNamespace());
             }
         }
         return packageLocationMetaDataBuilder;
+    }
+
+    private void deleteStatestoreTableAsync(String namespace, String table) {
+        StorageAdminClient adminClient = worker().getStateStoreAdminClient();
+        if (adminClient != null) {
+            adminClient.deleteStream(namespace, table).whenComplete((res, throwable) -> {
+                if ((throwable == null && res)
+                        || ((throwable instanceof NamespaceNotFoundException
+                        || throwable instanceof StreamNotFoundException))) {
+                    log.info("{}/{} table deleted successfully", namespace, table);
+                } else {
+                    if (throwable != null) {
+                        log.error("{}/{} table deletion failed {}  but moving on", namespace, table, throwable);
+                    } else {
+                        log.error("{}/{} table deletion failed but moving on", namespace, table);
+                    }
+                }
+            });
+        }
     }
 
     @Override
@@ -439,30 +399,23 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateDeregisterRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid deregister {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid deregister {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.error("{} to deregister does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{} to deregister does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
 
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData newVersionedMetaData =
-                FunctionMetaDataUtils.incrMetadataVersion(functionMetaData, functionMetaData);
+        FunctionMetaData newVersionedMetaData = FunctionMetaDataUtils.incrMetadataVersion(functionMetaData, functionMetaData);
         internalProcessFunctionRequest(newVersionedMetaData.getFunctionDetails().getTenant(),
                 newVersionedMetaData.getFunctionDetails().getNamespace(),
                 newVersionedMetaData.getFunctionDetails().getName(),
@@ -478,28 +431,20 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                     functionMetaData.getTransformFunctionPackageLocation().getPackagePath());
         }
 
-        if (worker().getStateStoreProvider() != null) {
-            try {
-                worker().getStateStoreProvider().cleanUp(tenant, namespace, componentName);
-            } catch (Throwable e) {
-                log.error("failed to clean up the state store for {}/{}/{}", tenant, namespace, componentName, e);
-            }
-        }
+        deleteStatestoreTableAsync(getStateNamespace(tenant, namespace), componentName);
     }
 
     private void deleteComponentFromStorage(String tenant, String namespace, String componentName,
                                             String functionPackagePath) {
         if (!functionPackagePath.startsWith(Utils.HTTP)
                 && !functionPackagePath.startsWith(Utils.FILE)
-                && !functionPackagePath.startsWith(Utils.BUILTIN)
-                && !worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement()) {
+                && !functionPackagePath.startsWith(Utils.BUILTIN)) {
             try {
                 WorkerUtils.deleteFromBookkeeper(worker().getDlogNamespace(), functionPackagePath);
             } catch (IOException e) {
                 log.error("{}/{}/{} Failed to cleanup package in BK with path {}", tenant, namespace, componentName,
                         functionPackagePath, e);
             }
-
         }
     }
 
@@ -520,25 +465,19 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid get {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid get {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format(ComponentTypeUtils.toString(componentType) + " %s doesn't exist", componentName));
+            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format(ComponentTypeUtils.toString(componentType) + " %s doesn't exist", componentName));
         }
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format(ComponentTypeUtils.toString(componentType) + " %s doesn't exist", componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format(ComponentTypeUtils.toString(componentType) + " %s doesn't exist", componentName));
         }
         return FunctionConfigUtils.convertFromDetails(functionMetaData.getFunctionDetails());
     }
@@ -598,36 +537,28 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionInstanceRequestParams(tenant, namespace, componentName, componentType, instanceId);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid start/stop {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid start/stop {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        if (!FunctionMetaDataUtils.canChangeState(functionMetaData, Integer.parseInt(instanceId),
-                start ? Function.FunctionState.RUNNING : Function.FunctionState.STOPPED)) {
+        if (!FunctionMetaDataUtils.canChangeState(functionMetaData, Integer.parseInt(instanceId), start ? Function.FunctionState.RUNNING : Function.FunctionState.STOPPED)) {
             log.error("Operation not permitted on {}/{}/{}", tenant, namespace, componentName);
             throw new RestException(Status.BAD_REQUEST, "Operation not permitted");
         }
 
-        FunctionMetaData newFunctionMetaData = FunctionMetaDataUtils
-                .changeFunctionInstanceStatus(functionMetaData, Integer.parseInt(instanceId), start);
+        FunctionMetaData newFunctionMetaData = FunctionMetaDataUtils.changeFunctionInstanceStatus(functionMetaData, Integer.parseInt(instanceId), start);
         internalProcessFunctionRequest(tenant, namespace, componentName, newFunctionMetaData, false,
                 String.format("Failed to start/stop %s: %s/%s/%s/%s", ComponentTypeUtils.toString(componentType),
                         tenant, namespace, componentName, instanceId));
@@ -651,26 +582,20 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionInstanceRequestParams(tenant, namespace, componentName, componentType, instanceId);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid restart {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid restart {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
         FunctionRuntimeManager functionRuntimeManager = worker().getFunctionRuntimeManager();
@@ -680,8 +605,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         } catch (WebApplicationException we) {
             throw we;
         } catch (Exception e) {
-            log.error("Failed to restart {}: {}/{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, instanceId, e);
+            log.error("Failed to restart {}: {}/{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, instanceId, e);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         }
     }
@@ -730,39 +654,30 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid start/stop {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid start/stop {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.warn("{} in stopFunctionInstances does not exist @ /{}/{}/{}",
-                    ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.warn("{} in stopFunctionInstances does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        if (!FunctionMetaDataUtils.canChangeState(functionMetaData, -1,
-                start ? Function.FunctionState.RUNNING : Function.FunctionState.STOPPED)) {
+        if (!FunctionMetaDataUtils.canChangeState(functionMetaData, -1, start ? Function.FunctionState.RUNNING : Function.FunctionState.STOPPED)) {
             log.error("Operation not permitted on {}/{}/{}", tenant, namespace, componentName);
             throw new RestException(Status.BAD_REQUEST, "Operation not permitted");
         }
 
-        FunctionMetaData newFunctionMetaData =
-                FunctionMetaDataUtils.changeFunctionInstanceStatus(functionMetaData, -1, start);
+        FunctionMetaData newFunctionMetaData = FunctionMetaDataUtils.changeFunctionInstanceStatus(functionMetaData, -1, start);
         internalProcessFunctionRequest(tenant, namespace, componentName, newFunctionMetaData, false,
-                String.format("Failed to start/stop %s: %s/%s/%s", ComponentTypeUtils.toString(componentType), tenant,
-                        namespace, componentName));
+                String.format("Failed to start/stop %s: %s/%s/%s", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName));
     }
 
     @Override
@@ -781,26 +696,20 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid restart {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid restart {} request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.warn("{} in stopFunctionInstances does not exist @ /{}/{}/{}",
-                    ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.warn("{} in stopFunctionInstances does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
         FunctionRuntimeManager functionRuntimeManager = worker().getFunctionRuntimeManager();
@@ -809,8 +718,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         } catch (WebApplicationException we) {
             throw we;
         } catch (Exception e) {
-            log.error("Failed to restart {}: {}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    componentName, e);
+            log.error("Failed to restart {}: {}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         }
     }
@@ -832,26 +740,20 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid get {} Stats request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid get {} Stats request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.warn("{} in get {} Stats does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType),
-                    componentType, tenant, namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.warn("{} in get {} Stats does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), componentType, tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
         FunctionRuntimeManager functionRuntimeManager = worker().getFunctionRuntimeManager();
@@ -887,43 +789,33 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionInstanceRequestParams(tenant, namespace, componentName, componentType, instanceId);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid get {} Stats request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid get {} Stats request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
 
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.warn("{} in get {} Stats does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType),
-                    componentType, tenant, namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.warn("{} in get {} Stats does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), componentType, tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
 
         }
         int instanceIdInt = Integer.parseInt(instanceId);
         if (instanceIdInt < 0 || instanceIdInt >= functionMetaData.getFunctionDetails().getParallelism()) {
-            log.error("instanceId in get {} Stats out of bounds @ /{}/{}/{}",
-                    ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
-            throw new RestException(Status.BAD_REQUEST,
-                    String.format("%s %s doesn't have instance with id %s", ComponentTypeUtils.toString(componentType),
-                            componentName, instanceId));
+            log.error("instanceId in get {} Stats out of bounds @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.BAD_REQUEST, String.format("%s %s doesn't have instance with id %s", ComponentTypeUtils.toString(componentType), componentName, instanceId));
         }
 
         FunctionRuntimeManager functionRuntimeManager = worker().getFunctionRuntimeManager();
         FunctionInstanceStatsDataImpl functionInstanceStatsData;
         try {
-            functionInstanceStatsData =
-                    functionRuntimeManager.getFunctionInstanceStats(tenant, namespace, componentName,
-                            Integer.parseInt(instanceId), uri);
+            functionInstanceStatsData = functionRuntimeManager.getFunctionInstanceStats(tenant, namespace, componentName,
+                    Integer.parseInt(instanceId), uri);
         } catch (WebApplicationException we) {
             throw we;
         } catch (Exception e) {
@@ -949,8 +841,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateListFunctionRequestParams(tenant, namespace);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid list {} request @ /{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    e);
+            log.error("Invalid list {} request @ /{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
@@ -967,8 +858,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
     }
 
     void updateRequest(FunctionMetaData existingFunctionMetaData, final FunctionMetaData functionMetaData) {
-        FunctionMetaData updatedVersionMetaData =
-                FunctionMetaDataUtils.incrMetadataVersion(existingFunctionMetaData, functionMetaData);
+        FunctionMetaData updatedVersionMetaData = FunctionMetaDataUtils.incrMetadataVersion(existingFunctionMetaData, functionMetaData);
         internalProcessFunctionRequest(updatedVersionMetaData.getFunctionDetails().getTenant(),
                 updatedVersionMetaData.getFunctionDetails().getNamespace(),
                 updatedVersionMetaData.getFunctionDetails().getName(),
@@ -1041,21 +931,19 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             inputTopicToWrite = functionMetaData.getFunctionDetails().getSource().getInputSpecsMap()
                     .keySet().iterator().next();
         } else {
-            log.error("Function in trigger function has more than 1 input topics @ /{}/{}/{}", tenant, namespace,
-                    functionName);
+            log.error("Function in trigger function has more than 1 input topics @ /{}/{}/{}", tenant, namespace, functionName);
             throw new RestException(Status.BAD_REQUEST, "Function in trigger function has more than 1 input topics");
-        }
+            }
         if (functionMetaData.getFunctionDetails().getSource().getInputSpecsCount() == 0
                 || !functionMetaData.getFunctionDetails().getSource().getInputSpecsMap()
                 .containsKey(inputTopicToWrite)) {
-            log.error("Function in trigger function has unidentified topic @ /{}/{}/{} {}", tenant, namespace,
-                    functionName, inputTopicToWrite);
+            log.error("Function in trigger function has unidentified topic @ /{}/{}/{} {}", tenant, namespace, functionName, inputTopicToWrite);
             throw new RestException(Status.BAD_REQUEST, "Function in trigger function has unidentified topic");
         }
         try {
             worker().getBrokerAdmin().topics().getSubscriptions(inputTopicToWrite);
         } catch (PulsarAdminException e) {
-            log.error("Function in trigger function is not ready @ /{}/{}/{}", tenant, namespace, functionName, e);
+            log.error("Function in trigger function is not ready @ /{}/{}/{}", tenant, namespace, functionName);
             throw new RestException(Status.BAD_REQUEST, "Function in trigger function is not ready");
         }
         String outputTopic = functionMetaData.getFunctionDetails().getSink().getTopic();
@@ -1066,14 +954,14 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                 reader = worker().getClient().newReader()
                         .topic(outputTopic)
                         .startMessageId(MessageId.latest)
-                        .readerName(worker().getWorkerConfig().getWorkerId() + "-trigger-"
-                                + FunctionCommon.getFullyQualifiedName(tenant, namespace, functionName))
+                        .readerName(worker().getWorkerConfig().getWorkerId() + "-trigger-" +
+                                FunctionCommon.getFullyQualifiedName(tenant, namespace, functionName))
                         .create();
             }
             producer = worker().getClient().newProducer(Schema.AUTO_PRODUCE_BYTES())
                     .topic(inputTopicToWrite)
-                    .producerName(worker().getWorkerConfig().getWorkerId() + "-trigger-"
-                            + FunctionCommon.getFullyQualifiedName(tenant, namespace, functionName))
+                    .producerName(worker().getWorkerConfig().getWorkerId() + "-trigger-" +
+                            FunctionCommon.getFullyQualifiedName(tenant, namespace, functionName))
                     .create();
             byte[] targetArray;
             if (uploadedInputStream != null) {
@@ -1090,28 +978,23 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             long maxTime = curTime + 1000;
             while (curTime < maxTime) {
                 Message msg = reader.readNext(10000, TimeUnit.MILLISECONDS);
-                if (msg == null) {
+                if (msg == null)
                     break;
-                }
                 if (msg.getProperties().containsKey("__pfn_input_msg_id__")
                         && msg.getProperties().containsKey("__pfn_input_topic__")) {
                     MessageId newMsgId = MessageId.fromByteArray(
                             Base64.getDecoder().decode((String) msg.getProperties().get("__pfn_input_msg_id__")));
 
                     if (msgId.equals(newMsgId)
-                            && msg.getProperties().get("__pfn_input_topic__")
-                            .equals(TopicName.get(inputTopicToWrite).toString())) {
-                        return new String(msg.getData());
+                            && msg.getProperties().get("__pfn_input_topic__").equals(TopicName.get(inputTopicToWrite).toString())) {
+                       return new String(msg.getData());
                     }
                 }
                 curTime = System.currentTimeMillis();
             }
             throw new RestException(Status.REQUEST_TIMEOUT, "Request Timed Out");
         } catch (SchemaSerializationException e) {
-            throw new RestException(Status.BAD_REQUEST, String.format(
-                    "Failed to serialize input with error: %s. Please check"
-                            + "if input data conforms with the schema of the input topic.",
-                    e.getMessage()));
+            throw new RestException(Status.BAD_REQUEST, String.format("Failed to serialize input with error: %s. Please check if input data conforms with the schema of the input topic.", e.getMessage()));
         } catch (IOException e) {
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         } finally {
@@ -1138,7 +1021,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         throwRestExceptionIfUnauthorizedForNamespace(tenant, namespace, functionName, "get state for",
                 authParams);
 
-        if (null == worker().getStateStoreProvider()) {
+        if (null == worker().getStateStoreAdminClient()) {
             throwStateStoreUnvailableResponse();
         }
 
@@ -1151,45 +1034,53 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
-        FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
-        if (!functionMetaDataManager.containsFunction(tenant, namespace, functionName)) {
-            log.warn("getFunctionState does not exist @ /{}/{}/{}", tenant, namespace, functionName);
-            throw new RestException(Status.NOT_FOUND, String.format("'%s' is not found", functionName));
+        String tableNs = getStateNamespace(tenant, namespace);
+        String tableName = functionName;
+
+        String stateStorageServiceUrl = worker().getWorkerConfig().getStateStorageServiceUrl();
+
+        if (storageClient.get() == null) {
+            storageClient.compareAndSet(null, StorageClientBuilder.newBuilder()
+                    .withSettings(StorageClientSettings.newBuilder()
+                            .serviceUri(stateStorageServiceUrl)
+                            .clientName("functions-admin")
+                            .build())
+                    .withNamespace(tableNs)
+                    .build());
         }
 
-        try {
-            DefaultStateStore store = worker().getStateStoreProvider().getStateStore(tenant, namespace, functionName);
-            StateValue value = store.getStateValue(key);
-            if (value == null) {
-                throw new RestException(Status.NOT_FOUND, "key '" + key + "' doesn't exist.");
-            }
-            byte[] data = value.getValue();
-            if (data == null) {
-                throw new RestException(Status.NOT_FOUND, "key '" + key + "' doesn't exist.");
-            }
-
-            ByteBuffer buf = ByteBuffer.wrap(data);
-
-            Long number = null;
-            if (buf.remaining() == Long.BYTES) {
-                number = buf.getLong();
-            }
-            if (Boolean.TRUE.equals(value.getIsNumber())) {
-                return new FunctionState(key, null, null, number, value.getVersion());
-            }
-
-            if (Utf8.isWellFormed(data)) {
-                return new FunctionState(key, new String(data, UTF_8), null, number, value.getVersion());
-            } else {
-                return new FunctionState(key, null, data, number, value.getVersion());
+        FunctionState value;
+        try (Table<ByteBuf, ByteBuf> table = result(storageClient.get().openTable(tableName))) {
+            try (KeyValue<ByteBuf, ByteBuf> kv = result(table.getKv(Unpooled.wrappedBuffer(key.getBytes(UTF_8))))) {
+                if (null == kv) {
+                    throw new RestException(Status.NOT_FOUND, "key '" + key + "' doesn't exist.");
+                } else {
+                    if (kv.isNumber()) {
+                        value = new FunctionState(key, null, null, kv.numberValue(), kv.version());
+                    } else {
+                        byte[] bytes = ByteBufUtil.getBytes(kv.value());
+                        if (Utf8.isWellFormed(bytes)) {
+                            value = new FunctionState(key, new String(bytes, UTF_8),
+                                    null, null, kv.version());
+                        } else {
+                            value = new FunctionState(
+                                    key, null, bytes, null, kv.version());
+                        }
+                    }
+                }
             }
         } catch (RestException e) {
             throw e;
-        } catch (Throwable e) {
+        } catch (org.apache.bookkeeper.clients.exceptions.NamespaceNotFoundException | StreamNotFoundException e) {
+            log.debug("State not found while processing getFunctionState request @ /{}/{}/{}/{}",
+                    tenant, namespace, functionName, key, e);
+            throw new RestException(Status.NOT_FOUND, e.getMessage());
+        } catch (Exception e) {
             log.error("Error while getFunctionState request @ /{}/{}/{}/{}",
                     tenant, namespace, functionName, key, e);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         }
+        return value;
     }
 
     @Override
@@ -1204,7 +1095,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             throwUnavailableException();
         }
 
-        if (null == worker().getStateStoreProvider()) {
+        if (null == worker().getStateStoreAdminClient()) {
             throwStateStoreUnvailableResponse();
         }
 
@@ -1212,9 +1103,11 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                 authParams);
 
         if (!key.equals(state.getKey())) {
-            log.error("{}/{}/{} Bad putFunction Request, path key doesn't match key in json", tenant, namespace,
-                    functionName);
+            log.error("{}/{}/{} Bad putFunction Request, path key doesn't match key in json", tenant, namespace, functionName);
             throw new RestException(Status.BAD_REQUEST, "Path key doesn't match key in json");
+        }
+        if (state.getStringValue() == null && state.getByteValue() == null) {
+            throw new RestException(Status.BAD_REQUEST, "Setting Counter values not supported in put state");
         }
 
         // validate parameters
@@ -1226,29 +1119,34 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
-        FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
-        if (!functionMetaDataManager.containsFunction(tenant, namespace, functionName)) {
-            log.warn("putFunctionState does not exist @ /{}/{}/{}", tenant, namespace, functionName);
-            throw new RestException(Status.NOT_FOUND, String.format("'%s' is not found", functionName));
+        String tableNs = getStateNamespace(tenant, namespace);
+        String tableName = functionName;
+
+        String stateStorageServiceUrl = worker().getWorkerConfig().getStateStorageServiceUrl();
+
+        if (storageClient.get() == null) {
+            storageClient.compareAndSet(null, StorageClientBuilder.newBuilder()
+                    .withSettings(StorageClientSettings.newBuilder()
+                            .serviceUri(stateStorageServiceUrl)
+                            .clientName("functions-admin")
+                            .build())
+                    .withNamespace(tableNs)
+                    .build());
         }
 
-        try {
-            DefaultStateStore store = worker().getStateStoreProvider().getStateStore(tenant, namespace, functionName);
-            ByteBuffer data;
-            if (state.getByteValue() == null || state.getByteValue().length == 0) {
-                if (state.getStringValue() != null) {
-                    data = ByteBuffer.wrap(state.getStringValue().getBytes(UTF_8));
-                }  else if (state.getNumberValue() != null) {
-                    data = ByteBuffer.allocate(Long.BYTES);
-                    data.putLong(state.getNumberValue());
-                } else {
-                    throw new IllegalArgumentException("Invalid state value");
-                }
-            } else {
-                data = ByteBuffer.wrap(state.getByteValue());
-            }
-            store.put(key, data);
-        } catch (Throwable e) {
+        ByteBuf value;
+        if (!isEmpty(state.getStringValue())) {
+            value = Unpooled.wrappedBuffer(state.getStringValue().getBytes());
+        } else {
+            value = Unpooled.wrappedBuffer(state.getByteValue());
+        }
+        try (Table<ByteBuf, ByteBuf> table = result(storageClient.get().openTable(tableName))) {
+            result(table.put(Unpooled.wrappedBuffer(key.getBytes(UTF_8)), value));
+        } catch (org.apache.bookkeeper.clients.exceptions.NamespaceNotFoundException | org.apache.bookkeeper.clients.exceptions.StreamNotFoundException e) {
+            log.debug("State not found while processing putFunctionState request @ /{}/{}/{}/{}",
+                    tenant, namespace, functionName, key, e);
+            throw new RestException(Status.NOT_FOUND, e.getMessage());
+        } catch (Exception e) {
             log.error("Error while putFunctionState request @ /{}/{}/{}/{}",
                     tenant, namespace, functionName, key, e);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
@@ -1280,17 +1178,8 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         // Upload to bookkeeper
         try {
             log.info("Uploading function package to {}", path);
-            if (worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement()) {
-                File tempFile = createPkgTempFile();
-                tempFile.deleteOnExit();
-                FileOutputStream out = new FileOutputStream(tempFile);
-                IOUtils.copy(uploadedInputStream, out);
-                PackageMetadata metadata = PackageMetadata.builder().createTime(System.currentTimeMillis()).build();
-                worker().getBrokerAdmin().packages().upload(metadata, path, tempFile.getAbsolutePath());
-            } else {
-                WorkerUtils.uploadToBookKeeper(worker().getDlogNamespace(), uploadedInputStream, path);
-            }
-        } catch (IOException | PulsarAdminException e) {
+            WorkerUtils.uploadToBookKeeper(worker().getDlogNamespace(), uploadedInputStream, path);
+        } catch (IOException e) {
             log.error("Error uploading file {}", path, e);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         }
@@ -1308,10 +1197,8 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace,
-                    componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{} does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
         FunctionMetaData functionMetaData =
@@ -1356,17 +1243,6 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                     IOUtils.copy(in, output, 1024);
                     output.flush();
                 }
-            } else if (worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement()) {
-                try {
-                    File file = downloadPackageFile(worker(), pkgPath);
-                    try (InputStream in = new FileInputStream(file)) {
-                        IOUtils.copy(in, output, 1024);
-                        output.flush();
-                    }
-                } catch (Exception e) {
-                    log.error("Failed download package {} from packageManagement Service", pkgPath, e);
-
-                }
             } else {
                 WorkerUtils.downloadFromBookkeeper(worker().getDlogNamespace(), output, pkgPath);
             }
@@ -1402,7 +1278,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         }
 
         if (worker().getWorkerConfig().isAuthorizationEnabled()) {
-            // to maintain backwards compatibility but still have authorization
+            // to maintain backwards compatiblity but still have authorization
             String[] tokens = path.split("/");
             if (tokens.length == 4) {
                 String tenant = tokens[0];
@@ -1421,8 +1297,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         return getStreamingOutput(path);
     }
 
-    private void validateListFunctionRequestParams(final String tenant, final String namespace)
-            throws IllegalArgumentException {
+    private void validateListFunctionRequestParams(final String tenant, final String namespace) throws IllegalArgumentException {
 
         if (tenant == null) {
             throw new IllegalArgumentException("Tenant is not provided");
@@ -1443,8 +1318,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         }
     }
 
-    protected void validateGetFunctionRequestParams(String tenant, String namespace, String subject,
-                                                    FunctionDetails.ComponentType componentType)
+    protected void validateGetFunctionRequestParams(String tenant, String namespace, String subject, FunctionDetails.ComponentType componentType)
             throws IllegalArgumentException {
 
         if (tenant == null) {
@@ -1458,8 +1332,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         }
     }
 
-    private void validateDeregisterRequestParams(String tenant, String namespace, String subject,
-                                                 FunctionDetails.ComponentType componentType)
+    private void validateDeregisterRequestParams(String tenant, String namespace, String subject, FunctionDetails.ComponentType componentType)
             throws IllegalArgumentException {
 
         if (tenant == null) {
@@ -1610,26 +1483,20 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         try {
             validateGetFunctionRequestParams(tenant, namespace, componentName, componentType);
         } catch (IllegalArgumentException e) {
-            log.error("Invalid get {} Status request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant,
-                    namespace, componentName, e);
+            log.error("Invalid get {} Status request @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName, e);
             throw new RestException(Status.BAD_REQUEST, e.getMessage());
         }
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
         if (!functionMetaDataManager.containsFunction(tenant, namespace, componentName)) {
-            log.warn("{} in get {} Status does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType),
-                    componentType, tenant, namespace, componentName);
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.warn("{} in get {} Status does not exist @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), componentType, tenant, namespace, componentName);
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
 
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         if (!InstanceUtils.calculateSubjectType(functionMetaData.getFunctionDetails()).equals(componentType)) {
-            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName,
-                    ComponentTypeUtils.toString(componentType));
-            throw new RestException(Status.NOT_FOUND,
-                    String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
+            log.error("{}/{}/{} is not a {}", tenant, namespace, componentName, ComponentTypeUtils.toString(componentType));
+            throw new RestException(Status.NOT_FOUND, String.format("%s %s doesn't exist", ComponentTypeUtils.toString(componentType), componentName));
         }
     }
 
@@ -1654,15 +1521,12 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         componentStatusRequestValidate(tenant, namespace, componentName, authParams);
 
         FunctionMetaDataManager functionMetaDataManager = worker().getFunctionMetaDataManager();
-        FunctionMetaData functionMetaData =
-                functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
+        FunctionMetaData functionMetaData = functionMetaDataManager.getFunctionMetaData(tenant, namespace, componentName);
         int parallelism = functionMetaData.getFunctionDetails().getParallelism();
         if (instanceId < 0 || instanceId >= parallelism) {
-            log.error("instanceId in get {} Status out of bounds @ /{}/{}/{}",
-                    ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
+            log.error("instanceId in get {} Status out of bounds @ /{}/{}/{}", ComponentTypeUtils.toString(componentType), tenant, namespace, componentName);
             throw new RestException(Status.BAD_REQUEST,
-                    String.format("%s %s doesn't have instance with id %s", ComponentTypeUtils.toString(componentType),
-                            componentName, instanceId));
+                    String.format("%s %s doesn't have instance with id %s", ComponentTypeUtils.toString(componentType), componentName, instanceId));
         }
     }
 
@@ -1721,8 +1585,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
                             .get(worker().getWorkerConfig().getMetadataStoreOperationTimeoutSeconds(), SECONDS);
             }
         } catch (InterruptedException e) {
-            log.warn("Time-out {} sec while checking function authorization on {} ",
-                    worker().getWorkerConfig().getMetadataStoreOperationTimeoutSeconds(), namespaceName);
+            log.warn("Time-out {} sec while checking function authorization on {} ", worker().getWorkerConfig().getMetadataStoreOperationTimeoutSeconds(), namespaceName);
             throw new RestException(Status.INTERNAL_SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.warn("Admin-client with Role [{}] originalPrincipal [{}] failed to get function permissions for "
@@ -1733,8 +1596,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
     }
 
     private void internalProcessFunctionRequest(final String tenant, final String namespace, final String functionName,
-                                                final FunctionMetaData functionMetadata, boolean delete,
-                                                String errorMsg) {
+                                                final FunctionMetaData functionMetadata, boolean delete, String errorMsg) {
         try {
             if (worker().getLeaderService().isLeader()) {
                 worker().getFunctionMetaDataManager().updateFunctionOnLeader(functionMetadata, delete);
@@ -1793,14 +1655,8 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
         } else if (!existingPackagePath.startsWith(Utils.BUILTIN)) {
             componentPackageFile = FunctionCommon.createPkgTempFile();
             componentPackageFile.deleteOnExit();
-            if (worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement()) {
-                worker().getBrokerAdmin().packages().download(
-                        existingPackagePath,
-                        componentPackageFile.getAbsolutePath());
-            } else {
-                WorkerUtils.downloadFromBookkeeper(worker().getDlogNamespace(),
-                        componentPackageFile, existingPackagePath);
-            }
+            WorkerUtils.downloadFromBookkeeper(worker().getDlogNamespace(),
+                    componentPackageFile, existingPackagePath);
         }
         return componentPackageFile;
     }
@@ -1808,10 +1664,6 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
     protected File getPackageFile(FunctionDetails.ComponentType componentType, String functionPkgUrl)
             throws IOException, PulsarAdminException {
         if (Utils.hasPackageTypePrefix(functionPkgUrl)) {
-            if (!worker().getWorkerConfig().isFunctionsWorkerEnablePackageManagement()) {
-                throw new IllegalStateException("Function Package management service is disabled. "
-                        + "Please enable it to use " + functionPkgUrl);
-            }
             return downloadPackageFile(worker(), functionPkgUrl);
         } else {
             if (!worker().getPackageUrlValidator().isValidPackageUrl(componentType, functionPkgUrl)) {
@@ -1829,7 +1681,7 @@ public abstract class ComponentImpl implements Component<PulsarWorkerService> {
     }
 
     protected ValidatableFunctionPackage getBuiltinFunctionPackage(String archive) {
-        if (!StringUtils.isEmpty(archive)) {
+        if (!isEmpty(archive)) {
             if (archive.startsWith(org.apache.pulsar.common.functions.Utils.BUILTIN)) {
                 archive = archive.replaceFirst("^builtin://", "");
 

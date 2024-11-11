@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -71,9 +71,7 @@ public abstract class MockedBookKeeperTestCase {
     public void setUp(Method method) throws Exception {
         LOG.info(">>>>>> starting {}", method);
         metadataStore = new FaultInjectionMetadataStore(MetadataStoreExtended.create("memory:local",
-                MetadataStoreConfig.builder()
-                        .metadataStoreName("metastore-" + method.getName())
-                        .build()));
+                MetadataStoreConfig.builder().build()));
         try {
             // start bookkeeper service
             startBookKeeper();

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -29,6 +29,7 @@ import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
+
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -89,7 +90,7 @@ public class AuthenticationProviderListTest {
         );
         ServiceConfiguration confA = new ServiceConfiguration();
         confA.setProperties(propertiesA);
-        providerA.initialize(AuthenticationProvider.Context.builder().config(confA).build());
+        providerA.initialize(confA);
 
         Properties propertiesB = new Properties();
         propertiesB.setProperty(AuthenticationProviderToken.CONF_TOKEN_SETTING_PREFIX, "b");
@@ -102,7 +103,7 @@ public class AuthenticationProviderListTest {
         );
         ServiceConfiguration confB = new ServiceConfiguration();
         confB.setProperties(propertiesB);
-        providerB.initialize(AuthenticationProvider.Context.builder().config(confB).build());
+        providerB.initialize(confB);
 
         this.authProvider = new AuthenticationProviderList(Lists.newArrayList(
             providerA, providerB

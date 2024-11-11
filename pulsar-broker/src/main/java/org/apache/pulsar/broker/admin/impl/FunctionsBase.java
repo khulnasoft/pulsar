@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -39,6 +39,7 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.StreamingOutput;
 import org.apache.pulsar.broker.admin.AdminResource;
+import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.common.functions.FunctionConfig;
 import org.apache.pulsar.common.functions.FunctionDefinition;
 import org.apache.pulsar.common.functions.FunctionState;
@@ -172,21 +173,26 @@ public class FunctionsBase extends AdminResource {
                             value = {
                                 @ExampleProperty(
                                     mediaType = MediaType.TEXT_PLAIN,
-                                        value = """
-                                            Examples
-                                            1. Create a JSON object
-                                             {
-                                               "inputs": "persistent://public/default/input-topic",
-                                               "parallelism": "4",
-                                               "output": "persistent://public/default/output-topic",
-                                               "log-topic": "persistent://public/default/log-topic",
-                                               "classname": "org.example.test.ExclamationFunction",
-                                               "jar": "java-function-1.0-SNAPSHOT.jar"
-                                             }
-                                            2. Encapsulate the JSON object to a multipart object (in Python)
-                                            from requests_toolbelt.multipart.encoder import MultipartEncoders
-                                            mp_encoder = MultipartEncoder([('functionConfig',(None, json.dumps(config),\
-                                             'application/json'))])"""
+                                    value = " Example \n"
+                                            + "\n"
+                                            + " 1. Create a JSON object. \n"
+                                            + "\n"
+                                            + "{\n"
+                                            + "\t\"inputs\": \"persistent://public/default/input-topic\",\n"
+                                            + "\t\"parallelism\": \"4\",\n"
+                                            + "\t\"output\": \"persistent://public/default/output-topic\",\n"
+                                            + "\t\"log-topic\": \"persistent://public/default/log-topic\",\n"
+                                            + "\t\"classname\": \"org.example.test.ExclamationFunction\",\n"
+                                            + "\t\"jar\": \"java-function-1.0-SNAPSHOT.jar\"\n"
+                                            + "}\n"
+                                            + "\n"
+                                            + "\n"
+                                            + "2. Encapsulate the JSON object to a multipart object (in Python). \n"
+                                            + "\n"
+                                            + "from requests_toolbelt.multipart.encoder import MultipartEncoder \n"
+                                            + "mp_encoder = MultipartEncoder( \n"
+                                            + "\t[('functionConfig', "
+                                            + "(None, json.dumps(config), 'application/json'))])\n"
                                 )
                             }
                     )
@@ -303,16 +309,14 @@ public class FunctionsBase extends AdminResource {
                     examples = @Example(
                             value = @ExampleProperty(
                                     mediaType = MediaType.APPLICATION_JSON,
-                                    value = """
-                                            {
-                                              "inputs": "persistent://public/default/input-topic",
-                                              "parallelism": 4,
-                                              "output": "persistent://public/default/output-topic",
-                                              "log-topic": "persistent://public/default/log-topic",
-                                              "classname": "org.example.test.ExclamationFunction",
-                                              "jar": "java-function-1.0-SNAPSHOT.jar"
-                                            }
-                                            """
+                                    value = "{\n"
+                                            + "  \"inputs\": persistent://public/default/input-topic,\n"
+                                            + "  \"parallelism\": 4\n"
+                                            + "  \"output\": persistent://public/default/output-topic\n"
+                                            + "  \"log-topic\": persistent://public/default/log-topic\n"
+                                            + "  \"classname\": org.example.test.ExclamationFunction\n"
+                                            + "  \"jar\": java-function-1.0-SNAPSHOT.jar\n"
+                                            + "}\n"
                             )
                     )
             )
@@ -485,7 +489,7 @@ public class FunctionsBase extends AdminResource {
     @POST
     @ApiOperation(
             value = "Triggers a Pulsar Function with a user-specified value or file data",
-            response = String.class
+            response = Message.class
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Invalid request"),
@@ -540,7 +544,6 @@ public class FunctionsBase extends AdminResource {
             value = "Put the state associated with a Pulsar Function"
     )
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 403, message = "The requester doesn't have admin permissions"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
@@ -557,9 +560,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart an instance of a Pulsar Function")
+    @ApiOperation(value = "Restart an instance of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 307, message = "Current broker doesn't serve the namespace of this function"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
@@ -579,9 +581,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Restart all instances of a Pulsar Function")
+    @ApiOperation(value = "Restart all instances of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -599,9 +600,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop an instance of a Pulsar Function")
+    @ApiOperation(value = "Stop an instance of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -620,9 +620,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Stop all instances of a Pulsar Function")
+    @ApiOperation(value = "Stop all instances of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -640,9 +639,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start an instance of a Pulsar Function")
+    @ApiOperation(value = "Start an instance of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -661,9 +659,8 @@ public class FunctionsBase extends AdminResource {
     }
 
     @POST
-    @ApiOperation(value = "Start all instances of a Pulsar Function")
+    @ApiOperation(value = "Start all instances of a Pulsar Function", response = Void.class)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 400, message = "Invalid request"),
             @ApiResponse(code = 404, message = "The Pulsar Function does not exist"),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -724,8 +721,7 @@ public class FunctionsBase extends AdminResource {
     @GET
     @ApiOperation(
             value = "Fetches a list of supported Pulsar IO connectors currently running in cluster mode",
-            response = ConnectorDefinition.class,
-            responseContainer = "List"
+            response = List.class
     )
     @ApiResponses(value = {
             @ApiResponse(code = 403, message = "The requester doesn't have admin permissions"),
@@ -746,7 +742,6 @@ public class FunctionsBase extends AdminResource {
             value = "Reload the built-in Functions"
     )
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 401, message = "This operation requires super-user access"),
             @ApiResponse(code = 503, message = "Function worker service is now initializing. Please try again later."),
             @ApiResponse(code = 500, message = "Internal server error")
@@ -776,7 +771,6 @@ public class FunctionsBase extends AdminResource {
     @PUT
     @ApiOperation(value = "Updates a Pulsar Function on the worker leader", hidden = true)
     @ApiResponses(value = {
-            @ApiResponse(code = 200, message = "Operation successful"),
             @ApiResponse(code = 403, message = "The requester doesn't have super-user permissions"),
             @ApiResponse(code = 404, message = "The function does not exist"),
             @ApiResponse(code = 400, message = "Invalid request"),

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,31 +19,22 @@
 package org.apache.pulsar.broker.stats;
 
 import static org.apache.pulsar.broker.BrokerTestUtil.spyWithClassAndConstructorArgs;
-import static org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsClient.Metric;
-import static org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsClient.parseMetrics;
 import static org.mockito.Mockito.mock;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.util.Collection;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.PrometheusMetricsTestUtil;
-import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.service.Dispatcher;
 import org.apache.pulsar.broker.service.EntryFilterSupport;
-import org.apache.pulsar.broker.service.plugin.EntryFilter;
-import org.apache.pulsar.broker.service.plugin.EntryFilterTest;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.Message;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerConsumerBase;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.api.SubscriptionType;
+import org.apache.pulsar.broker.service.plugin.*;
+import org.apache.pulsar.broker.stats.prometheus.PrometheusMetricsGenerator;
+import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.*;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.nar.NarClassLoader;
 import org.apache.pulsar.common.policies.data.SubscriptionStats;
@@ -66,19 +57,52 @@ public class SubscriptionStatsTest extends ProducerConsumerBase {
         super.producerBaseSetup();
     }
 
-    @Override
-    protected ServiceConfiguration getDefaultConf() {
-        ServiceConfiguration conf = super.getDefaultConf();
-        // wait for shutdown of the broker, this prevents flakiness which could be caused by metrics being
-        // unregistered asynchronously. This impacts the execution of the next test method if this would be happening.
-        conf.setBrokerShutdownTimeoutMs(5000L);
-        return conf;
-    }
-
     @AfterClass(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
+    }
+
+    @Test
+    public void testConsumersAfterMarkDelete() throws PulsarClientException, PulsarAdminException {
+        final String topicName = "persistent://my-property/my-ns/testConsumersAfterMarkDelete-"
+                + UUID.randomUUID().toString();
+        final String subName = "my-sub";
+
+        Consumer<byte[]> consumer1 = pulsarClient.newConsumer()
+                .topic(topicName)
+                .receiverQueueSize(10)
+                .subscriptionName(subName)
+                .subscriptionType(SubscriptionType.Key_Shared)
+                .subscribe();
+
+        Producer<byte[]> producer = pulsarClient.newProducer()
+                .topic(topicName)
+                .create();
+
+        final int messages = 100;
+        for (int i = 0; i < messages; i++) {
+            producer.send(String.valueOf(i).getBytes());
+        }
+
+        // Receive by do not ack the message, so that the next consumer can added to the recentJoinedConsumer of the dispatcher.
+        consumer1.receive();
+
+        Consumer<byte[]> consumer2 = pulsarClient.newConsumer()
+                .topic(topicName)
+                .receiverQueueSize(10)
+                .subscriptionName(subName)
+                .subscriptionType(SubscriptionType.Key_Shared)
+                .subscribe();
+
+        TopicStats stats = admin.topics().getStats(topicName);
+        Assert.assertEquals(stats.getSubscriptions().size(), 1);
+        Assert.assertEquals(stats.getSubscriptions().entrySet().iterator().next().getValue()
+                .getConsumersAfterMarkDeletePosition().size(), 1);
+
+        consumer1.close();
+        consumer2.close();
+        producer.close();
     }
 
     @Test
@@ -124,21 +148,16 @@ public class SubscriptionStatsTest extends ProducerConsumerBase {
     @DataProvider(name = "testSubscriptionMetrics")
     public Object[][] topicAndSubscription() {
         return new Object[][]{
-                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub1", true, true},
-                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub2", true, true},
-                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub3", false, true},
-                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub4", false, true},
-
-                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub1", true, false},
-                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub2", true, false},
-                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub3", false, false},
-                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub4", false, false},
+                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub1", true},
+                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub2", true},
+                {"persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub3", false},
+                {"non-persistent://my-property/my-ns/testSubscriptionStats-" + UUID.randomUUID(), "my-sub4", false},
         };
     }
 
     @Test(dataProvider = "testSubscriptionMetrics")
-    public void testSubscriptionStats(final String topic, final String subName, boolean enableTopicStats,
-                                      boolean setFilter) throws Exception {
+    public void testSubscriptionStats(final String topic, final String subName, boolean enableTopicStats)
+            throws Exception {
         @Cleanup
         Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
                 .topic(topic)
@@ -156,50 +175,43 @@ public class SubscriptionStatsTest extends ProducerConsumerBase {
         Dispatcher dispatcher = pulsar.getBrokerService().getTopic(topic, false).get()
                 .get().getSubscription(subName).getDispatcher();
 
-        if (setFilter) {
-            Field field = EntryFilterSupport.class.getDeclaredField("entryFilters");
-            field.setAccessible(true);
-            Field hasFilterField = EntryFilterSupport.class.getDeclaredField("hasFilter");
-            hasFilterField.setAccessible(true);
-            NarClassLoader narClassLoader = mock(NarClassLoader.class);
-            EntryFilter filter1 = new EntryFilterTest();
-            EntryFilterWithClassLoader loader1 =
-                    spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader, false);
-            field.set(dispatcher, List.of(loader1));
-            hasFilterField.set(dispatcher, true);
-        }
+        Field field = EntryFilterSupport.class.getDeclaredField("entryFilters");
+        field.setAccessible(true);
+        NarClassLoader narClassLoader = mock(NarClassLoader.class);
+        EntryFilter filter1 = new EntryFilterTest();
+        EntryFilterWithClassLoader loader1 = spyWithClassAndConstructorArgs(EntryFilterWithClassLoader.class, filter1, narClassLoader);
+        field.set(dispatcher, ImmutableList.of(loader1));
 
-        int rejectedCount = 100;
-        int acceptCount = 100;
-        int scheduleCount = 100;
-        for (int i = 0; i < rejectedCount; i++) {
-            producer.newMessage().property("REJECT", " ").value(UUID.randomUUID().toString()).send();
-        }
-        for (int i = 0; i < acceptCount; i++) {
+        for (int i = 0; i < 100; i++) {
             producer.newMessage().property("ACCEPT", " ").value(UUID.randomUUID().toString()).send();
         }
-        for (int i = 0; i < scheduleCount; i++) {
+        for (int i = 0; i < 100; i++) {
+            producer.newMessage().property("REJECT", " ").value(UUID.randomUUID().toString()).send();
+        }
+        for (int i = 0; i < 100; i++) {
             producer.newMessage().property("RESCHEDULE", " ").value(UUID.randomUUID().toString()).send();
         }
 
-        for (int i = 0; i < acceptCount; i++) {
-            Message<String> message = consumer.receive(1, TimeUnit.SECONDS);
-            Assert.assertNotNull(message);
+        for (;;) {
+            Message<String> message = consumer.receive(10, TimeUnit.SECONDS);
+            if (message == null) {
+                break;
+            }
             consumer.acknowledge(message);
         }
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        PrometheusMetricsTestUtil.generate(pulsar, enableTopicStats, false, false, output);
+        PrometheusMetricsGenerator.generate(pulsar, enableTopicStats, false, false, output);
         String metricsStr = output.toString();
-        Multimap<String, Metric> metrics = parseMetrics(metricsStr);
+        Multimap<String, PrometheusMetricsTest.Metric> metrics = PrometheusMetricsTest.parseMetrics(metricsStr);
 
-        Collection<Metric> throughFilterMetrics =
+        Collection<PrometheusMetricsTest.Metric> throughFilterMetrics =
                 metrics.get("pulsar_subscription_filter_processed_msg_count");
-        Collection<Metric> acceptedMetrics =
+        Collection<PrometheusMetricsTest.Metric> acceptedMetrics =
                 metrics.get("pulsar_subscription_filter_accepted_msg_count");
-        Collection<Metric> rejectedMetrics =
+        Collection<PrometheusMetricsTest.Metric> rejectedMetrics =
                 metrics.get("pulsar_subscription_filter_rejected_msg_count");
-        Collection<Metric> rescheduledMetrics =
+        Collection<PrometheusMetricsTest.Metric> rescheduledMetrics =
                 metrics.get("pulsar_subscription_filter_rescheduled_msg_count");
 
         if (enableTopicStats) {
@@ -221,18 +233,10 @@ public class SubscriptionStatsTest extends ProducerConsumerBase {
                     .filter(m -> m.tags.get("subscription").equals(subName) && m.tags.get("topic").equals(topic))
                     .mapToDouble(m-> m.value).sum();
 
-            if (setFilter) {
-                Assert.assertEquals(filterAccepted, acceptCount);
-                Assert.assertEquals(filterRejected, rejectedCount);
-                // Only works on the test, if there are some markers,
-                // the filterProcessCount will be not equal with rejectedCount + rescheduledCount + acceptCount
-                Assert.assertEquals(throughFilter,
-                        filterAccepted + filterRejected + filterRescheduled, 0.01 * throughFilter);
-            } else {
-                Assert.assertEquals(throughFilter, 0D);
-                Assert.assertEquals(filterAccepted, 0D);
-                Assert.assertEquals(filterRejected, 0D);
-                Assert.assertEquals(filterRescheduled, 0D);
+            Assert.assertEquals(filterAccepted, 100);
+            if (isPersistent) {
+                Assert.assertEquals(filterRejected, 100);
+                Assert.assertEquals(throughFilter, filterAccepted + filterRejected + filterRescheduled, 0.01 * throughFilter);
             }
         } else {
             Assert.assertEquals(throughFilterMetrics.size(), 0);
@@ -241,33 +245,22 @@ public class SubscriptionStatsTest extends ProducerConsumerBase {
             Assert.assertEquals(rescheduledMetrics.size(), 0);
         }
 
-        testSubscriptionStatsAdminApi(topic, subName, setFilter, acceptCount, rejectedCount);
+        testSubscriptionStatsAdminApi(topic, subName);
     }
 
-    private void testSubscriptionStatsAdminApi(String topic, String subName, boolean setFilter,
-                                               int acceptCount, int rejectedCount) throws Exception {
+    private void testSubscriptionStatsAdminApi(String topic, String subName) throws Exception {
         boolean persistent = TopicName.get(topic).isPersistent();
         TopicStats topicStats = admin.topics().getStats(topic);
         SubscriptionStats stats = topicStats.getSubscriptions().get(subName);
         Assert.assertNotNull(stats);
 
-        if (setFilter) {
-            Assert.assertEquals(stats.getFilterAcceptedMsgCount(), acceptCount);
-            if (persistent) {
-                Assert.assertEquals(stats.getFilterRejectedMsgCount(), rejectedCount);
-                // Only works on the test, if there are some markers, the filterProcessCount will be not equal with rejectedCount + rescheduledCount + acceptCount
-                Assert.assertEquals(stats.getFilterProcessedMsgCount(),
-                        stats.getFilterAcceptedMsgCount() + stats.getFilterRejectedMsgCount()
-                                + stats.getFilterRescheduledMsgCount(),
-                        0.01 * stats.getFilterProcessedMsgCount());
-            }
-        } else {
-            Assert.assertEquals(stats.getFilterAcceptedMsgCount(), 0L);
-            if (persistent) {
-                Assert.assertEquals(stats.getFilterRejectedMsgCount(), 0L);
-                Assert.assertEquals(stats.getFilterAcceptedMsgCount(), 0L);
-                Assert.assertEquals(stats.getFilterRescheduledMsgCount(), 0L);
-            }
+        Assert.assertEquals(stats.getFilterAcceptedMsgCount(), 100);
+        if (persistent) {
+            Assert.assertEquals(stats.getFilterRejectedMsgCount(), 100);
+            Assert.assertEquals(stats.getFilterProcessedMsgCount(),
+                    stats.getFilterAcceptedMsgCount() + stats.getFilterRejectedMsgCount()
+                            + stats.getFilterRescheduledMsgCount(),
+                    0.01 * stats.getFilterProcessedMsgCount());
         }
     }
 }

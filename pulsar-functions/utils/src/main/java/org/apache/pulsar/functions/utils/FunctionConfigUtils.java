@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.utils;
 
 import static org.apache.commons.lang3.StringUtils.isBlank;
@@ -23,8 +24,6 @@ import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 import static org.apache.pulsar.common.functions.Utils.BUILTIN;
-import static org.apache.pulsar.functions.utils.FunctionCommon.convertFromCompressionType;
-import static org.apache.pulsar.functions.utils.FunctionCommon.convertFromFunctionDetailsCompressionType;
 import static org.apache.pulsar.functions.utils.FunctionCommon.convertFromFunctionDetailsSubscriptionPosition;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,8 +67,23 @@ public class FunctionConfigUtils {
         private String typeArg1;
     }
 
-    static final Integer MAX_PENDING_ASYNC_REQUESTS_DEFAULT = 1000;
-    static final Boolean FORWARD_SOURCE_MESSAGE_PROPERTY_DEFAULT = Boolean.TRUE;
+	static final Integer MAX_PENDING_ASYNC_REQUESTS_DEFAULT = 1000;
+	static final Boolean FORWARD_SOURCE_MESSAGE_PROPERTY_DEFAULT = Boolean.TRUE;
+
+    /*
+    Enable Function subscription naming workaround when activated
+
+    The Pulsar Function will use the function name as the subscription name when this workaround
+    is activated. This workaround is activated when -DdsPatchFunctionNameAsSubscriptionName=true
+    system property or dsPatchFunctionNameAsSubscriptionName=true environment variable is passed
+    to the Functions Worker (or to the Pulsar Broker when there isn't a separate Functions Worker).
+    */
+    private static final String FLAG_NAME_DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME =
+            "dsPatchFunctionNameAsSubscriptionName";
+    static final boolean DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME = Boolean.valueOf(System.getProperty(
+            FLAG_NAME_DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME, Boolean.FALSE.toString()))
+            || Boolean.valueOf(System.getenv().getOrDefault(FLAG_NAME_DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME,
+            Boolean.FALSE.toString()));
 
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.create();
 
@@ -135,8 +149,7 @@ public class FunctionConfigUtils {
                                     .setIsRegexPattern(false)
                                     .build());
                 } catch (JsonProcessingException e) {
-                    throw new IllegalArgumentException(
-                            String.format("Incorrect custom schema inputs,Topic %s ", topicName));
+                    throw new IllegalArgumentException(String.format("Incorrect custom schema inputs,Topic %s ", topicName));
                 }
             });
         }
@@ -168,8 +181,7 @@ public class FunctionConfigUtils {
         // Set subscription type
         Function.SubscriptionType subType;
         if ((functionConfig.getRetainOrdering() != null && functionConfig.getRetainOrdering())
-                || FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE
-                .equals(functionConfig.getProcessingGuarantees())) {
+                || FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE.equals(functionConfig.getProcessingGuarantees())) {
             subType = Function.SubscriptionType.FAILOVER;
         } else if (functionConfig.getRetainKeyOrdering() != null && functionConfig.getRetainKeyOrdering()) {
             subType = Function.SubscriptionType.KEY_SHARED;
@@ -181,6 +193,8 @@ public class FunctionConfigUtils {
         // Set subscription name
         if (isNotBlank(functionConfig.getSubName())) {
             sourceSpecBuilder.setSubscriptionName(functionConfig.getSubName());
+        } else if (DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME) {
+            sourceSpecBuilder.setSubscriptionName(functionConfig.getName());
         }
 
         // Set subscription position
@@ -194,16 +208,8 @@ public class FunctionConfigUtils {
             sourceSpecBuilder.setSubscriptionPosition(subPosition);
         }
 
-        if (functionConfig.getSkipToLatest() != null) {
-            sourceSpecBuilder.setSkipToLatest(functionConfig.getSkipToLatest());
-        } else {
-            sourceSpecBuilder.setSkipToLatest(false);
-        }
-
         if (extractedDetails.getTypeArg0() != null) {
             sourceSpecBuilder.setTypeClassName(extractedDetails.getTypeArg0());
-        } else if (StringUtils.isNotEmpty(functionConfig.getInputTypeClassName())) {
-            sourceSpecBuilder.setTypeClassName(functionConfig.getInputTypeClassName());
         }
         if (functionConfig.getTimeoutMs() != null) {
             sourceSpecBuilder.setTimeoutMs(functionConfig.getTimeoutMs());
@@ -240,17 +246,31 @@ public class FunctionConfigUtils {
                     sinkSpecBuilder.putAllConsumerProperties(consumerConfig.getConsumerProperties());
                 }
             } catch (JsonProcessingException e) {
-                throw new IllegalArgumentException(
-                        String.format("Incorrect custom schema outputs,Topic %s ", functionConfig.getOutput()));
+                throw new IllegalArgumentException(String.format("Incorrect custom schema outputs,Topic %s ", functionConfig.getOutput()));
             }
         }
         if (extractedDetails.getTypeArg1() != null) {
             sinkSpecBuilder.setTypeClassName(extractedDetails.getTypeArg1());
-        } else if (StringUtils.isNotEmpty(functionConfig.getOutputTypeClassName())) {
-            sinkSpecBuilder.setTypeClassName(functionConfig.getOutputTypeClassName());
         }
         if (functionConfig.getProducerConfig() != null) {
-            sinkSpecBuilder.setProducerSpec(convertProducerConfigToProducerSpec(functionConfig.getProducerConfig()));
+            ProducerConfig producerConf = functionConfig.getProducerConfig();
+            Function.ProducerSpec.Builder pbldr = Function.ProducerSpec.newBuilder();
+            if (producerConf.getMaxPendingMessages() != null) {
+                pbldr.setMaxPendingMessages(producerConf.getMaxPendingMessages());
+            }
+            if (producerConf.getMaxPendingMessagesAcrossPartitions() != null) {
+                pbldr.setMaxPendingMessagesAcrossPartitions(producerConf.getMaxPendingMessagesAcrossPartitions());
+            }
+            if (producerConf.getUseThreadLocalProducers() != null) {
+                pbldr.setUseThreadLocalProducers(producerConf.getUseThreadLocalProducers());
+            }
+            if (producerConf.getCryptoConfig() != null) {
+                pbldr.setCryptoSpec(CryptoUtils.convert(producerConf.getCryptoConfig()));
+            }
+            if (producerConf.getBatchBuilder() != null) {
+                pbldr.setBatchBuilder(producerConf.getBatchBuilder());
+            }
+            sinkSpecBuilder.setProducerSpec(pbldr.build());
         }
         if (functionConfig.getBatchBuilder() != null) {
             Function.ProducerSpec.Builder builder = sinkSpecBuilder.getProducerSpec() != null
@@ -303,22 +323,11 @@ public class FunctionConfigUtils {
         // windowing related
         WindowConfig windowConfig = functionConfig.getWindowConfig();
         if (windowConfig != null) {
-            // Windows Function not support MANUAL and EFFECTIVELY_ONCE.
-            if (functionConfig.getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE
-                    || functionConfig.getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.MANUAL) {
-                throw new IllegalArgumentException(
-                        "Windows Function not support "
-                                + functionConfig.getProcessingGuarantees() + " delivery semantics.");
-            } else {
-                // Override functionConfig.getProcessingGuarantees to MANUAL, and set windowsFunction is guarantees
-                windowConfig.setProcessingGuarantees(WindowConfig.ProcessingGuarantees
-                        .valueOf(functionDetailsBuilder.getProcessingGuarantees().name()));
-                functionDetailsBuilder.setProcessingGuarantees(Function.ProcessingGuarantees.MANUAL);
-            }
             windowConfig.setActualWindowFunctionClassName(extractedDetails.getFunctionClassName());
             configs.put(WindowConfig.WINDOW_CONFIG_KEY, windowConfig);
             // set class name to window function executor
             functionDetailsBuilder.setClassName("org.apache.pulsar.functions.windowing.WindowFunctionExecutor");
+
         } else {
             if (extractedDetails.getFunctionClassName() != null) {
                 functionDetailsBuilder.setClassName(extractedDetails.getFunctionClassName());
@@ -327,6 +336,7 @@ public class FunctionConfigUtils {
         if (!configs.isEmpty()) {
             functionDetailsBuilder.setUserConfig(new Gson().toJson(configs));
         }
+
         if (functionConfig.getSecrets() != null && !functionConfig.getSecrets().isEmpty()) {
             functionDetailsBuilder.setSecretsMap(new Gson().toJson(functionConfig.getSecrets()));
         }
@@ -385,17 +395,14 @@ public class FunctionConfigUtils {
     }
 
     public static FunctionConfig convertFromDetails(FunctionDetails functionDetails) {
-        functionDetails = validateFunctionDetails(functionDetails);
         FunctionConfig functionConfig = new FunctionConfig();
         functionConfig.setTenant(functionDetails.getTenant());
         functionConfig.setNamespace(functionDetails.getNamespace());
         functionConfig.setName(functionDetails.getName());
         functionConfig.setParallelism(functionDetails.getParallelism());
-        functionConfig.setProcessingGuarantees(
-                FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
+        functionConfig.setProcessingGuarantees(FunctionCommon.convertProcessingGuarantee(functionDetails.getProcessingGuarantees()));
         Map<String, ConsumerConfig> consumerConfigMap = new HashMap<>();
-        for (Map.Entry<String, Function.ConsumerSpec> input : functionDetails.getSource().getInputSpecsMap()
-                .entrySet()) {
+        for (Map.Entry<String, Function.ConsumerSpec> input : functionDetails.getSource().getInputSpecsMap().entrySet()) {
             ConsumerConfig consumerConfig = new ConsumerConfig();
             if (isNotEmpty(input.getValue().getSerdeClassName())) {
                 consumerConfig.setSerdeClassName(input.getValue().getSerdeClassName());
@@ -417,6 +424,8 @@ public class FunctionConfigUtils {
         functionConfig.setInputSpecs(consumerConfigMap);
         if (!isEmpty(functionDetails.getSource().getSubscriptionName())) {
             functionConfig.setSubName(functionDetails.getSource().getSubscriptionName());
+        } else if (DS_PATCH_FUNCTION_NAME_AS_SUBSCRIPTION_NAME) {
+            functionConfig.setSubName(functionDetails.getName());
         }
         functionConfig.setRetainOrdering(functionDetails.getRetainOrdering());
         functionConfig.setRetainKeyOrdering(functionDetails.getRetainKeyOrdering());
@@ -441,8 +450,22 @@ public class FunctionConfigUtils {
             functionConfig.setOutputSchemaType(functionDetails.getSink().getSchemaType());
         }
         if (functionDetails.getSink().getProducerSpec() != null) {
-            functionConfig.setProducerConfig(
-                    convertProducerSpecToProducerConfig(functionDetails.getSink().getProducerSpec()));
+            Function.ProducerSpec spec = functionDetails.getSink().getProducerSpec();
+            ProducerConfig producerConfig = new ProducerConfig();
+            if (spec.getMaxPendingMessages() != 0) {
+                producerConfig.setMaxPendingMessages(spec.getMaxPendingMessages());
+            }
+            if (spec.getMaxPendingMessagesAcrossPartitions() != 0) {
+                producerConfig.setMaxPendingMessagesAcrossPartitions(spec.getMaxPendingMessagesAcrossPartitions());
+            }
+            if (spec.hasCryptoSpec()) {
+                producerConfig.setCryptoConfig(CryptoUtils.convertFromSpec(spec.getCryptoSpec()));
+            }
+            if (spec.getBatchBuilder() != null) {
+                producerConfig.setBatchBuilder(spec.getBatchBuilder());
+            }
+            producerConfig.setUseThreadLocalProducers(spec.getUseThreadLocalProducers());
+            functionConfig.setProducerConfig(producerConfig);
         }
         if (!isEmpty(functionDetails.getLogTopic())) {
             functionConfig.setLogTopic(functionDetails.getLogTopic());
@@ -470,10 +493,6 @@ public class FunctionConfigUtils {
                     (new Gson().toJson(userConfig.get(WindowConfig.WINDOW_CONFIG_KEY))),
                     WindowConfig.class);
             userConfig.remove(WindowConfig.WINDOW_CONFIG_KEY);
-            if (windowConfig.getProcessingGuarantees() != null) {
-                functionConfig.setProcessingGuarantees(
-                        FunctionConfig.ProcessingGuarantees.valueOf(windowConfig.getProcessingGuarantees().name()));
-            }
             functionConfig.setClassName(windowConfig.getActualWindowFunctionClassName());
             functionConfig.setWindowConfig(windowConfig);
         } else {
@@ -507,50 +526,6 @@ public class FunctionConfigUtils {
         return functionConfig;
     }
 
-    public static Function.ProducerSpec convertProducerConfigToProducerSpec(ProducerConfig producerConf) {
-        Function.ProducerSpec.Builder builder = Function.ProducerSpec.newBuilder();
-        if (producerConf.getMaxPendingMessages() != null) {
-            builder.setMaxPendingMessages(producerConf.getMaxPendingMessages());
-        }
-        if (producerConf.getMaxPendingMessagesAcrossPartitions() != null) {
-            builder.setMaxPendingMessagesAcrossPartitions(producerConf.getMaxPendingMessagesAcrossPartitions());
-        }
-        if (producerConf.getUseThreadLocalProducers() != null) {
-            builder.setUseThreadLocalProducers(producerConf.getUseThreadLocalProducers());
-        }
-        if (producerConf.getCryptoConfig() != null) {
-            builder.setCryptoSpec(CryptoUtils.convert(producerConf.getCryptoConfig()));
-        }
-        if (producerConf.getBatchBuilder() != null) {
-            builder.setBatchBuilder(producerConf.getBatchBuilder());
-        }
-        if (producerConf.getCompressionType() != null) {
-            builder.setCompressionType(convertFromCompressionType(producerConf.getCompressionType()));
-        } else {
-            builder.setCompressionType(Function.CompressionType.LZ4);
-        }
-        return builder.build();
-    }
-
-    public static ProducerConfig convertProducerSpecToProducerConfig(Function.ProducerSpec spec) {
-        ProducerConfig producerConfig = new ProducerConfig();
-        if (spec.getMaxPendingMessages() != 0) {
-            producerConfig.setMaxPendingMessages(spec.getMaxPendingMessages());
-        }
-        if (spec.getMaxPendingMessagesAcrossPartitions() != 0) {
-            producerConfig.setMaxPendingMessagesAcrossPartitions(spec.getMaxPendingMessagesAcrossPartitions());
-        }
-        if (spec.hasCryptoSpec()) {
-            producerConfig.setCryptoConfig(CryptoUtils.convertFromSpec(spec.getCryptoSpec()));
-        }
-        if (spec.getBatchBuilder() != null) {
-            producerConfig.setBatchBuilder(spec.getBatchBuilder());
-        }
-        producerConfig.setUseThreadLocalProducers(spec.getUseThreadLocalProducers());
-        producerConfig.setCompressionType(convertFromFunctionDetailsCompressionType(spec.getCompressionType()));
-        return producerConfig;
-    }
-
     public static void inferMissingArguments(FunctionConfig functionConfig,
                                              boolean forwardSourceMessagePropertyEnabled) {
         if (StringUtils.isEmpty(functionConfig.getName())) {
@@ -568,7 +543,7 @@ public class FunctionConfigUtils {
         }
 
         if (functionConfig.getMaxPendingAsyncRequests() == null) {
-            functionConfig.setMaxPendingAsyncRequests(MAX_PENDING_ASYNC_REQUESTS_DEFAULT);
+        	functionConfig.setMaxPendingAsyncRequests(MAX_PENDING_ASYNC_REQUESTS_DEFAULT);
         }
 
         if (forwardSourceMessagePropertyEnabled) {
@@ -648,8 +623,7 @@ public class FunctionConfigUtils {
                 try {
                     consumerConfig = OBJECT_MAPPER.readValue(conf, ConsumerConfig.class);
                 } catch (JsonProcessingException e) {
-                    throw new IllegalArgumentException(
-                            String.format("Topic %s has an incorrect schema Info", topicName));
+                    throw new IllegalArgumentException(String.format("Topic %s has an incorrect schema Info", topicName));
                 }
                 ValidatorUtils.validateSchema(consumerConfig.getSchemaType(), typeArgs[0],
                         validatableFunctionPackage.getTypePool(), true);
@@ -728,6 +702,10 @@ public class FunctionConfigUtils {
         if (functionConfig.getMaxMessageRetries() != null && functionConfig.getMaxMessageRetries() >= 0) {
             throw new IllegalArgumentException("Message retries not yet supported in python");
         }
+
+        if (functionConfig.getRetainKeyOrdering() != null && functionConfig.getRetainKeyOrdering()) {
+            throw new IllegalArgumentException("Retain Key Orderering not yet supported in python");
+        }
     }
 
     private static void doGolangChecks(FunctionConfig functionConfig) {
@@ -748,17 +726,15 @@ public class FunctionConfigUtils {
         }
     }
 
-    private static void verifyNoTopicClash(Collection<String> inputTopics, String outputTopic)
-            throws IllegalArgumentException {
+    private static void verifyNoTopicClash(Collection<String> inputTopics, String outputTopic) throws IllegalArgumentException {
         if (inputTopics.contains(outputTopic)) {
             throw new IllegalArgumentException(
-                    String.format(
-                            "Output topic %s is also being used as an input topic (topics must be one or the other)",
+                    String.format("Output topic %s is also being used as an input topic (topics must be one or the other)",
                             outputTopic));
         }
     }
 
-    public static void doCommonChecks(FunctionConfig functionConfig) {
+    private static void doCommonChecks(FunctionConfig functionConfig) {
         if (isEmpty(functionConfig.getTenant())) {
             throw new IllegalArgumentException("Function tenant cannot be null");
         }
@@ -787,22 +763,19 @@ public class FunctionConfigUtils {
 
         if (!isEmpty(functionConfig.getOutput())) {
             if (!TopicName.isValid(functionConfig.getOutput())) {
-                throw new IllegalArgumentException(
-                        String.format("Output topic %s is invalid", functionConfig.getOutput()));
+                throw new IllegalArgumentException(String.format("Output topic %s is invalid", functionConfig.getOutput()));
             }
         }
 
         if (!isEmpty(functionConfig.getLogTopic())) {
             if (!TopicName.isValid(functionConfig.getLogTopic())) {
-                throw new IllegalArgumentException(
-                        String.format("LogTopic topic %s is invalid", functionConfig.getLogTopic()));
+                throw new IllegalArgumentException(String.format("LogTopic topic %s is invalid", functionConfig.getLogTopic()));
             }
         }
 
         if (!isEmpty(functionConfig.getDeadLetterTopic())) {
             if (!TopicName.isValid(functionConfig.getDeadLetterTopic())) {
-                throw new IllegalArgumentException(
-                        String.format("DeadLetter topic %s is invalid", functionConfig.getDeadLetterTopic()));
+                throw new IllegalArgumentException(String.format("DeadLetter topic %s is invalid", functionConfig.getDeadLetterTopic()));
             }
         }
 
@@ -841,43 +814,29 @@ public class FunctionConfigUtils {
                 && functionConfig.getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
             throw new IllegalArgumentException("MaxMessageRetries and Effectively once don't gel well");
         }
-        if ((functionConfig.getMaxMessageRetries() == null || functionConfig.getMaxMessageRetries() < 0)
-                && !org.apache.commons.lang3.StringUtils.isEmpty(functionConfig.getDeadLetterTopic())) {
+        if ((functionConfig.getMaxMessageRetries() == null || functionConfig.getMaxMessageRetries() < 0) && !org.apache.commons.lang3.StringUtils.isEmpty(functionConfig.getDeadLetterTopic())) {
             throw new IllegalArgumentException("Dead Letter Topic specified, however max retries is set to infinity");
         }
         if (functionConfig.getRetainKeyOrdering() != null
                 && functionConfig.getRetainKeyOrdering()
                 && functionConfig.getProcessingGuarantees() != null
                 && functionConfig.getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
-            throw new IllegalArgumentException(
-                    "When effectively once processing guarantee is specified, retain Key ordering cannot be set");
+            throw new IllegalArgumentException("When effectively once processing guarantee is specified, retain Key ordering cannot be set");
         }
         if (functionConfig.getRetainKeyOrdering() != null && functionConfig.getRetainKeyOrdering()
                 && functionConfig.getRetainOrdering() != null && functionConfig.getRetainOrdering()) {
             throw new IllegalArgumentException("Only one of retain ordering or retain key ordering can be set");
         }
 
-        if (!isEmpty(functionConfig.getPy()) && !org.apache.pulsar.common.functions.Utils
-                .isFunctionPackageUrlSupported(functionConfig.getPy())
+        if (!isEmpty(functionConfig.getPy()) && !org.apache.pulsar.common.functions.Utils.isFunctionPackageUrlSupported(functionConfig.getPy())
                 && functionConfig.getPy().startsWith(BUILTIN)) {
-            String filename = functionConfig.getPy();
-            if (filename.contains("..")) {
-                throw new IllegalArgumentException("Invalid filename: " + filename);
-            }
-
-            if (!new File(filename).exists()) {
+            if (!new File(functionConfig.getPy()).exists()) {
                 throw new IllegalArgumentException("The supplied python file does not exist");
             }
         }
-        if (!isEmpty(functionConfig.getGo()) && !org.apache.pulsar.common.functions.Utils
-                .isFunctionPackageUrlSupported(functionConfig.getGo())
+        if (!isEmpty(functionConfig.getGo()) && !org.apache.pulsar.common.functions.Utils.isFunctionPackageUrlSupported(functionConfig.getGo())
                 && functionConfig.getGo().startsWith(BUILTIN)) {
-            String filename = functionConfig.getGo();
-            if (filename.contains("..")) {
-                throw new IllegalArgumentException("Invalid filename: " + filename);
-            }
-
-            if (!new File(filename).exists()) {
+            if (!new File(functionConfig.getGo()).exists()) {
                 throw new IllegalArgumentException("The supplied go file does not exist");
             }
         }
@@ -897,8 +856,7 @@ public class FunctionConfigUtils {
             });
         }
 
-        if (functionConfig.getProducerConfig() != null
-                && functionConfig.getProducerConfig().getCryptoConfig() != null) {
+        if (functionConfig.getProducerConfig() != null && functionConfig.getProducerConfig().getCryptoConfig() != null) {
             if (isBlank(functionConfig.getProducerConfig().getCryptoConfig().getCryptoKeyReaderClassName())) {
                 throw new IllegalArgumentException("CryptoKeyReader class name required");
             }
@@ -910,7 +868,7 @@ public class FunctionConfigUtils {
         }
     }
 
-    public static Collection<String> collectAllInputTopics(FunctionConfig functionConfig) {
+    private static Collection<String> collectAllInputTopics(FunctionConfig functionConfig) {
         List<String> retval = new LinkedList<>();
         if (functionConfig.getInputs() != null) {
             retval.addAll(functionConfig.getInputs());
@@ -1010,33 +968,27 @@ public class FunctionConfigUtils {
                     throw new IllegalArgumentException("Input Topics cannot be altered");
                 }
                 if (consumerConfig.isRegexPattern() != existingConfig.getInputSpecs().get(topicName).isRegexPattern()) {
-                    throw new IllegalArgumentException(
-                            "isRegexPattern for input topic " + topicName + " cannot be altered");
+                    throw new IllegalArgumentException("isRegexPattern for input topic " + topicName + " cannot be altered");
                 }
                 mergedConfig.getInputSpecs().put(topicName, consumerConfig);
             });
         }
-        if (!StringUtils.isEmpty(newConfig.getOutputSerdeClassName()) && !newConfig.getOutputSerdeClassName()
-                .equals(existingConfig.getOutputSerdeClassName())) {
+        if (!StringUtils.isEmpty(newConfig.getOutputSerdeClassName()) && !newConfig.getOutputSerdeClassName().equals(existingConfig.getOutputSerdeClassName())) {
             throw new IllegalArgumentException("Output Serde mismatch");
         }
-        if (!StringUtils.isEmpty(newConfig.getOutputSchemaType()) && !newConfig.getOutputSchemaType()
-                .equals(existingConfig.getOutputSchemaType())) {
+        if (!StringUtils.isEmpty(newConfig.getOutputSchemaType()) && !newConfig.getOutputSchemaType().equals(existingConfig.getOutputSchemaType())) {
             throw new IllegalArgumentException("Output Schema mismatch");
         }
         if (!StringUtils.isEmpty(newConfig.getLogTopic())) {
             mergedConfig.setLogTopic(newConfig.getLogTopic());
         }
-        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees()
-                .equals(existingConfig.getProcessingGuarantees())) {
+        if (newConfig.getProcessingGuarantees() != null && !newConfig.getProcessingGuarantees().equals(existingConfig.getProcessingGuarantees())) {
             throw new IllegalArgumentException("Processing Guarantees cannot be altered");
         }
-        if (newConfig.getRetainOrdering() != null && !newConfig.getRetainOrdering()
-                .equals(existingConfig.getRetainOrdering())) {
+        if (newConfig.getRetainOrdering() != null && !newConfig.getRetainOrdering().equals(existingConfig.getRetainOrdering())) {
             throw new IllegalArgumentException("Retain Ordering cannot be altered");
         }
-        if (newConfig.getRetainKeyOrdering() != null && !newConfig.getRetainKeyOrdering()
-                .equals(existingConfig.getRetainKeyOrdering())) {
+        if (newConfig.getRetainKeyOrdering() != null && !newConfig.getRetainKeyOrdering().equals(existingConfig.getRetainKeyOrdering())) {
             throw new IllegalArgumentException("Retain Key Ordering cannot be altered");
         }
         if (!StringUtils.isEmpty(newConfig.getOutput())) {
@@ -1060,16 +1012,14 @@ public class FunctionConfigUtils {
         if (!StringUtils.isEmpty(newConfig.getDeadLetterTopic())) {
             mergedConfig.setDeadLetterTopic(newConfig.getDeadLetterTopic());
         }
-        if (!StringUtils.isEmpty(newConfig.getSubName()) && !newConfig.getSubName()
-                .equals(existingConfig.getSubName())) {
+        if (!StringUtils.isEmpty(newConfig.getSubName()) && !newConfig.getSubName().equals(existingConfig.getSubName())) {
             throw new IllegalArgumentException("Subscription Name cannot be altered");
         }
         if (newConfig.getParallelism() != null) {
             mergedConfig.setParallelism(newConfig.getParallelism());
         }
         if (newConfig.getResources() != null) {
-            mergedConfig
-                    .setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
+            mergedConfig.setResources(ResourceConfigUtils.merge(existingConfig.getResources(), newConfig.getResources()));
         }
         if (newConfig.getWindowConfig() != null) {
             mergedConfig.setWindowConfig(newConfig.getWindowConfig());
@@ -1085,9 +1035,6 @@ public class FunctionConfigUtils {
         }
         if (!StringUtils.isEmpty(newConfig.getCustomRuntimeOptions())) {
             mergedConfig.setCustomRuntimeOptions(newConfig.getCustomRuntimeOptions());
-        }
-        if (newConfig.getProducerConfig() != null) {
-            mergedConfig.setProducerConfig(newConfig.getProducerConfig());
         }
         return mergedConfig;
     }

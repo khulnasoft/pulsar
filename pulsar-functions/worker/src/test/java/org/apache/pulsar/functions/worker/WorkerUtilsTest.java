@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,19 @@
  */
 package org.apache.pulsar.functions.worker;
 
+import org.apache.pulsar.client.api.CompressionType;
+import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.client.api.ProducerAccessMode;
+import org.apache.pulsar.client.api.ProducerBuilder;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.testng.annotations.Test;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -34,20 +47,9 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.HashSet;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 import org.apache.distributedlog.DistributedLogConfiguration;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.client.api.CompressionType;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.ProducerAccessMode;
-import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
-import org.testng.annotations.Test;
 
 public class WorkerUtilsTest {
 
@@ -69,8 +71,7 @@ public class WorkerUtilsTest {
 
         Producer<byte[]> p = null;
         try {
-            p = WorkerUtils
-                    .createExclusiveProducerWithRetry(pulsarClient, "test-topic", "test-producer", () -> true, 0);
+            p = WorkerUtils.createExclusiveProducerWithRetry(pulsarClient, "test-topic", "test-producer", () -> true, 0);
         } catch (WorkerUtils.NotLeaderAnymore notLeaderAnymore) {
             fail();
         }
@@ -91,8 +92,7 @@ public class WorkerUtilsTest {
 
         AtomicInteger i = new AtomicInteger();
         try {
-            WorkerUtils.createExclusiveProducerWithRetry(pulsarClient, "test-topic", "test-producer",
-                    new Supplier<Boolean>() {
+            WorkerUtils.createExclusiveProducerWithRetry(pulsarClient, "test-topic", "test-producer", new Supplier<Boolean>() {
 
                 @Override
                 public Boolean get() {

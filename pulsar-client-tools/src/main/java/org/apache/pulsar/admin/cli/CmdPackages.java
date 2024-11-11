@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,20 +18,20 @@
  */
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.DynamicParameter;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 import org.apache.pulsar.client.admin.Packages;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.packages.management.core.common.PackageMetadata;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
 /**
  * Commands for administering packages.
  */
-@Command(description = "Operations about packages")
+@Parameters(commandDescription = "Operations about packages")
 class CmdPackages extends CmdBase {
 
     private Packages packages;
@@ -40,13 +40,13 @@ class CmdPackages extends CmdBase {
         super("packages", admin);
 
 
-        addCommand("get-metadata", new GetMetadataCmd());
-        addCommand("update-metadata", new UpdateMetadataCmd());
-        addCommand("upload", new UploadCmd());
-        addCommand("download", new DownloadCmd());
-        addCommand("list", new ListPackagesCmd());
-        addCommand("list-versions", new ListPackageVersionsCmd());
-        addCommand("delete", new DeletePackageCmd());
+        jcommander.addCommand("get-metadata", new GetMetadataCmd());
+        jcommander.addCommand("update-metadata", new UpdateMetadataCmd());
+        jcommander.addCommand("upload", new UploadCmd());
+        jcommander.addCommand("download", new DownloadCmd());
+        jcommander.addCommand("list", new ListPackagesCmd());
+        jcommander.addCommand("list-versions", new ListPackageVersionsCmd());
+        jcommander.addCommand("delete", new DeletePackageCmd());
     }
 
     private Packages getPackages() {
@@ -56,9 +56,9 @@ class CmdPackages extends CmdBase {
         return packages;
     }
 
-    @Command(description = "Get a package metadata information.")
+    @Parameters(commandDescription = "Get a package metadata information.")
     private class GetMetadataCmd extends CliCommand {
-        @Parameters(description = "type://tenant/namespace/packageName@version", arity = "1")
+        @Parameter(description = "type://tenant/namespace/packageName@version", required = true)
         private String packageName;
 
         @Override
@@ -67,18 +67,18 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "Update a package metadata information.")
+    @Parameters(commandDescription = "Update a package metadata information.")
     private class UpdateMetadataCmd extends CliCommand {
-        @Parameters(description = "type://tenant/namespace/packageName@version", arity = "1")
+        @Parameter(description = "type://tenant/namespace/packageName@version", required = true)
         private String packageName;
 
-        @Option(names = {"-d", "--description"}, description = "descriptions of a package", required = true)
+        @Parameter(names = "--description", description = "descriptions of a package", required = true)
         private String description;
 
-        @Option(names = {"-c", "--contact"}, description = "contact info of a package")
+        @Parameter(names = "--contact", description = "contact info of a package")
         private String contact;
 
-        @Option(names = {"--properties", "-P"}, description = "external information of a package")
+        @DynamicParameter(names = {"--properties", "-P"},  description = "external information of a package")
         private Map<String, String> properties = new HashMap<>();
 
         @Override
@@ -89,21 +89,21 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "Upload a package")
+    @Parameters(commandDescription = "Upload a package")
     private class UploadCmd extends CliCommand {
-        @Parameters(description = "type://tenant/namespace/packageName@version", arity = "1")
+        @Parameter(description = "type://tenant/namespace/packageName@version", required = true)
         private String packageName;
 
-        @Option(names = "--description", description = "descriptions of a package", required = true)
+        @Parameter(names = "--description", description = "descriptions of a package", required = true)
         private String description;
 
-        @Option(names = "--contact", description = "contact information of a package")
+        @Parameter(names = "--contact", description = "contact information of a package")
         private String contact;
 
-        @Option(names = {"--properties", "-P"}, description = "external information of a package")
+        @DynamicParameter(names = {"--properties", "-P"}, description = "external infromations of a package")
         private Map<String, String> properties = new HashMap<>();
 
-        @Option(names = "--path", description = "file path of the package", required = true)
+        @Parameter(names = "--path", description = "file path of the package", required = true)
         private String path;
 
         @Override
@@ -117,12 +117,12 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "Download a package")
+    @Parameters(commandDescription = "Download a package")
     private class DownloadCmd extends CliCommand {
-        @Parameters(description = "type://tenant/namespace/packageName@version", arity = "1")
+        @Parameter(description = "type://tenant/namespace/packageName@version", required = true)
         private String packageName;
 
-        @Option(names = "--path", description = "download destiny path of the package", required = true)
+        @Parameter(names = "--path", description = "download destiny path of the package", required = true)
         private String path;
 
         @Override
@@ -132,10 +132,10 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "List all versions of the given package")
+    @Parameters(commandDescription = "List all versions of the given package")
     private class ListPackageVersionsCmd extends CliCommand {
-        @Parameters(description = "the package name you want to query, don't need to specify the package version. "
-                + "type://tenant/namespace/packageName", arity = "1")
+        @Parameter(description = "the package name you want to query, don't need to specify the package version. "
+                + "type://tenant/namespace/packageName", required = true)
         private String packageName;
 
         @Override
@@ -144,12 +144,12 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "List all packages with given type in the specified namespace")
+    @Parameters(commandDescription = "List all packages with given type in the specified namespace")
     private class ListPackagesCmd extends CliCommand {
-        @Option(names = "--type", description = "type of the package", required = true)
+        @Parameter(names = "--type", description = "type of the package", required = true)
         private String type;
 
-        @Parameters(description = "namespace of the package", arity = "1")
+        @Parameter(description = "namespace of the package", required = true)
         private String namespace;
 
         @Override
@@ -158,9 +158,9 @@ class CmdPackages extends CmdBase {
         }
     }
 
-    @Command(description = "Delete a package")
-    private class DeletePackageCmd extends CliCommand {
-        @Parameters(description = "type://tenant/namespace/packageName@version", arity = "1")
+    @Parameters(commandDescription = "Delete a package")
+    private class DeletePackageCmd extends CliCommand{
+        @Parameter(description = "type://tenant/namespace/packageName@version", required = true)
         private String packageName;
 
         @Override

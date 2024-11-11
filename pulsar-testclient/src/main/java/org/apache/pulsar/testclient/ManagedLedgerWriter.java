@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,10 @@
 package org.apache.pulsar.testclient;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.util.concurrent.RateLimiter;
@@ -60,14 +64,8 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.testclient.utils.PaddingDecimalFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Spec;
 
-@Command(name = "managed-ledger", description = "Write directly on managed-ledgers")
-public class ManagedLedgerWriter extends CmdBase{
+public class ManagedLedgerWriter {
 
     private static final ExecutorService executor = Executors
             .newCachedThreadPool(new DefaultThreadFactory("pulsar-perf-managed-ledger-exec"));
@@ -80,74 +78,88 @@ public class ManagedLedgerWriter extends CmdBase{
     private static Recorder recorder = new Recorder(TimeUnit.SECONDS.toMillis(120000), 5);
     private static Recorder cumulativeRecorder = new Recorder(TimeUnit.SECONDS.toMillis(120000), 5);
 
+    @Parameters(commandDescription = "Write directly on managed-ledgers")
+    static class Arguments {
 
-    @Option(names = { "-r", "--rate" }, description = "Write rate msg/s across managed ledgers")
-    public int msgRate = 100;
+        @Parameter(names = { "-h", "--help" }, description = "Help message", help = true)
+        boolean help;
 
-    @Option(names = { "-s", "--size" }, description = "Message size")
-    public int msgSize = 1024;
+        @Parameter(names = { "-r", "--rate" }, description = "Write rate msg/s across managed ledgers")
+        public int msgRate = 100;
 
-    @Option(names = { "-t", "--num-topic" },
-            description = "Number of managed ledgers", converter = PositiveNumberParameterConvert.class)
-    public int numManagedLedgers = 1;
+        @Parameter(names = { "-s", "--size" }, description = "Message size")
+        public int msgSize = 1024;
 
-    @Option(names = { "--threads" },
-            description = "Number of threads writing", converter = PositiveNumberParameterConvert.class)
-    public int numThreads = 1;
+        @Parameter(names = { "-t", "--num-topic" },
+                description = "Number of managed ledgers", validateWith = PositiveNumberParameterValidator.class)
+        public int numManagedLedgers = 1;
 
-    @Deprecated
-    @Option(names = {"-zk", "--zookeeperServers"},
-            description = "ZooKeeper connection string",
-            hidden = true)
-    public String zookeeperServers;
+        @Parameter(names = { "--threads" },
+                description = "Number of threads writing", validateWith = PositiveNumberParameterValidator.class)
+        public int numThreads = 1;
 
-    @Option(names = {"-md",
-            "--metadata-store"}, description = "Metadata store service URL. For example: zk:my-zk:2181")
-    private String metadataStoreUrl;
+        @Deprecated
+        @Parameter(names = {"-zk", "--zookeeperServers"},
+                description = "ZooKeeper connection string",
+                hidden = true)
+        public String zookeeperServers;
 
-    @Option(names = { "-o", "--max-outstanding" }, description = "Max number of outstanding requests")
-    public int maxOutstanding = 1000;
+        @Parameter(names = {"-md",
+                "--metadata-store"}, description = "Metadata store service URL. For example: zk:my-zk:2181")
+        private String metadataStoreUrl;
 
-    @Option(names = { "-c",
-            "--max-connections" }, description = "Max number of TCP connections to a single bookie")
-    public int maxConnections = 1;
+        @Parameter(names = { "-o", "--max-outstanding" }, description = "Max number of outstanding requests")
+        public int maxOutstanding = 1000;
 
-    @Option(names = { "-m",
-            "--num-messages" },
-            description = "Number of messages to publish in total. If <= 0, it will keep publishing")
-    public long numMessages = 0;
+        @Parameter(names = { "-c",
+                "--max-connections" }, description = "Max number of TCP connections to a single bookie")
+        public int maxConnections = 1;
 
-    @Option(names = { "-e", "--ensemble-size" }, description = "Ledger ensemble size")
-    public int ensembleSize = 1;
+        @Parameter(names = { "-m",
+                "--num-messages" },
+                description = "Number of messages to publish in total. If <= 0, it will keep publishing")
+        public long numMessages = 0;
 
-    @Option(names = { "-w", "--write-quorum" }, description = "Ledger write quorum")
-    public int writeQuorum = 1;
+        @Parameter(names = { "-e", "--ensemble-size" }, description = "Ledger ensemble size")
+        public int ensembleSize = 1;
 
-    @Option(names = { "-a", "--ack-quorum" }, description = "Ledger ack quorum")
-    public int ackQuorum = 1;
+        @Parameter(names = { "-w", "--write-quorum" }, description = "Ledger write quorum")
+        public int writeQuorum = 1;
 
-    @Option(names = { "-dt", "--digest-type" }, description = "BookKeeper digest type")
-    public DigestType digestType = DigestType.CRC32C;
+        @Parameter(names = { "-a", "--ack-quorum" }, description = "Ledger ack quorum")
+        public int ackQuorum = 1;
 
-    @Option(names = { "-time",
-            "--test-duration" }, description = "Test duration in secs. If <= 0, it will keep publishing")
-    public long testTime = 0;
+        @Parameter(names = { "-dt", "--digest-type" }, description = "BookKeeper digest type")
+        public DigestType digestType = DigestType.CRC32C;
 
-    public ManagedLedgerWriter() {
-        super("managed-ledger");
+        @Parameter(names = { "-time",
+                "--test-duration" }, description = "Test duration in secs. If <= 0, it will keep publishing")
+        public long testTime = 0;
+
     }
 
+    public static void main(String[] args) throws Exception {
 
-    @Spec
-    CommandSpec spec;
+        final Arguments arguments = new Arguments();
+        JCommander jc = new JCommander(arguments);
+        jc.setProgramName("pulsar-perf managed-ledger");
 
-    @Override
-    public void run() throws Exception {
-        CommandLine commander = spec.commandLine();
+        try {
+            jc.parse(args);
+        } catch (ParameterException e) {
+            System.out.println(e.getMessage());
+            jc.usage();
+            PerfClientUtils.exit(-1);
+        }
 
-        if (this.metadataStoreUrl == null && this.zookeeperServers == null) {
+        if (arguments.help) {
+            jc.usage();
+            PerfClientUtils.exit(-1);
+        }
+
+        if (arguments.metadataStoreUrl == null && arguments.zookeeperServers == null) {
             System.err.println("Metadata store address argument is required (--metadata-store)");
-            commander.usage(commander.getOut());
+            jc.usage();
             PerfClientUtils.exit(1);
         }
 
@@ -155,17 +167,17 @@ public class ManagedLedgerWriter extends CmdBase{
         PerfClientUtils.printJVMInformation(log);
         ObjectMapper m = new ObjectMapper();
         ObjectWriter w = m.writerWithDefaultPrettyPrinter();
-        log.info("Starting Pulsar managed-ledger perf writer with config: {}", w.writeValueAsString(this));
+        log.info("Starting Pulsar managed-ledger perf writer with config: {}", w.writeValueAsString(arguments));
 
-        byte[] payloadData = new byte[this.msgSize];
-        ByteBuf payloadBuffer = PulsarByteBufAllocator.DEFAULT.directBuffer(this.msgSize);
-        payloadBuffer.writerIndex(this.msgSize);
+        byte[] payloadData = new byte[arguments.msgSize];
+        ByteBuf payloadBuffer = PulsarByteBufAllocator.DEFAULT.directBuffer(arguments.msgSize);
+        payloadBuffer.writerIndex(arguments.msgSize);
 
         // Now processing command line arguments
         String managedLedgerPrefix = "test-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 5);
 
-        if (this.metadataStoreUrl == null) {
-            this.metadataStoreUrl = this.zookeeperServers;
+        if (arguments.metadataStoreUrl == null) {
+            arguments.metadataStoreUrl = arguments.zookeeperServers;
         }
 
         ClientConfiguration bkConf = new ClientConfiguration();
@@ -173,31 +185,31 @@ public class ManagedLedgerWriter extends CmdBase{
         bkConf.setAddEntryTimeout(30);
         bkConf.setReadEntryTimeout(30);
         bkConf.setThrottleValue(0);
-        bkConf.setNumChannelsPerBookie(this.maxConnections);
-        bkConf.setMetadataServiceUri(this.metadataStoreUrl);
+        bkConf.setNumChannelsPerBookie(arguments.maxConnections);
+        bkConf.setMetadataServiceUri(arguments.metadataStoreUrl);
 
         ManagedLedgerFactoryConfig mlFactoryConf = new ManagedLedgerFactoryConfig();
         mlFactoryConf.setMaxCacheSize(0);
 
         @Cleanup
-        MetadataStoreExtended metadataStore = MetadataStoreExtended.create(this.metadataStoreUrl,
-                MetadataStoreConfig.builder().metadataStoreName(MetadataStoreConfig.METADATA_STORE).build());
+        MetadataStoreExtended metadataStore = MetadataStoreExtended.create(arguments.metadataStoreUrl,
+                MetadataStoreConfig.builder().build());
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(metadataStore, bkConf, mlFactoryConf);
 
         ManagedLedgerConfig mlConf = new ManagedLedgerConfig();
-        mlConf.setEnsembleSize(this.ensembleSize);
-        mlConf.setWriteQuorumSize(this.writeQuorum);
-        mlConf.setAckQuorumSize(this.ackQuorum);
+        mlConf.setEnsembleSize(arguments.ensembleSize);
+        mlConf.setWriteQuorumSize(arguments.writeQuorum);
+        mlConf.setAckQuorumSize(arguments.ackQuorum);
         mlConf.setMinimumRolloverTime(10, TimeUnit.MINUTES);
-        mlConf.setMetadataEnsembleSize(this.ensembleSize);
-        mlConf.setMetadataWriteQuorumSize(this.writeQuorum);
-        mlConf.setMetadataAckQuorumSize(this.ackQuorum);
-        mlConf.setDigestType(this.digestType);
+        mlConf.setMetadataEnsembleSize(arguments.ensembleSize);
+        mlConf.setMetadataWriteQuorumSize(arguments.writeQuorum);
+        mlConf.setMetadataAckQuorumSize(arguments.ackQuorum);
+        mlConf.setDigestType(arguments.digestType);
         mlConf.setMaxSizePerLedgerMb(2048);
 
         List<CompletableFuture<ManagedLedger>> futures = new ArrayList<>();
 
-        for (int i = 0; i < this.numManagedLedgers; i++) {
+        for (int i = 0; i < arguments.numManagedLedgers; i++) {
             String name = String.format("%s-%03d", managedLedgerPrefix, i);
             CompletableFuture<ManagedLedger> future = new CompletableFuture<>();
             futures.add(future);
@@ -229,23 +241,23 @@ public class ManagedLedgerWriter extends CmdBase{
         AtomicBoolean isDone = new AtomicBoolean();
 
         Map<Integer, List<ManagedLedger>> managedLedgersPerThread = allocateToThreads(managedLedgers,
-                this.numThreads);
+                arguments.numThreads);
 
-        for (int i = 0; i < this.numThreads; i++) {
+        for (int i = 0; i < arguments.numThreads; i++) {
             List<ManagedLedger> managedLedgersForThisThread = managedLedgersPerThread.get(i);
             int nunManagedLedgersForThisThread = managedLedgersForThisThread.size();
-            long numMessagesForThisThread = this.numMessages / this.numThreads;
-            int maxOutstandingForThisThread = this.maxOutstanding;
+            long numMessagesForThisThread = arguments.numMessages / arguments.numThreads;
+            int maxOutstandingForThisThread = arguments.maxOutstanding;
 
             executor.submit(() -> {
                 try {
-                    final double msgRate = this.msgRate / (double) this.numThreads;
+                    final double msgRate = arguments.msgRate / (double) arguments.numThreads;
                     final RateLimiter rateLimiter = RateLimiter.create(msgRate);
 
                     // Acquire 1 sec worth of messages to have a slower ramp-up
                     rateLimiter.acquire((int) msgRate);
                     final long startTime = System.nanoTime();
-                    final long testEndTime = startTime + (long) (this.testTime * 1e9);
+                    final long testEndTime = startTime + (long) (arguments.testTime * 1e9);
 
                     final Semaphore semaphore = new Semaphore(maxOutstandingForThisThread);
 
@@ -268,7 +280,7 @@ public class ManagedLedgerWriter extends CmdBase{
                         @Override
                         public void addFailed(ManagedLedgerException exception, Object ctx) {
                             log.warn("Write error on message", exception);
-                            PerfClientUtils.exit(1);
+                            PerfClientUtils.exit(-1);
                         }
                     };
 
@@ -276,10 +288,10 @@ public class ManagedLedgerWriter extends CmdBase{
                     long totalSent = 0;
                     while (true) {
                         for (int j = 0; j < nunManagedLedgersForThisThread; j++) {
-                            if (this.testTime > 0) {
+                            if (arguments.testTime > 0) {
                                 if (System.nanoTime() > testEndTime) {
                                     log.info("------------- DONE (reached the maximum duration: [{} seconds] of "
-                                            + "production) --------------", this.testTime);
+                                            + "production) --------------", arguments.testTime);
                                     isDone.set(true);
                                     Thread.sleep(5000);
                                     PerfClientUtils.exit(0);

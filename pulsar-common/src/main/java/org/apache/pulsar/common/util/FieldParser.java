@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,6 +21,8 @@ package org.apache.pulsar.common.util;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import com.fasterxml.jackson.databind.DeserializationConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.EnumResolver;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -55,6 +57,8 @@ public final class FieldParser {
 
     private static final Map<String, Method> CONVERTERS = new HashMap<>();
     private static final Map<Class<?>, Class<?>> WRAPPER_TYPES = new HashMap<>();
+
+    private static final DeserializationConfig DESERIALIZATION_CONFIG = new ObjectMapper().getDeserializationConfig();
 
     static {
         // Preload converters and wrapperTypes.
@@ -96,8 +100,7 @@ public final class FieldParser {
 
         if (to.isEnum()) {
             // Converting string to enum
-            EnumResolver r = EnumResolver.constructUsingToString(
-                ObjectMapperFactory.getMapper().getObjectMapper().getDeserializationConfig(), to);
+            EnumResolver r = EnumResolver.constructUsingToString(DESERIALIZATION_CONFIG, to);
             T value = (T) r.findEnum((String) from);
             if (value == null) {
                 throw new RuntimeException("Invalid value '" + from + "' for enum " + to);
@@ -311,9 +314,6 @@ public final class FieldParser {
      * @return The converted list with type {@code <T>}.
      */
     public static <T> List<T> stringToList(String val, Class<T> type) {
-        if (val == null) {
-            return null;
-        }
         String[] tokens = trim(val).split(",");
         return Arrays.stream(tokens).map(t -> {
             return convert(trim(t), type);
@@ -330,9 +330,6 @@ public final class FieldParser {
      * @return The converted set with type {@code <T>}.
      */
     public static <T> Set<T> stringToSet(String val, Class<T> type) {
-        if (val == null) {
-            return null;
-        }
         String[] tokens = trim(val).split(",");
         return Arrays.stream(tokens).map(t -> {
             return convert(trim(t), type);
@@ -340,9 +337,6 @@ public final class FieldParser {
     }
 
     private static <K, V> Map<K, V> stringToMap(String strValue, Class<K> keyType, Class<V> valueType) {
-        if (strValue == null) {
-            return null;
-        }
         String[] tokens = trim(strValue).split(",");
         Map<K, V> map = new HashMap<>();
         for (String token : tokens) {

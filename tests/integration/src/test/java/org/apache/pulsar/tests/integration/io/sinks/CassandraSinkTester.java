@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,12 +18,11 @@
  */
 package org.apache.pulsar.tests.integration.io.sinks;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
+import com.khulnasoft.driver.core.Cluster;
+import com.khulnasoft.driver.core.ResultSet;
+import com.khulnasoft.driver.core.Row;
+import com.khulnasoft.driver.core.Session;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.PulsarVersion;
 import org.apache.pulsar.tests.integration.containers.CassandraContainer;
 import org.apache.pulsar.tests.integration.topologies.PulsarCluster;
 
@@ -53,7 +52,6 @@ public class CassandraSinkTester extends SinkTester<CassandraContainer> {
     private static final String ROOTS = "cassandra";
     private static final String KEY = "key";
     private static final String COLUMN = "col";
-    private static final String ARCHIVE = "/pulsar/connectors/pulsar-io-cassandra-" + PulsarVersion.getVersion() + ".nar";
 
     private final String keySpace;
     private final String tableName;
@@ -62,7 +60,7 @@ public class CassandraSinkTester extends SinkTester<CassandraContainer> {
     private Session session;
 
     private CassandraSinkTester() {
-        super(NAME, ARCHIVE, "org.apache.pulsar.io.cassandra.CassandraStringSink");
+        super(NAME, "/pulsar/connectors/pulsar-io-cassandra-2.2.0-incubating-SNAPSHOT.nar", "org.apache.pulsar.io.cassandra.CassandraStringSink");
 
         String suffix = randomName(8) + "_" + System.currentTimeMillis();
         this.keySpace = "keySpace_" + suffix;
@@ -98,25 +96,24 @@ public class CassandraSinkTester extends SinkTester<CassandraContainer> {
     public void prepareSink() {
         // build the sink
         cluster = Cluster.builder()
-                .addContactPoint("localhost")
-                .withPort(serviceContainer.getCassandraPort())
-                .withoutJMXReporting()
-                .build();
+            .addContactPoint("localhost")
+            .withPort(serviceContainer.getCassandraPort())
+            .build();
 
         // connect to the cluster
         session = cluster.connect();
         log.info("Connecting to cassandra cluster at localhost:{}", serviceContainer.getCassandraPort());
 
         String createKeySpace =
-                "CREATE KEYSPACE " + keySpace
-                        + " WITH replication = {'class':'SimpleStrategy', 'replication_factor':1}; ";
+            "CREATE KEYSPACE " + keySpace
+                + " WITH replication = {'class':'SimpleStrategy', 'replication_factor':1}; ";
         log.info(createKeySpace);
         session.execute(createKeySpace);
         session.execute("USE " + keySpace);
 
         String createTable = "CREATE TABLE " + tableName
-                + "(" + KEY + " text PRIMARY KEY, "
-                + COLUMN + " text);";
+            + "(" + KEY + " text PRIMARY KEY, "
+            + COLUMN + " text);";
         log.info(createTable);
         session.execute(createTable);
     }
@@ -134,18 +131,6 @@ public class CassandraSinkTester extends SinkTester<CassandraContainer> {
             String expectedValue = kvs.get(key);
             assertNotNull(expectedValue);
             assertEquals(expectedValue, value);
-        }
-    }
-
-    @Override
-    public void close() throws Exception {
-        if (session != null) {
-            session.close();
-            session = null;
-        }
-        if (cluster != null) {
-            cluster.close();
-            cluster = null;
         }
     }
 }

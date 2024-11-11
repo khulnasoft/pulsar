@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -27,11 +27,9 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,6 +52,7 @@ import org.apache.pulsar.client.impl.conf.ProducerConfigurationData;
 import org.apache.pulsar.client.impl.transaction.TransactionImpl;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,9 +60,9 @@ public class PartitionedProducerImpl<T> extends ProducerBase<T> {
 
     private static final Logger log = LoggerFactory.getLogger(PartitionedProducerImpl.class);
 
-    private final Map<Integer, ProducerImpl<T>> producers = new ConcurrentHashMap<>();
+    private final ConcurrentOpenHashMap<Integer, ProducerImpl<T>> producers;
     private final MessageRouter routerPolicy;
-    private final PartitionedTopicProducerStatsRecorderImpl stats;
+    private final ProducerStatsRecorderImpl stats;
     private TopicMetadata topicMetadata;
     private final int firstPartitionIndex;
     private String overrideProducerName;
@@ -77,11 +76,11 @@ public class PartitionedProducerImpl<T> extends ProducerBase<T> {
                                    int numPartitions, CompletableFuture<Producer<T>> producerCreatedFuture,
                                    Schema<T> schema, ProducerInterceptors interceptors) {
         super(client, topic, conf, producerCreatedFuture, schema, interceptors);
+        this.producers =
+                ConcurrentOpenHashMap.<Integer, ProducerImpl<T>>newBuilder().build();
         this.topicMetadata = new TopicMetadataImpl(numPartitions);
         this.routerPolicy = getMessageRouter();
-        stats = client.getConfiguration().getStatsIntervalSeconds() > 0
-                ? new PartitionedTopicProducerStatsRecorderImpl()
-                : null;
+        stats = client.getConfiguration().getStatsIntervalSeconds() > 0 ? new ProducerStatsRecorderImpl() : null;
 
         // MaxPendingMessagesAcrossPartitions doesn't support partial partition such as SinglePartition correctly
         int maxPendingMessages = Math.min(conf.getMaxPendingMessages(),
@@ -354,8 +353,7 @@ public class PartitionedProducerImpl<T> extends ProducerBase<T> {
             return null;
         }
         stats.reset();
-        producers.forEach(
-                (partition, producer) -> stats.updateCumulativeStats(producer.getTopic(), producer.getStats()));
+        producers.values().forEach(p -> stats.updateCumulativeStats(p.getStats()));
         return stats;
     }
 
@@ -435,7 +433,7 @@ public class PartitionedProducerImpl<T> extends ProducerBase<T> {
                                 });
                         // call interceptor with the metadata change
                         onPartitionsChange(topic, currentPartitionNumber);
-                        return future;
+                        return null;
                     }
                 } else {
                     log.error("[{}] not support shrink topic partitions. old: {}, new: {}",

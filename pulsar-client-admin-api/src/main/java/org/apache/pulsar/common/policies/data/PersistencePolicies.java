@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,24 +30,17 @@ public class PersistencePolicies {
     private int bookkeeperWriteQuorum;
     private int bookkeeperAckQuorum;
     private double managedLedgerMaxMarkDeleteRate;
-    private String managedLedgerStorageClassName;
 
     public PersistencePolicies() {
-        this(2, 2, 2, 0.0, null);
+        this(2, 2, 2, 0.0);
     }
 
     public PersistencePolicies(int bookkeeperEnsemble, int bookkeeperWriteQuorum, int bookkeeperAckQuorum,
-                               double managedLedgerMaxMarkDeleteRate) {
-        this(bookkeeperEnsemble, bookkeeperWriteQuorum, bookkeeperAckQuorum, managedLedgerMaxMarkDeleteRate, null);
-    }
-
-    public PersistencePolicies(int bookkeeperEnsemble, int bookkeeperWriteQuorum, int bookkeeperAckQuorum,
-            double managedLedgerMaxMarkDeleteRate, String managedLedgerStorageClassName) {
+            double managedLedgerMaxMarkDeleteRate) {
         this.bookkeeperEnsemble = bookkeeperEnsemble;
         this.bookkeeperWriteQuorum = bookkeeperWriteQuorum;
         this.bookkeeperAckQuorum = bookkeeperAckQuorum;
         this.managedLedgerMaxMarkDeleteRate = managedLedgerMaxMarkDeleteRate;
-        this.managedLedgerStorageClassName = managedLedgerStorageClassName;
     }
 
     public int getBookkeeperEnsemble() {
@@ -66,14 +59,10 @@ public class PersistencePolicies {
         return managedLedgerMaxMarkDeleteRate;
     }
 
-    public String getManagedLedgerStorageClassName() {
-        return managedLedgerStorageClassName;
-    }
-
     @Override
     public int hashCode() {
         return Objects.hash(bookkeeperEnsemble, bookkeeperWriteQuorum,
-                bookkeeperAckQuorum, managedLedgerMaxMarkDeleteRate, managedLedgerStorageClassName);
+                bookkeeperAckQuorum, managedLedgerMaxMarkDeleteRate);
     }
     @Override
     public boolean equals(Object obj) {
@@ -82,8 +71,7 @@ public class PersistencePolicies {
             return bookkeeperEnsemble == other.bookkeeperEnsemble
                     && bookkeeperWriteQuorum == other.bookkeeperWriteQuorum
                     && bookkeeperAckQuorum == other.bookkeeperAckQuorum
-                    && managedLedgerMaxMarkDeleteRate == other.managedLedgerMaxMarkDeleteRate
-                    && managedLedgerStorageClassName == other.managedLedgerStorageClassName;
+                    && managedLedgerMaxMarkDeleteRate == other.managedLedgerMaxMarkDeleteRate;
         }
 
         return false;

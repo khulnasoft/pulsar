@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,11 +19,12 @@
 package org.apache.pulsar.admin.cli;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import com.google.common.collect.Sets;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.admin.cli.utils.CmdUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -31,57 +32,42 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.ProxyProtocol;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.common.policies.data.ClusterDataImpl;
-import org.apache.pulsar.common.policies.data.ClusterPolicies.ClusterUrl;
 import org.apache.pulsar.common.policies.data.FailureDomain;
 import org.apache.pulsar.common.policies.data.FailureDomainImpl;
-import picocli.CommandLine.ArgGroup;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
-@Command(description = "Operations about clusters")
+@Parameters(commandDescription = "Operations about clusters")
 public class CmdClusters extends CmdBase {
 
-    @Command(description = "List the existing clusters")
+    @Parameters(commandDescription = "List the existing clusters")
     private class List extends CliCommand {
-        @Option(names = {"-c", "--current"},
-                description = "Print the current cluster with (*)", required = false, defaultValue = "false")
-        private boolean current;
-
-        void run() throws Exception {
-            java.util.List<String> clusters = getAdmin().clusters().getClusters();
-            String clusterName = getAdmin().brokers().getRuntimeConfigurations().get("clusterName");
-            final java.util.List<String> result = clusters.stream().map(c ->
-                    c.equals(clusterName) ? (current ? c + "(*)" : c) : c
-            ).collect(Collectors.toList());
-            print(result);
+        void run() throws PulsarAdminException {
+            print(getAdmin().clusters().getClusters());
         }
     }
 
-    @Command(description = "Get the configuration data for the specified cluster")
+    @Parameters(commandDescription = "Get the configuration data for the specified cluster")
     private class Get extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Override
-        void run() throws Exception {
+        void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             print(getAdmin().clusters().getCluster(cluster));
         }
     }
 
-    @Command(description = "Provisions a new cluster. This operation requires Pulsar super-user privileges")
-    private class Create extends CliCommand {
-        @ArgGroup(exclusive = false)
-        ClusterDetails clusterDetails = new ClusterDetails();
+    @Parameters(commandDescription = "Provisions a new cluster. This operation requires Pulsar super-user privileges")
+    private class Create extends ClusterDetailsCommand {
 
         @Override
-        void run() throws PulsarAdminException, IOException {
-            getAdmin().clusters().createCluster(clusterDetails.clusterName, clusterDetails.getClusterData());
+        void runCmd() throws Exception {
+            String cluster = getOneArgument(params);
+            getAdmin().clusters().createCluster(cluster, clusterData);
         }
 
     }
 
-    protected static void validateClusterData(ClusterData clusterData) {
+    protected void validateClusterData(ClusterData clusterData) {
         if (clusterData.isBrokerClientTlsEnabled()) {
             if (clusterData.isBrokerClientTlsEnabledWithKeyStore()) {
                 if (StringUtils.isAnyBlank(clusterData.getBrokerClientTlsTrustStoreType(),
@@ -95,29 +81,29 @@ public class CmdClusters extends CmdBase {
         }
     }
 
-    @Command(description = "Update the configuration for a cluster")
-    private class Update extends CliCommand {
-        @ArgGroup(exclusive = false)
-        ClusterDetails clusterDetails = new ClusterDetails();
+    @Parameters(commandDescription = "Update the configuration for a cluster")
+    private class Update extends ClusterDetailsCommand {
 
         @Override
-        void run() throws PulsarAdminException, IOException {
-            getAdmin().clusters().updateCluster(clusterDetails.clusterName, clusterDetails.getClusterData());
+        void runCmd() throws Exception {
+            String cluster = getOneArgument(params);
+            getAdmin().clusters().updateCluster(cluster, clusterData);
         }
 
     }
 
-    @Command(description = "Deletes an existing cluster")
+    @Parameters(commandDescription = "Deletes an existing cluster")
     private class Delete extends CliCommand {
-        @Parameters(description = "cluster-name", index = "0", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = {"-a", "--all"},
-                description = "Delete all data (tenants) of the cluster", required = false, defaultValue = "false")
-        private boolean deleteAll;
+        @Parameter(names = { "-a", "--all" },
+                description = "Delete all data (tenants) of the cluster", required = false)
+        private boolean deleteAll = false;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
+
             if (deleteAll) {
                 for (String tenant : getAdmin().tenants().getTenants()) {
                     for (String namespace : getAdmin().namespaces().getNamespaces(tenant)) {
@@ -139,88 +125,49 @@ public class CmdClusters extends CmdBase {
         }
     }
 
-    @Command(description = "Update peer cluster names")
+    @Parameters(commandDescription = "Update peer cluster names")
     private class UpdatePeerClusters extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = "--peer-clusters", description = "Comma separated peer-cluster names "
+        @Parameter(names = "--peer-clusters", description = "Comma separated peer-cluster names "
                 + "[Pass empty string \"\" to delete list]", required = true)
         private String peerClusterNames;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             java.util.LinkedHashSet<String> clusters = StringUtils.isBlank(peerClusterNames) ? null
                     : Sets.newLinkedHashSet(Arrays.asList(peerClusterNames.split(",")));
             getAdmin().clusters().updatePeerClusterNames(cluster, clusters);
         }
     }
 
-    @Command(description = "Get the cluster migration configuration data for the specified cluster")
-    private class GetClusterMigration extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
-
-        @Override
-        void run() throws PulsarAdminException {
-            print(getAdmin().clusters().getClusterMigration(cluster));
-        }
-    }
-
-    @Command(description = "Update cluster migration")
-    private class UpdateClusterMigration extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
-
-        @Option(names = "--migrated", description = "Is cluster migrated")
-        private boolean migrated;
-
-        @Option(names = "--service-url", description = "New migrated cluster service url")
-        private String serviceUrl;
-
-        @Option(names = "--service-url-secure",
-                description = "New migrated cluster service url secure")
-        private String serviceUrlTls;
-
-        @Option(names = "--broker-url", description = "New migrated cluster broker service url")
-        private String brokerServiceUrl;
-
-        @Option(names = "--broker-url-secure", description = "New migrated cluster broker service url secure")
-        private String brokerServiceUrlTls;
-
-        @Override
-        void run() throws PulsarAdminException {
-            ClusterUrl clusterUrl = new ClusterUrl(serviceUrl, serviceUrlTls, brokerServiceUrl, brokerServiceUrlTls);
-            getAdmin().clusters().updateClusterMigration(cluster, migrated, clusterUrl);
-        }
-    }
-
-    @Command(description = "Get list of peer-clusters")
+    @Parameters(commandDescription = "Get list of peer-clusters")
     private class GetPeerClusters extends CliCommand {
 
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             print(getAdmin().clusters().getPeerClusterNames(cluster));
         }
     }
 
 
-    @Command(description = "Create a new failure-domain for a cluster. updates it if already created.")
+    @Parameters(commandDescription = "Create a new failure-domain for a cluster. updates it if already created.")
     private class CreateFailureDomain extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = "--domain-name", description = "domain-name", required = true)
+        @Parameter(names = "--domain-name", description = "domain-name", required = true)
         private String domainName;
 
-        @Option(names = "--broker-list", description = "Comma separated broker list", required = false)
+        @Parameter(names = "--broker-list", description = "Comma separated broker list", required = false)
         private String brokerList;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             FailureDomain domain = FailureDomainImpl.builder()
                     .brokers((isNotBlank(brokerList) ? Sets.newHashSet(brokerList.split(",")) : null))
                     .build();
@@ -228,19 +175,19 @@ public class CmdClusters extends CmdBase {
         }
     }
 
-    @Command(description = "Update failure-domain for a cluster. Creates a new one if not exist.")
+    @Parameters(commandDescription = "Update failure-domain for a cluster. Creates a new one if not exist.")
     private class UpdateFailureDomain extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = "--domain-name", description = "domain-name", required = true)
+        @Parameter(names = "--domain-name", description = "domain-name", required = true)
         private String domainName;
 
-        @Option(names = "--broker-list", description = "Comma separated broker list", required = false)
+        @Parameter(names = "--broker-list", description = "Comma separated broker list", required = false)
         private String brokerList;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             FailureDomain domain = FailureDomainImpl.builder()
                     .brokers((isNotBlank(brokerList) ? Sets.newHashSet(brokerList.split(",")) : null))
                     .build();
@@ -248,139 +195,142 @@ public class CmdClusters extends CmdBase {
         }
     }
 
-    @Command(description = "Deletes an existing failure-domain")
+    @Parameters(commandDescription = "Deletes an existing failure-domain")
     private class DeleteFailureDomain extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = "--domain-name", description = "domain-name", required = true)
+        @Parameter(names = "--domain-name", description = "domain-name", required = true)
         private String domainName;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             getAdmin().clusters().deleteFailureDomain(cluster, domainName);
         }
     }
 
-    @Command(description = "List the existing failure-domains for a cluster")
+    @Parameters(commandDescription = "List the existing failure-domains for a cluster")
     private class ListFailureDomains extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
 
-        @Override
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
+
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             print(getAdmin().clusters().getFailureDomains(cluster));
         }
     }
 
-    @Command(description = "Get the configuration brokers of a failure-domain")
+    @Parameters(commandDescription = "Get the configuration brokers of a failure-domain")
     private class GetFailureDomain extends CliCommand {
-        @Parameters(description = "cluster-name", arity = "1")
-        private String cluster;
+        @Parameter(description = "cluster-name", required = true)
+        private java.util.List<String> params;
 
-        @Option(names = "--domain-name", description = "domain-name", required = true)
+        @Parameter(names = "--domain-name", description = "domain-name", required = true)
         private String domainName;
 
-        @Override
         void run() throws PulsarAdminException {
+            String cluster = getOneArgument(params);
             print(getAdmin().clusters().getFailureDomain(cluster, domainName));
         }
     }
 
-    private static class ClusterDetails {
-        @Parameters(description = "cluster-name", arity = "1")
-        protected String clusterName;
+    /**
+     * Base command.
+     */
+    @Getter
+    abstract class BaseCommand extends CliCommand {
+        @Override
+        void run() throws Exception {
+            try {
+                processArguments();
+            } catch (Exception e) {
+                System.err.println(e.getMessage());
+                System.err.println();
+                String chosenCommand = jcommander.getParsedCommand();
+                getUsageFormatter().usage(chosenCommand);
+                return;
+            }
+            runCmd();
+        }
 
-        @Option(names = "--url", description = "service-url", required = false)
+        void processArguments() throws Exception {
+        }
+
+        abstract void runCmd() throws Exception;
+    }
+
+    abstract class ClusterDetailsCommand extends BaseCommand {
+        @Parameter(description = "cluster-name", required = true)
+        protected java.util.List<String> params;
+
+        @Parameter(names = "--url", description = "service-url", required = false)
         protected String serviceUrl;
 
-        @Option(names = "--url-secure", description = "service-url for secure connection", required = false)
+        @Parameter(names = "--url-secure", description = "service-url for secure connection", required = false)
         protected String serviceUrlTls;
 
-        @Option(names = "--broker-url", description = "broker-service-url", required = false)
+        @Parameter(names = "--broker-url", description = "broker-service-url", required = false)
         protected String brokerServiceUrl;
 
-        @Option(names = "--broker-url-secure",
+        @Parameter(names = "--broker-url-secure",
                 description = "broker-service-url for secure connection", required = false)
         protected String brokerServiceUrlTls;
 
-        @Option(names = "--proxy-url",
+        @Parameter(names = "--proxy-url",
                 description = "Proxy-service url when client would like to connect to broker via proxy.")
         protected String proxyServiceUrl;
 
-        @Option(names = "--auth-plugin", description = "authentication plugin", required = false)
+        @Parameter(names = "--auth-plugin", description = "authentication plugin", required = false)
         protected String authenticationPlugin;
 
-        @Option(names = "--auth-parameters", description = "authentication parameters", required = false)
+        @Parameter(names = "--auth-parameters", description = "authentication parameters", required = false)
         protected String authenticationParameters;
 
-        @Option(names = "--proxy-protocol",
+        @Parameter(names = "--proxy-protocol",
                 description = "protocol to decide type of proxy routing eg: SNI", required = false)
         protected ProxyProtocol proxyProtocol;
 
-        @Option(names = "--tls-enable", description = "Enable tls connection", required = false)
+        @Parameter(names = "--tls-enable", description = "Enable tls connection", required = false)
         protected Boolean brokerClientTlsEnabled;
 
-        @Option(names = "--tls-allow-insecure", description = "Allow insecure tls connection", required = false)
+        @Parameter(names = "--tls-allow-insecure", description = "Allow insecure tls connection", required = false)
         protected Boolean tlsAllowInsecureConnection;
 
-        @Option(names = "--tls-enable-keystore",
+        @Parameter(names = "--tls-enable-keystore",
                 description = "Whether use KeyStore type to authenticate", required = false)
         protected Boolean brokerClientTlsEnabledWithKeyStore;
 
-        @Option(names = "--tls-trust-store-type",
+        @Parameter(names = "--tls-trust-store-type",
                 description = "TLS TrustStore type configuration for internal client eg: JKS", required = false)
         protected String brokerClientTlsTrustStoreType;
 
-        @Option(names = "--tls-trust-store",
+        @Parameter(names = "--tls-trust-store",
                 description = "TLS TrustStore path for internal client", required = false)
         protected String brokerClientTlsTrustStore;
 
-        @Option(names = "--tls-trust-store-pwd",
+        @Parameter(names = "--tls-trust-store-pwd",
                 description = "TLS TrustStore password for internal client", required = false)
         protected String brokerClientTlsTrustStorePassword;
 
-        @Option(names = "--tls-key-store-type",
-                description = "TLS TrustStore type configuration for internal client eg: JKS", required = false)
-        protected String brokerClientTlsKeyStoreType;
-
-        @Option(names = "--tls-key-store",
-                description = "TLS KeyStore path for internal client", required = false)
-        protected String brokerClientTlsKeyStore;
-
-        @Option(names = "--tls-key-store-pwd",
-                description = "TLS KeyStore password for internal client", required = false)
-        protected String brokerClientTlsKeyStorePassword;
-
-        @Option(names = "--tls-trust-certs-filepath",
+        @Parameter(names = "--tls-trust-certs-filepath",
                 description = "path for the trusted TLS certificate file", required = false)
         protected String brokerClientTrustCertsFilePath;
 
-        @Option(names = "--tls-key-filepath",
-                description = "path for the TLS private key file", required = false)
-        protected String brokerClientKeyFilePath;
-
-        @Option(names = "--tls-certs-filepath",
-                description = "path for the TLS certificate file", required = false)
-        protected String brokerClientCertificateFilePath;
-
-        @Option(names = "--tls-factory-plugin",
-                description = "TLS Factory Plugin to be used to generate SSL Context and SSL Engine")
-        protected String brokerClientSslFactoryPlugin;
-
-        @Option(names = "--tls-factory-plugin-params",
-                description = "Parameters used by the TLS Factory Plugin")
-        protected String brokerClientSslFactoryPluginParams;
-
-        @Option(names = "--listener-name",
+        @Parameter(names = "--listener-name",
                 description = "listenerName when client would like to connect to cluster", required = false)
         protected String listenerName;
 
-        @Option(names = "--cluster-config-file", description = "The path to a YAML config file specifying the "
+        @Parameter(names = "--cluster-config-file", description = "The path to a YAML config file specifying the "
                 + "cluster's configuration")
         protected String clusterConfigFile;
 
-        protected ClusterData getClusterData() throws IOException {
+        protected ClusterData clusterData;
+
+        @Override
+        void processArguments() throws Exception {
+            super.processArguments();
+
             ClusterData.Builder builder;
             if (null != clusterConfigFile) {
                 builder = CmdUtils.loadConfig(clusterConfigFile, ClusterDataImpl.ClusterDataImplBuilder.class);
@@ -430,58 +380,33 @@ public class CmdClusters extends CmdBase {
             if (brokerClientTlsTrustStorePassword != null) {
                 builder.brokerClientTlsTrustStorePassword(brokerClientTlsTrustStorePassword);
             }
-            if (brokerClientTlsKeyStoreType != null) {
-                builder.brokerClientTlsKeyStoreType(brokerClientTlsKeyStoreType);
-            }
-            if (brokerClientTlsKeyStore != null) {
-                builder.brokerClientTlsKeyStore(brokerClientTlsKeyStore);
-            }
-            if (brokerClientTlsKeyStorePassword != null) {
-                builder.brokerClientTlsKeyStorePassword(brokerClientTlsKeyStorePassword);
-            }
             if (brokerClientTrustCertsFilePath != null) {
                 builder.brokerClientTrustCertsFilePath(brokerClientTrustCertsFilePath);
-            }
-            if (brokerClientKeyFilePath != null) {
-                builder.brokerClientKeyFilePath(brokerClientKeyFilePath);
-            }
-            if (brokerClientCertificateFilePath != null) {
-                builder.brokerClientCertificateFilePath(brokerClientCertificateFilePath);
-            }
-            if (StringUtils.isNotBlank(brokerClientSslFactoryPlugin)) {
-                builder.brokerClientSslFactoryPlugin(brokerClientSslFactoryPlugin);
-            }
-            if (StringUtils.isNotBlank(brokerClientSslFactoryPluginParams)) {
-                builder.brokerClientSslFactoryPluginParams(brokerClientSslFactoryPluginParams);
             }
 
             if (listenerName != null) {
                 builder.listenerName(listenerName);
             }
 
-            ClusterData clusterData = builder.build();
+            this.clusterData = builder.build();
             validateClusterData(clusterData);
-
-            return clusterData;
         }
     }
 
     public CmdClusters(Supplier<PulsarAdmin> admin) {
         super("clusters", admin);
-        addCommand("get", new Get());
-        addCommand("create", new Create());
-        addCommand("update", new Update());
-        addCommand("delete", new Delete());
-        addCommand("list", new List());
-        addCommand("update-peer-clusters", new UpdatePeerClusters());
-        addCommand("get-cluster-migration", new GetClusterMigration());
-        addCommand("update-cluster-migration", new UpdateClusterMigration());
-        addCommand("get-peer-clusters", new GetPeerClusters());
-        addCommand("get-failure-domain", new GetFailureDomain());
-        addCommand("create-failure-domain", new CreateFailureDomain());
-        addCommand("update-failure-domain", new UpdateFailureDomain());
-        addCommand("delete-failure-domain", new DeleteFailureDomain());
-        addCommand("list-failure-domains", new ListFailureDomains());
+        jcommander.addCommand("get", new Get());
+        jcommander.addCommand("create", new Create());
+        jcommander.addCommand("update", new Update());
+        jcommander.addCommand("delete", new Delete());
+        jcommander.addCommand("list", new List());
+        jcommander.addCommand("update-peer-clusters", new UpdatePeerClusters());
+        jcommander.addCommand("get-peer-clusters", new GetPeerClusters());
+        jcommander.addCommand("get-failure-domain", new GetFailureDomain());
+        jcommander.addCommand("create-failure-domain", new CreateFailureDomain());
+        jcommander.addCommand("update-failure-domain", new UpdateFailureDomain());
+        jcommander.addCommand("delete-failure-domain", new DeleteFailureDomain());
+        jcommander.addCommand("list-failure-domains", new ListFailureDomains());
     }
 
 }

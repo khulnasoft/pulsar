@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,15 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.pulsar.broker.service;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.Position;
-import org.apache.pulsar.broker.loadbalance.extensions.data.BrokerLookupData;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.persistent.DispatchRateLimiter;
 import org.apache.pulsar.common.api.proto.CommandSubscribe.SubType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -52,11 +49,7 @@ public interface Dispatcher {
      *
      * @return
      */
-    default CompletableFuture<Void> close() {
-        return close(true, Optional.empty());
-    }
-
-    CompletableFuture<Void> close(boolean disconnectClients, Optional<BrokerLookupData> assignedBrokerLookupData);
+    CompletableFuture<Void> close();
 
     boolean isClosed();
 
@@ -70,16 +63,11 @@ public interface Dispatcher {
      *
      * @return
      */
-    default CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor) {
-        return disconnectAllConsumers(isResetCursor, Optional.empty());
-    }
+    CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor);
 
     default CompletableFuture<Void> disconnectAllConsumers() {
         return disconnectAllConsumers(false);
     }
-
-    CompletableFuture<Void> disconnectAllConsumers(boolean isResetCursor,
-                                                   Optional<BrokerLookupData> assignedBrokerLookupData);
 
     void resetCloseFuture();
 
@@ -92,7 +80,7 @@ public interface Dispatcher {
 
     void redeliverUnacknowledgedMessages(Consumer consumer, long consumerEpoch);
 
-    void redeliverUnacknowledgedMessages(Consumer consumer, List<Position> positions);
+    void redeliverUnacknowledgedMessages(Consumer consumer, List<PositionImpl> positions);
 
     void addUnAckedMessages(int unAckMessages);
 
@@ -103,8 +91,7 @@ public interface Dispatcher {
     }
 
     default void updateRateLimiter() {
-        initializeDispatchRateLimiterIfNeeded();
-        getRateLimiter().ifPresent(DispatchRateLimiter::updateDispatchRate);
+        //No-op
     }
 
     default boolean initializeDispatchRateLimiterIfNeeded() {
@@ -123,8 +110,8 @@ public interface Dispatcher {
         return 0;
     }
 
-    default CompletableFuture<Void> clearDelayedMessages() {
-        return CompletableFuture.completedFuture(null);
+    default void clearDelayedMessages() {
+        //No-op
     }
 
     default void cursorIsReset() {
@@ -142,24 +129,6 @@ public interface Dispatcher {
         return false;
     }
 
-    /**
-     * A callback hook after acknowledge messages.
-     * @param exOfDeletion the ex of {@link org.apache.bookkeeper.mledger.ManagedCursor#asyncDelete},
-     *              {@link ManagedCursor#asyncClearBacklog} or {@link ManagedCursor#asyncSkipEntries)}.
-     * @param ctxOfDeletion the param ctx of calling {@link org.apache.bookkeeper.mledger.ManagedCursor#asyncDelete},
-     *              {@link ManagedCursor#asyncClearBacklog} or {@link ManagedCursor#asyncSkipEntries)}.
-     */
-    default void afterAckMessages(Throwable exOfDeletion, Object ctxOfDeletion){}
-
-    /**
-     * Trigger a new "readMoreEntries" if the dispatching has been paused before. This method is only implemented in
-     * {@link org.apache.pulsar.broker.service.persistent.AbstractPersistentDispatcherMultipleConsumers} right now,
-     * other implementations do not necessary implement this method.
-     * @return did a resume.
-     */
-    default boolean checkAndResumeIfPaused(){
-        return false;
-    }
 
     default long getFilterProcessedMsgCount() {
         return 0;

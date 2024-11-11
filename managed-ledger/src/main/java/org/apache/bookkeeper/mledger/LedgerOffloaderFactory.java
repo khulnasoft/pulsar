@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -31,7 +31,7 @@ import org.apache.pulsar.common.protocol.schema.SchemaStorage;
  */
 @LimitedPrivate
 @Evolving
-public interface LedgerOffloaderFactory<T extends LedgerOffloader> extends AutoCloseable {
+public interface LedgerOffloaderFactory<T extends LedgerOffloader> {
 
     /**
      * Check whether the provided driver <tt>driverName</tt> is supported.
@@ -42,27 +42,11 @@ public interface LedgerOffloaderFactory<T extends LedgerOffloader> extends AutoC
     boolean isDriverSupported(String driverName);
 
     /**
-     * Create a ledger offloader with the provided configuration, user-metadata, scheduler and offloaderStats.
+     * Create a ledger offloader with the provided configuration, user-metadata and scheduler.
      *
      * @param offloadPolicies offload policies
      * @param userMetadata user metadata
      * @param scheduler scheduler
-     * @return the offloader instance
-     * @throws IOException when fail to create an offloader
-     */
-    T create(OffloadPoliciesImpl offloadPolicies,
-             Map<String, String> userMetadata,
-             OrderedScheduler scheduler)
-            throws IOException;
-
-
-    /**
-     * Create a ledger offloader with the provided configuration, user-metadata, scheduler and offloaderStats.
-     *
-     * @param offloadPolicies offload policies
-     * @param userMetadata user metadata
-     * @param scheduler scheduler
-     * @param offloaderStats offloaderStats
      * @return the offloader instance
      * @throws IOException when fail to create an offloader
      */
@@ -71,7 +55,6 @@ public interface LedgerOffloaderFactory<T extends LedgerOffloader> extends AutoC
              OrderedScheduler scheduler,
              LedgerOffloaderStats offloaderStats)
         throws IOException;
-
 
     /**
      * Create a ledger offloader with the provided configuration, user-metadata, schema storage and scheduler.
@@ -86,34 +69,9 @@ public interface LedgerOffloaderFactory<T extends LedgerOffloader> extends AutoC
     default T create(OffloadPoliciesImpl offloadPolicies,
                      Map<String, String> userMetadata,
                      SchemaStorage schemaStorage,
-                     OrderedScheduler scheduler)
-            throws IOException {
-        return create(offloadPolicies, userMetadata, scheduler);
-    }
-
-    /**
-     * Create a ledger offloader with the provided configuration, user-metadata, schema storage,
-     * scheduler and offloaderStats.
-     *
-     * @param offloadPolicies offload policies
-     * @param userMetadata user metadata
-     * @param schemaStorage used for schema lookup in offloader
-     * @param scheduler scheduler
-     * @param offloaderStats offloaderStats
-     * @return the offloader instance
-     * @throws IOException when fail to create an offloader
-     */
-    default T create(OffloadPoliciesImpl offloadPolicies,
-                     Map<String, String> userMetadata,
-                     SchemaStorage schemaStorage,
                      OrderedScheduler scheduler,
                      LedgerOffloaderStats offloaderStats)
             throws IOException {
         return create(offloadPolicies, userMetadata, scheduler, offloaderStats);
-    }
-
-    @Override
-    default void close() throws Exception {
-        // no-op
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -26,6 +26,7 @@ import org.apache.pulsar.common.util.collections.ConcurrentLongPairSet;
 import org.testng.annotations.Test;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -187,12 +188,15 @@ public class ConcurrentBitmapSortedLongPairSetTest {
         List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < nThreads; i++) {
             final int threadIdx = i;
-            futures.add(executor.submit(() -> {
 
-                int start = N * (threadIdx + 1);
+            futures.add(executor.submit(() -> {
+                Random random = new Random();
+
                 for (int j = 0; j < N; j++) {
-                    int key = start + j;
+                    int key = random.nextInt();
                     // Ensure keys are unique
+                    key -= key % (threadIdx + 1);
+                    key = Math.abs(key);
                     set.add(key, key);
                 }
             }));

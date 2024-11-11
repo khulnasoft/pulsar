@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -34,7 +34,7 @@ import org.testng.collections.Maps;
  * A tester used for testing a specific sink.
  */
 @Getter
-public abstract class SinkTester<ServiceContainerT extends GenericContainer> implements AutoCloseable {
+public abstract class SinkTester<ServiceContainerT extends GenericContainer> {
 
     @Getter
     public enum SinkType {
@@ -89,9 +89,9 @@ public abstract class SinkTester<ServiceContainerT extends GenericContainer> imp
         return serviceContainer;
     }
 
-    public void stopServiceContainer() {
+    public void stopServiceContainer(PulsarCluster cluster) {
         if (null != serviceContainer) {
-            PulsarCluster.stopService(networkAlias, serviceContainer);
+            cluster.stopService(networkAlias, serviceContainer);
         }
     }
 
@@ -127,4 +127,6 @@ public abstract class SinkTester<ServiceContainerT extends GenericContainer> imp
                     .send();
         }
     }
+
+
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,15 +18,9 @@
  */
 package org.apache.pulsar.functions.source.batch;
 
-
 import static org.awaitility.Awaitility.await;
 import static org.testng.Assert.fail;
 import com.google.gson.Gson;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.function.Consumer;
 import lombok.Getter;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.Message;
@@ -45,6 +39,12 @@ import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
 
 /**
  * Unit tests for {@link org.apache.pulsar.functions.source.batch.BatchSourceExecutor}
@@ -251,8 +251,7 @@ public class BatchSourceExecutorTest {
     Mockito.doReturn(discoveredTask).when(consumer).receive();
     Mockito.doReturn(discoveredTask).when(consumer).receive(Mockito.anyInt(), Mockito.any());
     Mockito.doReturn(CompletableFuture.completedFuture(consumer)).when(consumerBuilder).subscribeAsync();
-    Mockito.doReturn(CompletableFuture.completedFuture(null))
-            .when(consumer).acknowledgeAsync(Mockito.any(MessageId.class));
+    Mockito.doReturn(CompletableFuture.completedFuture(null)).when(consumer).acknowledgeAsync(Mockito.any(MessageId.class));
     Mockito.doReturn(consumerBuilder).when(context).newConsumerBuilder(Schema.BYTES);
     messageBuilder = Mockito.mock(TypedMessageBuilder.class);
     Mockito.doReturn(messageBuilder).when(messageBuilder).value(Mockito.any());
@@ -277,38 +276,33 @@ public class BatchSourceExecutorTest {
     batchSourceExecutor.close();
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Batch Configs cannot be found")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Batch Configs cannot be found")
   public void testWithoutRightConfig() throws Exception {
     config.clear();
     batchSourceExecutor.open(config, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Batch Configs cannot be found")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Batch Configs cannot be found")
   public void testPushWithoutRightConfig() throws Exception {
     pushConfig.clear();
     batchSourceExecutor.open(pushConfig, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "BatchSourceTriggerer does not implement the correct interface")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "BatchSourceTriggerer does not implement the correct interface")
   public void testWithoutRightTriggerer() throws Exception {
     testBatchConfig.setDiscoveryTriggererClassName(TestBatchSource.class.getName());
     config.put(BatchSourceConfig.BATCHSOURCE_CONFIG_KEY, new Gson().toJson(testBatchConfig));
     batchSourceExecutor.open(config, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "BatchSourceTriggerer does not implement the correct interface")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "BatchSourceTriggerer does not implement the correct interface")
   public void testPushWithoutRightTriggerer() throws Exception {
     testBatchConfig.setDiscoveryTriggererClassName(TestBatchSource.class.getName());
     pushConfig.put(BatchSourceConfig.BATCHSOURCE_CONFIG_KEY, new Gson().toJson(testBatchConfig));
     batchSourceExecutor.open(pushConfig, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Bad config passed to TestTriggerer")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Bad config passed to TestTriggerer")
   public void testWithoutRightTriggererConfig() throws Exception {
     Map<String, Object> badConfig = new HashMap<>();
     badConfig.put("something", "else");
@@ -317,8 +311,7 @@ public class BatchSourceExecutorTest {
     batchSourceExecutor.open(config, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Bad config passed to TestTriggerer")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Bad config passed to TestTriggerer")
   public void testPushWithoutRightTriggererConfig() throws Exception {
     Map<String, Object> badConfig = new HashMap<>();
     badConfig.put("something", "else");
@@ -327,30 +320,26 @@ public class BatchSourceExecutorTest {
     batchSourceExecutor.open(pushConfig, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "BatchSource does not implement the correct interface")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "BatchSource does not implement the correct interface")
   public void testWithoutRightSource() throws Exception {
     config.put(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY, TestDiscoveryTriggerer.class.getName());
     batchSourceExecutor.open(config, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "BatchSource does not implement the correct interface")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "BatchSource does not implement the correct interface")
   public void testPushWithoutRightSource() throws Exception {
     pushConfig.put(BatchSourceConfig.BATCHSOURCE_CLASSNAME_KEY, TestDiscoveryTriggerer.class.getName());
     batchSourceExecutor.open(pushConfig, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Bad config passed to TestBatchSource")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Bad config passed to TestBatchSource")
   public void testWithoutRightSourceConfig() throws Exception {
     config.remove("foo");
     config.put("something", "else");
     batchSourceExecutor.open(config, context);
   }
 
-  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp =
-          "Bad config passed to TestBatchPushSource")
+  @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Bad config passed to TestBatchPushSource")
   public void testPushWithoutRightSourceConfig() throws Exception {
     pushConfig.remove("foo");
     pushConfig.put("something", "else");
@@ -424,5 +413,4 @@ public class BatchSourceExecutorTest {
   private void awaitDiscoverNotInProgress() {
     await().until(() -> !batchSourceExecutor.discoverInProgress);
   }
-
 }

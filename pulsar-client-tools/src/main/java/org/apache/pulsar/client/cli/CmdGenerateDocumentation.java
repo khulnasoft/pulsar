@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,81 +18,71 @@
  */
 package org.apache.pulsar.client.cli;
 
-import static org.apache.pulsar.internal.CommandDescriptionUtil.getArgDescription;
-import static org.apache.pulsar.internal.CommandDescriptionUtil.getCommandDescription;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterDescription;
+import com.beust.jcommander.Parameters;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.client.api.PulsarClientException;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Model.ArgSpec;
-import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Model.OptionSpec;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Spec;
 
 @Getter
-@Command(description = "Generate documentation automatically.")
+@Parameters(commandDescription = "Generate documentation automatically.")
 @Slf4j
-public class CmdGenerateDocumentation extends AbstractCmd {
+public class CmdGenerateDocumentation {
 
-    @Spec
-    private CommandSpec pulsarClientCommandSpec;
-
-    @Option(names = {"-n", "--command-names"}, description = "List of command names")
+    @Parameter(names = {"-n", "--command-names"}, description = "List of command names")
     private List<String> commandNames = new ArrayList<>();
 
     public int run() throws PulsarClientException {
-        if (commandNames == null || commandNames.isEmpty()) {
-            pulsarClientCommandSpec.parent().subcommands().forEach((k, v) -> {
-                if (k.equals("generate_documentation")) {
-                    return;
+        PulsarClientTool pulsarClientTool = new PulsarClientTool(new Properties());
+        JCommander commander = pulsarClientTool.jcommander;
+        if (commandNames.size() == 0) {
+            for (Map.Entry<String, JCommander> cmd : commander.getCommands().entrySet()) {
+                if (cmd.getKey().equals("generate_documentation")) {
+                    continue;
                 }
-                this.generateDocument(k, v);
-            });
+                generateDocument(cmd.getKey(), commander);
+            }
         } else {
-            commandNames.forEach(module -> {
-                CommandLine commandLine = pulsarClientCommandSpec.parent().subcommands().get(module);
-                if (commandLine == null) {
-                    return;
+            for (String commandName : commandNames) {
+                if (commandName.equals("generate_documentation")) {
+                    continue;
                 }
-                if (commandLine.getCommandName().equals("generate_documentation")) {
-                    return;
-                }
-                this.generateDocument(module, commandLine);
-            });
+                generateDocument(commandName, commander);
+            }
         }
-
         return 0;
     }
 
-    protected String generateDocument(String module, CommandLine parentCmd) {
+    protected String generateDocument(String module, JCommander parentCmd) {
         StringBuilder sb = new StringBuilder();
-        sb.append("## ").append(module).append("\n\n");
-        sb.append(getCommandDescription(parentCmd)).append("\n");
-        sb.append("\n\n```shell\n")
+        JCommander cmd = parentCmd.getCommands().get(module);
+        sb.append("------------\n\n");
+        sb.append("# ").append(module).append("\n\n");
+        sb.append("### Usage\n\n");
+        sb.append("`$").append(module).append("`\n\n");
+        sb.append("------------\n\n");
+        sb.append(parentCmd.getUsageFormatter().getCommandDescription(module)).append("\n");
+        sb.append("\n\n```bdocs-tab:example_shell\n")
                 .append("$ pulsar-client ").append(module).append(" [options]")
                 .append("\n```");
         sb.append("\n\n");
+        for (String s : cmd.getCommands().keySet()) {
+            sb.append("* `").append(s).append("`\n");
+        }
         sb.append("|Flag|Description|Default|\n");
         sb.append("|---|---|---|\n");
-
-        List<ArgSpec> options = parentCmd.getCommandSpec().args();
-        options.forEach(ele -> {
-            if (ele.hidden() || !(ele instanceof OptionSpec)) {
-                return;
-            }
-
-            String argDescription = getArgDescription(ele);
-            String descriptions = argDescription.replace("\n", " ");
-            sb.append("| `").append(Arrays.toString(((OptionSpec) ele).names()))
-                    .append("` | ").append(descriptions)
-                    .append("|").append(ele.defaultValue()).append("|\n");
-            sb.append("|\n");
-        });
+        List<ParameterDescription> options = cmd.getParameters();
+        options.forEach((option) ->
+                sb.append("| `").append(option.getNames())
+                        .append("` | ").append(option.getDescription().replace("\n", " "))
+                        .append("|").append(option.getDefault()).append("|\n")
+        );
         System.out.println(sb.toString());
         return sb.toString();
     }

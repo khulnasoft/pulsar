@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,7 @@
  */
 package org.apache.pulsar.metadata.bookkeeper;
 
-import static org.testng.Assert.assertEquals;
+import static org.junit.Assert.assertEquals;
 import java.net.URI;
 import org.apache.bookkeeper.meta.HierarchicalLedgerManagerFactory;
 import org.apache.bookkeeper.meta.LongHierarchicalLedgerManagerFactory;
@@ -36,12 +36,16 @@ public class PulsarMetadataDriverBaseStaticTest {
         URI uri = URI.create(uriStr);
 
         String zkServers = ZKMetadataDriverBase.getZKServersFromServiceUri(uri);
-        assertEquals(zkServers, "server1,server2,server3");
+        assertEquals(
+            "server1,server2,server3",
+            zkServers);
 
         uriStr = "zk://server1,server2,server3/ledgers";
         uri = URI.create(uriStr);
         zkServers = ZKMetadataDriverBase.getZKServersFromServiceUri(uri);
-        assertEquals(zkServers, "server1,server2,server3");
+        assertEquals(
+            "server1,server2,server3",
+            zkServers);
     }
 
     @Test(expectedExceptions = NullPointerException.class)
@@ -61,40 +65,57 @@ public class PulsarMetadataDriverBaseStaticTest {
 
     @Test
     public void testResolveLedgerManagerFactoryUnspecifiedLayout() {
-        assertEquals(ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk://127.0.0.1/ledgers")), null);
+        assertEquals(
+            null,
+            ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                        URI.create("zk://127.0.0.1/ledgers"))
+        );
     }
 
     @Test
     public void testResolveLedgerManagerFactoryNullLayout() {
-        assertEquals(ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk+null://127.0.0.1/ledgers")), null);
+        assertEquals(
+                null,
+                ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                        URI.create("zk+null://127.0.0.1/ledgers"))
+        );
     }
 
     @SuppressWarnings("deprecation")
     @Test
     public void testResolveLedgerManagerFactoryFlat() {
-        assertEquals(ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk+flat://127.0.0.1/ledgers")),
-                org.apache.bookkeeper.meta.FlatLedgerManagerFactory.class);
+        assertEquals(
+            org.apache.bookkeeper.meta.FlatLedgerManagerFactory.class,
+            ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                URI.create("zk+flat://127.0.0.1/ledgers"))
+        );
     }
 
     @SuppressWarnings("deprecation")
     @Test
     public void testResolveLedgerManagerFactoryMs() {
-        assertEquals(ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk+ms://127.0.0.1/ledgers")),
-                org.apache.bookkeeper.meta.MSLedgerManagerFactory.class);
+        assertEquals(
+            org.apache.bookkeeper.meta.MSLedgerManagerFactory.class,
+            ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                URI.create("zk+ms://127.0.0.1/ledgers"))
+        );
     }
 
     @Test
     public void testResolveLedgerManagerFactoryHierarchical() {
         assertEquals(
-                ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk+hierarchical://127.0.0.1/ledgers")),
-                HierarchicalLedgerManagerFactory.class);
+            HierarchicalLedgerManagerFactory.class,
+            ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                URI.create("zk+hierarchical://127.0.0.1/ledgers"))
+        );
     }
 
     @Test
     public void testResolveLedgerManagerFactoryLongHierarchical() {
         assertEquals(
-                ZKMetadataDriverBase.resolveLedgerManagerFactory(URI.create("zk+longhierarchical://127.0.0.1/ledgers")),
-                LongHierarchicalLedgerManagerFactory.class
+            LongHierarchicalLedgerManagerFactory.class,
+            ZKMetadataDriverBase.resolveLedgerManagerFactory(
+                URI.create("zk+longhierarchical://127.0.0.1/ledgers"))
         );
     }
 

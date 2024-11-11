@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,10 +23,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.BrokerServiceException;
-import org.apache.pulsar.broker.service.Topic;
-import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.broker.transaction.buffer.AbortedTxnProcessor;
 import org.apache.pulsar.broker.transaction.buffer.TransactionBuffer;
 import org.apache.pulsar.broker.transaction.buffer.TransactionBufferReader;
 import org.apache.pulsar.broker.transaction.buffer.TransactionMeta;
@@ -40,17 +38,6 @@ import org.apache.pulsar.common.util.FutureUtil;
  */
 @Slf4j
 public class TransactionBufferDisable implements TransactionBuffer {
-
-    private final Topic topic;
-    private final TopicTransactionBuffer.MaxReadPositionCallBack maxReadPositionCallBack;
-    public TransactionBufferDisable(Topic topic) {
-        this.topic = topic;
-        if (topic instanceof PersistentTopic) {
-            this.maxReadPositionCallBack = ((PersistentTopic) topic).getMaxReadPositionCallBack();
-        } else {
-            this.maxReadPositionCallBack = null;
-        }
-    }
 
     @Override
     public CompletableFuture<TransactionMeta> getTransactionMeta(TxnID txnID) {
@@ -92,28 +79,18 @@ public class TransactionBufferDisable implements TransactionBuffer {
     }
 
     @Override
-    public boolean isTxnAborted(TxnID txnID, Position readPosition) {
+    public boolean isTxnAborted(TxnID txnID) {
         return false;
     }
 
     @Override
-    public void syncMaxReadPositionForNormalPublish(Position position, boolean isMarkerMessage) {
-        if (!isMarkerMessage) {
-            updateLastDispatchablePosition(position);
-            if (maxReadPositionCallBack != null) {
-                maxReadPositionCallBack.maxReadPositionMovedForward(null, position);
-            }
-        }
+    public void syncMaxReadPositionForNormalPublish(PositionImpl position) {
+        //no-op
     }
 
     @Override
-    public Position getMaxReadPosition() {
-        return topic.getLastPosition();
-    }
-
-    @Override
-    public AbortedTxnProcessor.SnapshotType getSnapshotType() {
-        return null;
+    public PositionImpl getMaxReadPosition() {
+        return PositionImpl.LATEST;
     }
 
     @Override
@@ -122,39 +99,12 @@ public class TransactionBufferDisable implements TransactionBuffer {
     }
 
     @Override
-    public TransactionBufferStats getStats(boolean lowWaterMarks, boolean segmentStats) {
+    public TransactionBufferStats getStats() {
         return null;
     }
 
     @Override
-    public TransactionBufferStats getStats(boolean lowWaterMarks) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<Void> checkIfTBRecoverCompletely() {
+    public CompletableFuture<Void> checkIfTBRecoverCompletely(boolean isTxn) {
         return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public long getOngoingTxnCount() {
-        return 0;
-    }
-
-    @Override
-    public long getAbortedTxnCount() {
-        return 0;
-    }
-
-    @Override
-    public long getCommittedTxnCount() {
-        return 0;
-    }
-
-    // ThreadSafe
-    private void updateLastDispatchablePosition(Position position) {
-        if (topic instanceof PersistentTopic t) {
-            t.updateLastDispatchablePosition(position);
-        }
     }
 }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,8 @@
  */
 package org.apache.pulsar.admin.cli;
 
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.Parameters;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
@@ -35,6 +37,7 @@ import javassist.bytecode.ConstPool;
 import javassist.bytecode.annotation.Annotation;
 import javassist.bytecode.annotation.ArrayMemberValue;
 import javassist.bytecode.annotation.BooleanMemberValue;
+import javassist.bytecode.annotation.IntegerMemberValue;
 import javassist.bytecode.annotation.MemberValue;
 import javassist.bytecode.annotation.StringMemberValue;
 import lombok.Setter;
@@ -44,9 +47,6 @@ import org.apache.pulsar.admin.cli.extensions.CustomCommandGroup;
 import org.apache.pulsar.admin.cli.extensions.ParameterDescriptor;
 import org.apache.pulsar.admin.cli.extensions.ParameterType;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
 public final class CustomCommandsUtils {
     private CustomCommandsUtils() {
@@ -68,12 +68,8 @@ public final class CustomCommandsUtils {
             ConstPool constpool = classFile.getConstPool();
             AnnotationsAttribute annotationsAttribute = new AnnotationsAttribute(constpool,
                     AnnotationsAttribute.visibleTag);
-            Annotation annotation = new Annotation(Command.class.getName(), constpool);
-            ArrayMemberValue descArrayMemberValue = new ArrayMemberValue(classFile.getConstPool());
-            descArrayMemberValue.setValue(
-                    new MemberValue[]{new StringMemberValue(description, classFile.getConstPool())});
-            annotation.addMemberValue("description", descArrayMemberValue);
-            annotation.addMemberValue("name", new StringMemberValue(group.name(),
+            Annotation annotation = new Annotation(Parameters.class.getName(), constpool);
+            annotation.addMemberValue("commandDescription", new StringMemberValue(description,
                     classFile.getConstPool()));
             annotationsAttribute.setAnnotation(annotation);
             ctClass.getClassFile().addAttribute(annotationsAttribute);
@@ -106,7 +102,7 @@ public final class CustomCommandsUtils {
                 DecoratedCommand commandImpl = generateCustomCommand(cmdName, name, command);
                 commandImpl.setCommand(command);
                 commandImpl.setContext(context);
-                addCommand(name, commandImpl);
+                jcommander.addCommand(name, commandImpl);
             }
         }
     }
@@ -146,12 +142,9 @@ public final class CustomCommandsUtils {
 
             AnnotationsAttribute annotationsAttribute = new AnnotationsAttribute(constpool,
                     AnnotationsAttribute.visibleTag);
-            Annotation annotation = new Annotation(Command.class.getName(), constpool);
-            ArrayMemberValue descArrayMemberValue = new ArrayMemberValue(classFile.getConstPool());
-            descArrayMemberValue.setValue(
-                    new MemberValue[]{new StringMemberValue(description, classFile.getConstPool())});
-            annotation.addMemberValue("description", descArrayMemberValue);
-            annotation.addMemberValue("name", new StringMemberValue(name, classFile.getConstPool()));
+            Annotation annotation = new Annotation(Parameters.class.getName(), constpool);
+            annotation.addMemberValue("commandDescription",
+                    new StringMemberValue(description, classFile.getConstPool()));
             annotationsAttribute.setAnnotation(annotation);
             ctClass.getClassFile().addAttribute(annotationsAttribute);
 
@@ -190,9 +183,11 @@ public final class CustomCommandsUtils {
 
                 AnnotationsAttribute fieldAnnotationsAttribute = new AnnotationsAttribute(constpool,
                         AnnotationsAttribute.visibleTag);
-                Annotation fieldAnnotation;
+                Annotation fieldAnnotation = new Annotation(Parameter.class.getName(), constpool);
+
+                // in JCommander if you don't set the "names" property then you want to get all the other
+                // parameters
                 if (!parameterDescriptor.isMainParameter()) {
-                    fieldAnnotation = new Annotation(Option.class.getName(), constpool);
                     MemberValue[] memberValues = new MemberValue[parameterNames.size()];
                     int i = 0;
                     for (String parameterName : parameterNames) {
@@ -201,23 +196,16 @@ public final class CustomCommandsUtils {
                     ArrayMemberValue arrayMemberValue = new ArrayMemberValue(classFile.getConstPool());
                     arrayMemberValue.setValue(memberValues);
                     fieldAnnotation.addMemberValue("names", arrayMemberValue);
-                    fieldAnnotation.addMemberValue("required",
-                            new BooleanMemberValue(parameterDescriptor.isRequired(), classFile.getConstPool()));
-                    if (parameterDescriptor.getType() == ParameterType.BOOLEAN) {
-                        fieldAnnotation.addMemberValue("arity",
-                                new StringMemberValue("1", classFile.getConstPool()));
-                    }
-                } else {
-                    fieldAnnotation = new Annotation(Parameters.class.getName(), constpool);
-                    String arityValue = parameterDescriptor.isRequired() ? "1" : "0..1";
-                    fieldAnnotation.addMemberValue("arity",
-                            new StringMemberValue(arityValue, classFile.getConstPool()));
                 }
-                ArrayMemberValue optionDescArrayMemberValue = new ArrayMemberValue(classFile.getConstPool());
-                optionDescArrayMemberValue.setValue(
-                        new MemberValue[]{
-                                new StringMemberValue(parameterDescriptor.getDescription(), classFile.getConstPool())});
-                fieldAnnotation.addMemberValue("description", optionDescArrayMemberValue);
+
+                fieldAnnotation.addMemberValue("description",
+                        new StringMemberValue(parameterDescriptor.getDescription(), classFile.getConstPool()));
+                fieldAnnotation.addMemberValue("required",
+                        new BooleanMemberValue(parameterDescriptor.isRequired(), classFile.getConstPool()));
+                if (parameterDescriptor.getType() == ParameterType.BOOLEAN) {
+                    fieldAnnotation.addMemberValue("arity",
+                            new IntegerMemberValue(classFile.getConstPool(), 1));
+                }
                 fieldAnnotationsAttribute.setAnnotation(fieldAnnotation);
                 field.getFieldInfo().addAttribute(fieldAnnotationsAttribute);
                 field.setModifiers(Modifier.PUBLIC);

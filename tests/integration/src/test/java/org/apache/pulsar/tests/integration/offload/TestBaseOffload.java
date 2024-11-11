@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -227,7 +227,7 @@ public abstract class TestBaseOffload extends PulsarTieredStorageTestSuite {
     private long writeAndWaitForOffload(String serviceUrl, String adminUrl, String topic, int partitionNum)
             throws Exception {
         try(PulsarClient client = PulsarClient.builder().serviceUrl(serviceUrl).build();
-            Producer<byte[]> producer = client.newProducer().topic(topic)
+            Producer producer = client.newProducer().topic(topic)
                     .maxPendingMessages(getNumEntriesPerLedger() / 2).sendTimeout(60, TimeUnit.SECONDS)
                     .blockIfQueueFull(true).enableBatching(false).create();
             PulsarAdmin admin = PulsarAdmin.builder().serviceHttpUrl(adminUrl).build()) {

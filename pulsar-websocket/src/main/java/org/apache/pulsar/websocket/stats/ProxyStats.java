@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,11 +24,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.stats.JvmMetrics;
 import org.apache.pulsar.common.stats.Metrics;
+import org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap;
 import org.apache.pulsar.websocket.WebSocketService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +41,7 @@ public class ProxyStats {
 
     private final WebSocketService service;
     private final JvmMetrics jvmMetrics;
-    private final Map<String, ProxyNamespaceStats> topicStats = new ConcurrentHashMap<>();
+    private ConcurrentOpenHashMap<String, ProxyNamespaceStats> topicStats;
     private List<Metrics> metricsCollection;
     private List<Metrics> tempMetricsCollection;
 
@@ -50,6 +50,9 @@ public class ProxyStats {
         this.service = service;
         this.jvmMetrics = JvmMetrics.create(
                 service.getExecutor(), "prx", service.getConfig().getJvmGCMetricsLoggerClassName());
+        this.topicStats =
+                ConcurrentOpenHashMap.<String, ProxyNamespaceStats>newBuilder()
+                        .build();
         this.metricsCollection = new ArrayList<>();
         this.tempMetricsCollection = new ArrayList<>();
         // schedule stat generation task every 1 minute

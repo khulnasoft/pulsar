@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.io.elasticsearch.client.opensearch;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -112,7 +113,6 @@ public class OpenSearchHighLevelRestClient extends RestClient implements BulkPro
                         .setConnectionRequestTimeout(config.getConnectionRequestTimeoutInMs())
                         .setConnectTimeout(config.getConnectTimeoutInMs())
                         .setSocketTimeout(config.getSocketTimeoutInMs()))
-                .setCompressionEnabled(config.isCompressionEnabled())
                 .setHttpClientConfigCallback(this.configCallback)
                 .setFailureListener(new org.opensearch.client.RestClient.FailureListener() {
                     @Override
@@ -300,6 +300,10 @@ public class OpenSearchHighLevelRestClient extends RestClient implements BulkPro
             indexRequest.id(request.getDocumentId());
         }
         indexRequest.source(request.getDocumentSource(), XContentType.JSON);
+        if (log.isDebugEnabled()) {
+            log.debug("append index request id={}, type={}, source={}", request.getDocumentId(), config.getTypeName(),
+                    request.getDocumentSource());
+        }
         internalBulkProcessor.add(indexRequest);
     }
 
@@ -307,6 +311,9 @@ public class OpenSearchHighLevelRestClient extends RestClient implements BulkPro
     public void appendDeleteRequest(BulkProcessor.BulkDeleteRequest request) throws IOException {
         DeleteRequest deleteRequest = new DeleteRequestWithPulsarRecord(request.getIndex(), request.getRecord());
         deleteRequest.id(request.getDocumentId());
+        if (log.isDebugEnabled()) {
+            log.debug("append delete request id={}, type={}", request.getDocumentId(), config.getTypeName());
+        }
         internalBulkProcessor.add(deleteRequest);
     }
 

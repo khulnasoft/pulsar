@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,8 +32,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.pulsar.client.api.ProducerConsumerBase;
-import org.apache.pulsar.common.util.Backoff;
-import org.apache.pulsar.common.util.BackoffBuilder;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ConditionTimeoutException;
@@ -49,21 +47,20 @@ public class ConnectionHandlerTest extends ProducerConsumerBase {
     private static final Backoff BACKOFF = new BackoffBuilder().setInitialTime(1, TimeUnit.MILLISECONDS)
             .setMandatoryStop(1, TimeUnit.SECONDS)
             .setMax(3, TimeUnit.SECONDS).create();
-    private ExecutorService executor;
+    private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
     @BeforeClass(alwaysRun = true)
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
         super.producerBaseSetup();
-        executor = Executors.newFixedThreadPool(4);
     }
 
     @AfterClass
     @Override
     protected void cleanup() throws Exception {
         super.internalCleanup();
-        executor.shutdownNow();
+        executor.shutdown();
     }
 
     @Test(timeOut = 30000)
@@ -78,7 +75,7 @@ public class ConnectionHandlerTest extends ProducerConsumerBase {
                         return CompletableFuture.completedFuture(null);
                     });
             handler.grabCnx();
-            Assert.assertEquals(future.join(), i);
+            Assert.assertEquals(future.join().intValue(), i);
         }
     }
 

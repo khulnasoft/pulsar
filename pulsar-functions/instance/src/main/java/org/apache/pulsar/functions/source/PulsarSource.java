@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,12 +18,6 @@
  */
 package org.apache.pulsar.functions.source;
 
-import java.security.Security;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.DeadLetterPolicy;
@@ -40,6 +34,13 @@ import org.apache.pulsar.functions.utils.CryptoUtils;
 import org.apache.pulsar.io.core.Source;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
+import java.security.Security;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
 public abstract class PulsarSource<T> implements Source<T> {
     protected final PulsarClient pulsarClient;
     protected final PulsarSourceConfig pulsarSourceConfig;
@@ -53,7 +54,7 @@ public abstract class PulsarSource<T> implements Source<T> {
                            ClassLoader functionClassLoader) {
         this.pulsarClient = pulsarClient;
         this.pulsarSourceConfig = pulsarSourceConfig;
-        this.topicSchema = new TopicSchema(pulsarClient, functionClassLoader);
+        this.topicSchema = new TopicSchema(pulsarClient);
         this.properties = properties;
         this.functionClassLoader = functionClassLoader;
     }
@@ -132,26 +133,22 @@ public abstract class PulsarSource<T> implements Source<T> {
                 .message(message)
                 .schema(schema)
                 .topicName(message.getTopicName())
-                .customAckFunction(cumulative -> {
-                    if (cumulative) {
-                        consumer.acknowledgeCumulativeAsync(message)
-                                .whenComplete((unused, throwable) -> message.release());
-                    } else {
-                        consumer.acknowledgeAsync(message).whenComplete((unused, throwable) -> message.release());
-                    }
-                })
                 .ackFunction(() -> {
-                    if (pulsarSourceConfig
-                            .getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
-                        consumer.acknowledgeCumulativeAsync(message)
-                                .whenComplete((unused, throwable) -> message.release());
-                    } else {
-                        consumer.acknowledgeAsync(message).whenComplete((unused, throwable) -> message.release());
+                    try {
+                        if (pulsarSourceConfig
+                                .getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
+                            consumer.acknowledgeCumulativeAsync(message);
+                        } else {
+                            consumer.acknowledgeAsync(message);
+                        }
+                    } finally {
+                        // don't need to check if message pooling is set
+                        // client will automatically check
+                        message.release();
                     }
                 }).failFunction(() -> {
                     try {
-                        if (pulsarSourceConfig.getProcessingGuarantees()
-                                == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
+                        if (pulsarSourceConfig.getProcessingGuarantees() == FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE) {
                             throw new RuntimeException("Failed to process message: " + message.getMessageId());
                         }
                         consumer.negativeAcknowledge(message);
@@ -164,12 +161,11 @@ public abstract class PulsarSource<T> implements Source<T> {
                 .build();
     }
 
-    protected PulsarSourceConsumerConfig<T> buildPulsarSourceConsumerConfig(String topic, ConsumerConfig conf,
-                                                                            Class<?> typeArg) {
-        PulsarSourceConsumerConfig.PulsarSourceConsumerConfigBuilder<T> consumerConfBuilder =
-                PulsarSourceConsumerConfig.<T>builder().isRegexPattern(conf.isRegexPattern())
-                        .receiverQueueSize(conf.getReceiverQueueSize())
-                        .consumerProperties(conf.getConsumerProperties());
+    protected PulsarSourceConsumerConfig<T> buildPulsarSourceConsumerConfig(String topic, ConsumerConfig conf, Class<?> typeArg) {
+        PulsarSourceConsumerConfig.PulsarSourceConsumerConfigBuilder<T> consumerConfBuilder
+                = PulsarSourceConsumerConfig.<T>builder().isRegexPattern(conf.isRegexPattern())
+                .receiverQueueSize(conf.getReceiverQueueSize())
+                .consumerProperties(conf.getConsumerProperties());
 
         Schema<T> schema;
         if (conf.getSerdeClassName() != null && !conf.getSerdeClassName().isEmpty()) {

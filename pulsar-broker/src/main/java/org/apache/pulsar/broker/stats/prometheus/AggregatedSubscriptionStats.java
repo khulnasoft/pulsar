@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -21,7 +21,6 @@ package org.apache.pulsar.broker.stats.prometheus;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.pulsar.broker.service.Consumer;
-import org.apache.pulsar.common.policies.data.stats.TopicMetricBean;
 
 public class AggregatedSubscriptionStats {
 
@@ -42,8 +41,6 @@ public class AggregatedSubscriptionStats {
     public double msgThroughputOut;
 
     public long msgDelayed;
-
-    public long msgInReplay;
 
     long msgOutCounter;
 
@@ -76,8 +73,4 @@ public class AggregatedSubscriptionStats {
     long filterRescheduledMsgCount;
 
     public Map<Consumer, AggregatedConsumerStats> consumerStat = new HashMap<>();
-
-    long delayedMessageIndexSizeInBytes;
-
-    public Map<String, TopicMetricBean> bucketDelayedIndexStats = new HashMap<>();
 }

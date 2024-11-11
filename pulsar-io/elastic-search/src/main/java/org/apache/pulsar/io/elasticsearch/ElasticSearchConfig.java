@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -28,8 +28,6 @@ import java.util.Map;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.pulsar.io.common.IOConfigUtils;
-import org.apache.pulsar.io.core.SinkContext;
 import org.apache.pulsar.io.core.annotations.FieldDoc;
 
 /**
@@ -59,12 +57,10 @@ public class ElasticSearchConfig implements Serializable {
     )
     private String indexName;
 
-    @Deprecated
     @FieldDoc(
         required = false,
         defaultValue = "_doc",
-        help = "No longer in use in OpenSearch 2+. "
-                + "The type name that the connector writes messages to, with the default value set to _doc."
+        help = "The type name that the connector writes messages to, with the default value set to _doc."
                 + " This value should be set explicitly to a valid type name other than _doc for Elasticsearch version before 6.2,"
                 + " and left to the default value otherwise."
     )
@@ -244,11 +240,6 @@ public class ElasticSearchConfig implements Serializable {
     )
     private String primaryFields = "";
 
-    @FieldDoc(
-            required = false,
-            defaultValue = "",
-            help = "The SSL config for elastic search."
-    )
     private ElasticSearchSslConfig ssl = new ElasticSearchSslConfig();
 
     @FieldDoc(
@@ -291,17 +282,17 @@ public class ElasticSearchConfig implements Serializable {
     private boolean canonicalKeyFields = false;
 
     @FieldDoc(
-            defaultValue = "true",
-            help = "If stripNonPrintableCharacters is true, all non-printable characters will be removed from the document."
-    )
-    private boolean stripNonPrintableCharacters = true;
-
-    @FieldDoc(
             defaultValue = "NONE",
             help = "Hashing algorithm to use for the document id. This is useful in order to be compliant with "
                     + "the ElasticSearch _id hard limit of 512 bytes."
     )
     private IdHashingAlgorithm idHashingAlgorithm = IdHashingAlgorithm.NONE;
+
+    @FieldDoc(
+            defaultValue = "true",
+            help = "If stripNonPrintableCharacters is true, all non-printable characters will be removed from the document."
+    )
+    private boolean stripNonPrintableCharacters = true;
 
     @FieldDoc(
             defaultValue = "false",
@@ -316,6 +307,13 @@ public class ElasticSearchConfig implements Serializable {
             help = "When the message key schema is AVRO or JSON, copy the message key fields into the Elasticsearch _source."
     )
     private boolean copyKeyFields = false;
+
+    @FieldDoc(
+            required = false,
+            defaultValue = "true",
+            help = "If ignoreUnsupportedFields is true, unsupported AVRO fields are nullified and AVRO logical types are decoded as known AVRO types, otherwise it fails."
+    )
+    private boolean ignoreUnsupportedFields = true;
 
     public enum MalformedDocAction {
         IGNORE,
@@ -347,8 +345,9 @@ public class ElasticSearchConfig implements Serializable {
         return mapper.readValue(new File(yamlFile), ElasticSearchConfig.class);
     }
 
-    public static ElasticSearchConfig load(Map<String, Object> map, SinkContext sinkContext) throws IOException {
-        return IOConfigUtils.loadWithSecrets(map, ElasticSearchConfig.class, sinkContext);
+    public static ElasticSearchConfig load(Map<String, Object> map) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.readValue(new ObjectMapper().writeValueAsString(map), ElasticSearchConfig.class);
     }
 
     public void validate() {

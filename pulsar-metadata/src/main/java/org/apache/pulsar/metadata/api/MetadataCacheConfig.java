@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,9 +18,7 @@
  */
 package org.apache.pulsar.metadata.api;
 
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
@@ -31,7 +29,7 @@ import lombok.ToString;
 @Builder
 @Getter
 @ToString
-public class MetadataCacheConfig<T> {
+public class MetadataCacheConfig {
     private static final long DEFAULT_CACHE_REFRESH_TIME_MILLIS = TimeUnit.MINUTES.toMillis(5);
 
     /**
@@ -49,12 +47,4 @@ public class MetadataCacheConfig<T> {
      */
     @Builder.Default
     private final long expireAfterWriteMillis = 2 * DEFAULT_CACHE_REFRESH_TIME_MILLIS;
-
-    /**
-     * Specifies cache reload consumer behavior when the cache is refreshed automatically at refreshAfterWriteMillis
-     * frequency.
-     */
-    @Builder.Default
-    private final BiConsumer<String, Optional<CacheGetResult<T>>> asyncReloadConsumer = null;
-
 }

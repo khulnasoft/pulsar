@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -68,8 +68,7 @@ public class ConnectorsManager implements AutoCloseable {
     }
 
     public List<ConnectorDefinition> getConnectorDefinitions() {
-        return connectors.values().stream().map(connector -> connector.getConnectorDefinition())
-                .collect(Collectors.toList());
+        return connectors.values().stream().map(connector -> connector.getConnectorDefinition()).collect(Collectors.toList());
     }
 
     public Path getSourceArchive(String sourceType) {

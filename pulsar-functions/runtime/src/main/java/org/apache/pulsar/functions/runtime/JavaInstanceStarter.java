@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,10 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.pulsar.functions.runtime;
 
 import static org.apache.pulsar.functions.utils.FunctionCommon.getSinkType;
 import static org.apache.pulsar.functions.utils.FunctionCommon.getSourceType;
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.converters.StringConverter;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.google.protobuf.Empty;
@@ -41,7 +45,6 @@ import net.bytebuddy.pool.TypePool;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.common.functions.WindowConfig;
 import org.apache.pulsar.common.nar.NarClassLoader;
-import org.apache.pulsar.common.util.Reflections;
 import org.apache.pulsar.functions.instance.AuthenticationConfig;
 import org.apache.pulsar.functions.instance.InstanceCache;
 import org.apache.pulsar.functions.instance.InstanceConfig;
@@ -56,104 +59,98 @@ import org.apache.pulsar.functions.secretsprovider.SecretsProvider;
 import org.apache.pulsar.functions.utils.FunctionCommon;
 import org.apache.pulsar.functions.utils.functioncache.FunctionCacheManager;
 import org.apache.pulsar.functions.utils.functioncache.FunctionCacheManagerImpl;
-import picocli.CommandLine;
-import picocli.CommandLine.Option;
+import org.apache.pulsar.common.util.Reflections;
 
 
 @Slf4j
 public class JavaInstanceStarter implements AutoCloseable {
-    @Option(names = "--function_details", description = "Function details json\n", required = true)
+    @Parameter(names = "--function_details", description = "Function details json\n", required = true)
     public String functionDetailsJsonString;
-    @Option(
+    @Parameter(
             names = "--jar",
-            description = "Path to Jar\n")
+            description = "Path to Jar\n",
+            listConverter = StringConverter.class)
     public String jarFile;
 
-    @Option(
+    @Parameter(
             names = "--transform_function_jar",
-            description = "Path to Transform Function Jar\n")
+            description = "Path to Transform Function Jar\n",
+            listConverter = StringConverter.class)
     public String transformFunctionJarFile;
 
-    @Option(names = "--instance_id", description = "Instance Id\n", required = true)
+    @Parameter(names = "--instance_id", description = "Instance Id\n", required = true)
     public int instanceId;
 
-    @Option(names = "--function_id", description = "Function Id\n", required = true)
+    @Parameter(names = "--function_id", description = "Function Id\n", required = true)
     public String functionId;
 
-    @Option(names = "--function_version", description = "Function Version\n", required = true)
+    @Parameter(names = "--function_version", description = "Function Version\n", required = true)
     public String functionVersion;
 
-    @Option(names = "--pulsar_serviceurl", description = "Pulsar Service Url\n", required = true)
+    @Parameter(names = "--pulsar_serviceurl", description = "Pulsar Service Url\n", required = true)
     public String pulsarServiceUrl;
 
-    @Option(names = "--transform_function_id", description = "Transform Function Id\n")
+    @Parameter(names = "--transform_function_id", description = "Transform Function Id\n")
     public String transformFunctionId;
 
-    @Option(names = "--client_auth_plugin", description = "Client auth plugin name\n")
+    @Parameter(names = "--client_auth_plugin", description = "Client auth plugin name\n")
     public String clientAuthenticationPlugin;
 
-    @Option(names = "--client_auth_params", description = "Client auth param\n")
+    @Parameter(names = "--client_auth_params", description = "Client auth param\n")
     public String clientAuthenticationParameters;
 
-    @Option(names = "--use_tls", description = "Use tls connection\n")
+    @Parameter(names = "--use_tls", description = "Use tls connection\n")
     public String useTls = Boolean.FALSE.toString();
 
-    @Option(names = "--tls_allow_insecure", description = "Allow insecure tls connection\n")
-    public String tlsAllowInsecureConnection = Boolean.FALSE.toString();
+    @Parameter(names = "--tls_allow_insecure", description = "Allow insecure tls connection\n")
+    public String tlsAllowInsecureConnection = Boolean.TRUE.toString();
 
-    @Option(names = "--hostname_verification_enabled", description = "Enable hostname verification")
+    @Parameter(names = "--hostname_verification_enabled", description = "Enable hostname verification")
     public String tlsHostNameVerificationEnabled = Boolean.FALSE.toString();
 
-    @Option(names = "--tls_trust_cert_path", description = "tls trust cert file path")
+    @Parameter(names = "--tls_trust_cert_path", description = "tls trust cert file path")
     public String tlsTrustCertFilePath;
 
-    @Option(names = "--state_storage_impl_class", description = "State Storage Service "
-            + "Implementation class\n", required = false)
+    @Parameter(names = "--state_storage_impl_class", description = "State Storage Service Implementation class\n", required= false)
     public String stateStorageImplClass;
 
-    @Option(names = "--state_storage_serviceurl", description = "State Storage Service Url\n", required = false)
+    @Parameter(names = "--state_storage_serviceurl", description = "State Storage Service Url\n", required= false)
     public String stateStorageServiceUrl;
 
-    @Option(names = "--port", description = "Port to listen on\n", required = true)
+    @Parameter(names = "--port", description = "Port to listen on\n", required = true)
     public int port;
 
-    @Option(names = "--metrics_port", description = "Port metrics will be exposed on\n", required = true)
-    public int metricsPort;
+    @Parameter(names = "--metrics_port", description = "Port metrics will be exposed on\n", required = true)
+    public int metrics_port;
 
-    @Option(names = "--max_buffered_tuples", description = "Maximum number of tuples to buffer\n", required = true)
+    @Parameter(names = "--max_buffered_tuples", description = "Maximum number of tuples to buffer\n", required = true)
     public int maxBufferedTuples;
 
-    @Option(names = "--expected_healthcheck_interval", description = "Expected interval in "
-            + "seconds between healtchecks", required = true)
+    @Parameter(names = "--expected_healthcheck_interval", description = "Expected interval in seconds between healtchecks", required = true)
     public int expectedHealthCheckInterval;
 
-    @Option(names = "--secrets_provider", description = "The classname of the secrets provider", required = false)
+    @Parameter(names = "--secrets_provider", description = "The classname of the secrets provider", required = false)
     public String secretsProviderClassName;
 
-    @Option(names = "--secrets_provider_config", description = "The config that needs to be "
-            + "passed to secrets provider", required = false)
+    @Parameter(names = "--secrets_provider_config", description = "The config that needs to be passed to secrets provider", required = false)
     public String secretsProviderConfig;
 
-    @Option(names = "--cluster_name", description = "The name of the cluster this "
-            + "instance is running on", required = true)
+    @Parameter(names = "--cluster_name", description = "The name of the cluster this instance is running on", required = true)
     public String clusterName;
 
-    @Option(names = "--nar_extraction_directory", description = "The directory where "
-            + "extraction of nar packages happen", required = false)
+    @Parameter(names = "--nar_extraction_directory", description = "The directory where extraction of nar packages happen", required = false)
     public String narExtractionDirectory = NarClassLoader.DEFAULT_NAR_EXTRACTION_DIR;
 
-    @Option(names = "--pending_async_requests", description = "Max pending async requests per instance",
-            required = false)
+    @Parameter(names = "--pending_async_requests", description = "Max pending async requests per instance", required = false)
     public int maxPendingAsyncRequests = 1000;
 
-    @Option(names = "--web_serviceurl", description = "Pulsar Web Service Url", required = false)
+    @Parameter(names = "--web_serviceurl", description = "Pulsar Web Service Url", required = false)
     public String webServiceUrl = null;
 
-    @Option(names = "--expose_pulsaradmin", description = "Whether the pulsar admin client "
-            + "exposed to function context, default is disabled.", required = false)
+    @Parameter(names = "--expose_pulsaradmin", description = "Whether the pulsar admin client exposed to function context, default is disabled.", required = false)
     public Boolean exposePulsarAdminClientEnabled = false;
 
-    @Option(names = "--ignore_unknown_config_fields",
+    @Parameter(names = "--ignore_unknown_config_fields",
             description = "Whether to ignore unknown properties when deserializing the connector configuration.",
             required = false)
     public Boolean ignoreUnknownConfigFields = false;
@@ -166,15 +163,14 @@ public class JavaInstanceStarter implements AutoCloseable {
     private HTTPServer metricsServer;
     private ScheduledFuture healthCheckTimer;
 
-    public JavaInstanceStarter() {
-    }
+    public JavaInstanceStarter() { }
 
-    public void start(String[] args, ClassLoader functionInstanceClassLoader, ClassLoader rootClassLoader)
-            throws Exception {
+    public void start(String[] args, ClassLoader functionInstanceClassLoader, ClassLoader rootClassLoader) throws Exception {
         Thread.currentThread().setContextClassLoader(functionInstanceClassLoader);
 
-        CommandLine jcommander = new CommandLine(this);
-        jcommander.parseArgs(args);
+        JCommander jcommander = new JCommander(this);
+        // parse args by JCommander
+        jcommander.parse(args);
 
         InstanceConfig instanceConfig = new InstanceConfig();
         instanceConfig.setFunctionId(functionId);
@@ -201,7 +197,7 @@ public class JavaInstanceStarter implements AutoCloseable {
         Function.FunctionDetails functionDetails = functionDetailsBuilder.build();
         instanceConfig.setFunctionDetails(functionDetails);
         instanceConfig.setPort(port);
-        instanceConfig.setMetricsPort(metricsPort);
+        instanceConfig.setMetricsPort(metrics_port);
 
         Map<String, String> secretsProviderConfigMap = null;
         if (!StringUtils.isEmpty(secretsProviderConfig)) {
@@ -211,8 +207,7 @@ public class JavaInstanceStarter implements AutoCloseable {
             if (secretsProviderConfig.charAt(secretsProviderConfig.length() - 1) == '\'') {
                 secretsProviderConfig = secretsProviderConfig.substring(0, secretsProviderConfig.length() - 1);
             }
-            Type type = new TypeToken<Map<String, String>>() {
-            }.getType();
+            Type type = new TypeToken<Map<String, String>>() {}.getType();
             secretsProviderConfigMap = new Gson().fromJson(secretsProviderConfig, type);
         }
 
@@ -222,8 +217,7 @@ public class JavaInstanceStarter implements AutoCloseable {
 
         SecretsProvider secretsProvider;
         try {
-            secretsProvider =
-                    (SecretsProvider) Reflections.createInstance(secretsProviderClassName, functionInstanceClassLoader);
+            secretsProvider = (SecretsProvider) Reflections.createInstance(secretsProviderClassName, functionInstanceClassLoader);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -257,35 +251,36 @@ public class JavaInstanceStarter implements AutoCloseable {
                 .build()
                 .start();
         log.info("JavaInstance Server started, listening on " + port);
-        java.lang.Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            // Use stderr here since the logger may have been reset by its JVM shutdown hook.
-            try {
-                close();
-            } catch (Exception ex) {
-                System.err.println(ex);
+        java.lang.Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                // Use stderr here since the logger may have been reset by its JVM shutdown hook.
+                try {
+                    close();
+                } catch (Exception ex) {
+                    System.err.println(ex);
+                }
             }
-        }));
+        });
 
         log.info("Starting runtimeSpawner");
         runtimeSpawner.start();
 
         // starting metrics server
-        log.info("Starting metrics server on port {}", metricsPort);
-        metricsServer = new HTTPServer(new InetSocketAddress(metricsPort), collectorRegistry, true);
+        log.info("Starting metrics server on port {}", metrics_port);
+        metricsServer = new HTTPServer(new InetSocketAddress(metrics_port), collectorRegistry, true);
 
         if (expectedHealthCheckInterval > 0) {
-            healthCheckTimer =
-                    InstanceCache.getInstanceCache().getScheduledExecutorService().scheduleAtFixedRate(() -> {
-                        try {
-                            if (System.currentTimeMillis() - lastHealthCheckTs
-                                    > 3 * expectedHealthCheckInterval * 1000) {
-                                log.info("Haven't received health check from spawner in a while. Stopping instance...");
-                                close();
-                            }
-                        } catch (Exception e) {
-                            log.error("Error occurred when checking for latest health check", e);
-                        }
-                    }, expectedHealthCheckInterval * 1000, expectedHealthCheckInterval * 1000, TimeUnit.MILLISECONDS);
+            healthCheckTimer = InstanceCache.getInstanceCache().getScheduledExecutorService().scheduleAtFixedRate(() -> {
+                try {
+                    if (System.currentTimeMillis() - lastHealthCheckTs > 3 * expectedHealthCheckInterval * 1000) {
+                        log.info("Haven't received health check from spawner in a while. Stopping instance...");
+                        close();
+                    }
+                } catch (Exception e) {
+                    log.error("Error occurred when checking for latest health check", e);
+                }
+            }, expectedHealthCheckInterval * 1000, expectedHealthCheckInterval * 1000, TimeUnit.MILLISECONDS);
         }
 
         runtimeSpawner.join();
@@ -416,11 +411,9 @@ public class JavaInstanceStarter implements AutoCloseable {
         }
 
         @Override
-        public void getFunctionStatus(Empty request,
-                                      StreamObserver<InstanceCommunication.FunctionStatus> responseObserver) {
+        public void getFunctionStatus(Empty request, StreamObserver<InstanceCommunication.FunctionStatus> responseObserver) {
             try {
-                InstanceCommunication.FunctionStatus response =
-                        runtimeSpawner.getFunctionStatus(runtimeSpawner.getInstanceConfig().getInstanceId()).get();
+                InstanceCommunication.FunctionStatus response = runtimeSpawner.getFunctionStatus(runtimeSpawner.getInstanceConfig().getInstanceId()).get();
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
             } catch (Exception e) {
@@ -431,8 +424,7 @@ public class JavaInstanceStarter implements AutoCloseable {
 
         @Override
         public void getAndResetMetrics(com.google.protobuf.Empty request,
-                   io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.MetricsData>
-                   responseObserver) {
+                                       io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.MetricsData> responseObserver) {
             Runtime runtime = runtimeSpawner.getRuntime();
             if (runtime != null) {
                 try {
@@ -448,8 +440,7 @@ public class JavaInstanceStarter implements AutoCloseable {
 
         @Override
         public void getMetrics(com.google.protobuf.Empty request,
-                   io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.MetricsData>
-                   responseObserver) {
+                               io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.MetricsData> responseObserver) {
             Runtime runtime = runtimeSpawner.getRuntime();
             if (runtime != null) {
                 try {
@@ -480,11 +471,10 @@ public class JavaInstanceStarter implements AutoCloseable {
 
         @Override
         public void healthCheck(com.google.protobuf.Empty request,
-                io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.HealthCheckResult>
-                responseObserver) {
+                                io.grpc.stub.StreamObserver<org.apache.pulsar.functions.proto.InstanceCommunication.HealthCheckResult> responseObserver) {
             log.debug("Received health check request...");
-            InstanceCommunication.HealthCheckResult healthCheckResult =
-                    InstanceCommunication.HealthCheckResult.newBuilder().setSuccess(true).build();
+            InstanceCommunication.HealthCheckResult healthCheckResult
+                    = InstanceCommunication.HealthCheckResult.newBuilder().setSuccess(true).build();
             responseObserver.onNext(healthCheckResult);
             responseObserver.onCompleted();
 

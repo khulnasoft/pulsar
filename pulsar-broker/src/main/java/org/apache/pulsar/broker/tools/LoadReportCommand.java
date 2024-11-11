@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,48 +18,76 @@
  */
 package org.apache.pulsar.broker.tools;
 
+import com.beust.jcommander.Parameter;
 import java.util.Optional;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.apache.bookkeeper.tools.framework.Cli;
+import org.apache.bookkeeper.tools.framework.CliCommand;
+import org.apache.bookkeeper.tools.framework.CliFlags;
+import org.apache.bookkeeper.tools.framework.CliSpec;
 import org.apache.commons.lang3.SystemUtils;
 import org.apache.pulsar.broker.loadbalance.BrokerHostUsage;
 import org.apache.pulsar.broker.loadbalance.impl.GenericBrokerHostUsageImpl;
 import org.apache.pulsar.broker.loadbalance.impl.LinuxBrokerHostUsageImpl;
+import org.apache.pulsar.broker.tools.LoadReportCommand.Flags;
 import org.apache.pulsar.client.util.ExecutorProvider;
 import org.apache.pulsar.policies.data.loadbalancer.ResourceUsage;
 import org.apache.pulsar.policies.data.loadbalancer.SystemResourceUsage;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Spec;
 
 /**
  * The command to collect the load report of a specific broker.
  */
-@Command(name = "load-report", description = "Collect the load report of a specific broker")
-public class LoadReportCommand implements Callable<Integer> {
+public class LoadReportCommand extends CliCommand<CliFlags, Flags> {
 
-    @Option(names = {"-i", "--interval-ms"}, description = "Interval to collect load report, in milliseconds")
-    public int intervalMilliseconds = 100;
+    private static final String NAME = "load-report";
+    private static final String DESC = "Collect the load report of a specific broker";
 
-    @Spec
-    CommandSpec spec;
+    /**
+     * The CLI flags of load report command.
+     */
+    public static class Flags extends CliFlags {
+
+        @Parameter(
+            names = {
+                "-i", "--interval-ms"
+            },
+            description = "Interval to collect load report, in milliseconds"
+        )
+        public int intervalMilliseconds = 100;
+
+    }
+
+    public LoadReportCommand() {
+        super(CliSpec.<Flags>newBuilder()
+            .withName(NAME)
+            .withDescription(DESC)
+            .withFlags(new Flags())
+            .build());
+    }
 
     @Override
-    public Integer call() throws Exception {
+    public Boolean apply(CliFlags globalFlags, String[] args) {
+        CliSpec<Flags> newSpec = CliSpec.newBuilder(spec)
+            .withRunFunc(cmdFlags -> apply(cmdFlags))
+            .build();
+        return 0 == Cli.runCli(newSpec, args);
+    }
+
+    private boolean apply(Flags flags) {
+
         boolean isLinux = SystemUtils.IS_OS_LINUX;
-        spec.commandLine().getOut().println("OS ARCH: " + SystemUtils.OS_ARCH);
-        spec.commandLine().getOut().println("OS NAME: " + SystemUtils.OS_NAME);
-        spec.commandLine().getOut().println("OS VERSION: " + SystemUtils.OS_VERSION);
-        spec.commandLine().getOut().println("Linux: " + isLinux);
-        spec.commandLine().getOut().println("--------------------------------------");
-        spec.commandLine().getOut().println();
-        spec.commandLine().getOut().println("Load Report Interval : " + intervalMilliseconds + " ms");
-        spec.commandLine().getOut().println();
-        spec.commandLine().getOut().println("--------------------------------------");
-        spec.commandLine().getOut().println();
+        spec.console().println("OS ARCH: " + SystemUtils.OS_ARCH);
+        spec.console().println("OS NAME: " + SystemUtils.OS_NAME);
+        spec.console().println("OS VERSION: " + SystemUtils.OS_VERSION);
+        spec.console().println("Linux: " + isLinux);
+        spec.console().println("--------------------------------------");
+        spec.console().println();
+        spec.console().println("Load Report Interval : " + flags.intervalMilliseconds + " ms");
+        spec.console().println();
+        spec.console().println("--------------------------------------");
+        spec.console().println();
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
                 new ExecutorProvider.ExtendedThreadFactory("load-report"));
@@ -77,7 +105,7 @@ public class LoadReportCommand implements Callable<Integer> {
 
             hostUsage.calculateBrokerHostUsage();
             try {
-                TimeUnit.MILLISECONDS.sleep(intervalMilliseconds);
+                TimeUnit.MILLISECONDS.sleep(flags.intervalMilliseconds);
             } catch (InterruptedException e) {
             }
             hostUsage.calculateBrokerHostUsage();
@@ -89,13 +117,13 @@ public class LoadReportCommand implements Callable<Integer> {
             printResourceUsage("Bandwidth In", usage.bandwidthIn);
             printResourceUsage("Bandwidth Out", usage.bandwidthOut);
 
-            return 0;
+            return true;
         } finally {
             scheduler.shutdown();
         }
     }
 
     private void printResourceUsage(String name, ResourceUsage usage) {
-        spec.commandLine().getOut().println(name + " : usage = " + usage.usage + ", limit = " + usage.limit);
+        spec.console().println(name + " : usage = " + usage.usage + ", limit = " + usage.limit);
     }
 }
