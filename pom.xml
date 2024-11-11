@@ -102,18 +102,18 @@ flexible messaging model and an intuitive client API.</description>
     <narPluginPhase>package</narPluginPhase>
 
     <!-- apache commons -->
-    <commons-compress.version>1.21</commons-compress.version>
+    <commons-compress.version>1.26.0</commons-compress.version>
 
     <!-- Use Luna Streaming BookKeeper custom version -->
     <bookkeeper.version>4.14.7.1.0.4</bookkeeper.version>
-    <zookeeper.version>3.8.0</zookeeper.version>
+    <zookeeper.version>3.8.4</zookeeper.version>
     <commons-cli.version>1.5.0</commons-cli.version>
     <commons-text.version>1.10.0</commons-text.version>
-    <snappy.version>1.1.10.1</snappy.version> <!-- ZooKeeper server -->
+    <snappy.version>1.1.10.4</snappy.version> <!-- ZooKeeper server -->
     <dropwizardmetrics.version>3.2.5</dropwizardmetrics.version> <!-- ZooKeeper server -->
     <curator.version>5.1.0</curator.version>
     <netty.version>4.1.93.Final</netty.version>
-    <jetty.version>9.4.48.v20220622</jetty.version>
+    <jetty.version>9.4.55.v20240627</jetty.version>
     <conscrypt.version>2.5.2</conscrypt.version>
     <jersey.version>2.34</jersey.version>
     <athenz.version>1.10.50</athenz.version>
@@ -148,7 +148,7 @@ flexible messaging model and an intuitive client API.</description>
     <kafka-client.version>3.4.0</kafka-client.version>
     <rabbitmq-client.version>5.1.1</rabbitmq-client.version>
     <aws-sdk.version>1.12.262</aws-sdk.version>
-    <avro.version>1.11.4</avro.version>
+    <avro.version>1.12.0</avro.version>
     <joda.version>2.10.5</joda.version>
     <jclouds.version>2.5.0</jclouds.version>
     <guice.version>5.1.0</guice.version>
@@ -178,7 +178,7 @@ flexible messaging model and an intuitive client API.</description>
     <confluent.version>7.0.1</confluent.version>
     <kafka.confluent.schemaregistryclient.version>5.3.0</kafka.confluent.schemaregistryclient.version>
     <kafka.confluent.avroserializer.version>5.3.0</kafka.confluent.avroserializer.version>
-    <aircompressor.version>0.20</aircompressor.version>
+    <aircompressor.version>0.27</aircompressor.version>
     <asynchttpclient.version>2.12.1</asynchttpclient.version>
     <jcommander.version>1.78</jcommander.version>
     <commons-lang3.version>3.11</commons-lang3.version>
@@ -206,9 +206,9 @@ flexible messaging model and an intuitive client API.</description>
     <kubernetesclient.version>18.0.0</kubernetesclient.version>
     <okhttp3.version>4.9.3</okhttp3.version>
     <!-- use okio version that matches the okhttp3 version -->
-    <okio.version>2.8.0</okio.version>
+    <okio.version>1.17.6</okio.version>
     <!-- override kotlin-stdlib used by okio in order to address CVE-2020-29582 -->
-    <kotlin-stdlib.version>1.4.32</kotlin-stdlib.version>
+    <kotlin-stdlib.version>1.6.0</kotlin-stdlib.version>
     <nsq-client.version>1.0</nsq-client.version>
     <cron-utils.version>9.1.6</cron-utils.version>
     <spring-context.version>5.3.19</spring-context.version>
@@ -229,7 +229,7 @@ flexible messaging model and an intuitive client API.</description>
     <!-- Set docker-java.version to the version of docker-java used in Testcontainers -->
     <docker-java.version>3.2.13</docker-java.version>
     <kerby.version>1.1.1</kerby.version>
-    <testng.version>7.3.0</testng.version>
+    <testng.version>7.5.1</testng.version>
     <junit4.version>4.13.1</junit4.version>
     <mockito.version>3.12.4</mockito.version>
     <powermock.version>2.0.9</powermock.version>
